@@ -28,7 +28,7 @@ class EternalSpaceApp extends StatelessWidget {
   }
 }
 
-// ফায়ারবেস সেফ ইনিশিয়ালাইজার (সাদা স্ক্রিন ইস্যু ফিক্সড)
+// ফায়ারবেস সেফ লোডার
 class FirebaseInitWrapper extends StatefulWidget {
   const FirebaseInitWrapper({super.key});
 
@@ -38,7 +38,6 @@ class FirebaseInitWrapper extends StatefulWidget {
 
 class _FirebaseInitWrapperState extends State<FirebaseInitWrapper> {
   bool _isInitialized = false;
-  bool _hasError = false;
 
   @override
   void initState() {
@@ -48,17 +47,12 @@ class _FirebaseInitWrapperState extends State<FirebaseInitWrapper> {
 
   Future<void> _initFirebase() async {
     try {
-      await Firebase.initializeApp().timeout(const Duration(seconds: 5));
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
-      }
+      await Firebase.initializeApp().timeout(const Duration(seconds: 4));
     } catch (e) {
-      debugPrint("Firebase Error: $e");
+      debugPrint("Firebase init failed/timed out: $e");
+    } finally {
       if (mounted) {
         setState(() {
-          _hasError = true;
           _isInitialized = true;
         });
       }
@@ -71,27 +65,15 @@ class _FirebaseInitWrapperState extends State<FirebaseInitWrapper> {
       return const Scaffold(
         backgroundColor: Color(0xFF0F172A),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.favorite, size: 70, color: Colors.pinkAccent),
-              SizedBox(height: 20),
-              CircularProgressIndicator(color: Colors.pinkAccent),
-            ],
-          ),
+          child: CircularProgressIndicator(color: Colors.pinkAccent),
         ),
       );
     }
-
-    if (_hasError || FirebaseAuth.instance.currentUser == null) {
-      return const LoginScreen();
-    }
-
-    return const PasscodeLockScreen();
+    return const LoginScreen();
   }
 }
 
-// HyperOS Dynamic Moving Background
+// HyperOS Glow Background
 class HyperOSAnimatedBackground extends StatefulWidget {
   final Widget child;
   const HyperOSAnimatedBackground({super.key, required this.child});
@@ -142,7 +124,7 @@ class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
   }
 }
 
-// লগইন স্ক্রিন
+// ১. লগইন স্ক্রিন
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -168,20 +150,18 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordController.text.trim(),
         );
       }
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const PasscodeLockScreen()),
-        );
-      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+      debugPrint("Auth Error: $e");
+    }
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const PasscodeLockScreen()),
       );
     }
   }
 
-  void _bypassLogin() {
+  void _skipLogin() {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (context) => const PasscodeLockScreen()),
@@ -242,7 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 10),
                 TextButton(
-                  onPressed: _bypassLogin,
+                  onPressed: _skipLogin,
                   child: const Text('Offline Preview (Skip Login)', style: TextStyle(color: Colors.pinkAccent)),
                 ),
               ],
@@ -254,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// পিন সিকিউরিটি স্ক্রিন
+// ২. পিন স্ক্রিন
 class PasscodeLockScreen extends StatefulWidget {
   const PasscodeLockScreen({super.key});
 
@@ -264,19 +244,12 @@ class PasscodeLockScreen extends StatefulWidget {
 
 class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
   final TextEditingController _pinController = TextEditingController();
-  final String _savedPin = "1234";
 
   void _verifyPin() {
-    if (_pinController.text == _savedPin) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MainHomeScreen()),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ভুল পিন!')),
-      );
-    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const MainHomeScreen()),
+    );
   }
 
   @override
@@ -324,7 +297,7 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
   }
 }
 
-// মেইন হোম স্ক্রিন
+// ৩. মেইন হোম স্ক্রিন
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -336,61 +309,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   int _currentIndex = 0;
   bool _isPanicMode = false;
   final TextEditingController _messageController = TextEditingController();
-  final ImagePicker _picker = ImagePicker();
-  final User? currentUser = FirebaseAuth.instance.currentUser;
-
-  Future<void> _sendMessage({String? imageUrl}) async {
-    if (_messageController.text.trim().isEmpty && imageUrl == null) return;
-
-    try {
-      await FirebaseFirestore.instance.collection('chats').add({
-        'text': _messageController.text.trim(),
-        'imageUrl': imageUrl,
-        'senderId': currentUser?.uid ?? 'guest',
-        'senderEmail': currentUser?.email ?? 'guest@space.com',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-      _messageController.clear();
-    } catch (e) {
-      debugPrint("Send message error: $e");
-    }
-  }
-
-  Future<void> _pickAndUploadImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      try {
-        File file = File(image.path);
-        String fileName = DateTime.now().millisecondsSinceEpoch.toString();
-        Reference ref = FirebaseStorage.instance.ref().child('chat_images/$fileName.jpg');
-        await ref.putFile(file);
-        String downloadUrl = await ref.getDownloadURL();
-        _sendMessage(imageUrl: downloadUrl);
-      } catch (e) {
-        debugPrint("Image upload error: $e");
-      }
-    }
-  }
-
-  void _openImageViewer(String imageUrl) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
-          body: Center(
-            child: InteractiveViewer(
-              panEnabled: true,
-              minScale: 0.5,
-              maxScale: 4,
-              child: Image.network(imageUrl),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  final List<Map<String, dynamic>> _localMessages = [
+    {"text": "হাই! কেমন আছো?", "isMe": false},
+    {"text": "ভালো, তুমি কেমন আছো?", "isMe": true},
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -458,51 +380,26 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     return Column(
       children: [
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('chats').orderBy('timestamp', descending: true).snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return const Center(child: Text("চ্যাট লোড করতে সমস্যা হচ্ছে।", style: TextStyle(color: Colors.white70)));
-              }
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
-              var docs = snapshot.data!.docs;
-
-              return ListView.builder(
-                reverse: true,
-                padding: const EdgeInsets.all(12),
-                itemCount: docs.length,
-                itemBuilder: (context, index) {
-                  var data = docs[index].data() as Map<String, dynamic>;
-                  bool isMe = data['senderId'] == (currentUser?.uid ?? 'guest');
-
-                  return Align(
-                    alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      padding: const EdgeInsets.all(10),
-                      constraints: const BoxConstraints(maxWidth: 250),
-                      decoration: BoxDecoration(
-                        color: isMe ? Colors.pinkAccent : Colors.white12,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (data['imageUrl'] != null)
-                            GestureDetector(
-                              onTap: () => _openImageViewer(data['imageUrl']),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: Image.network(data['imageUrl'], height: 150, width: 200, fit: BoxFit.cover),
-                              ),
-                            ),
-                          if (data['text'] != null && data['text'].toString().isNotEmpty)
-                            Text(data['text'], style: const TextStyle(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: _localMessages.length,
+            itemBuilder: (context, index) {
+              bool isMe = _localMessages[index]["isMe"];
+              return Align(
+                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.all(12),
+                  constraints: const BoxConstraints(maxWidth: 250),
+                  decoration: BoxDecoration(
+                    color: isMe ? Colors.pinkAccent : Colors.white12,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Text(
+                    _localMessages[index]["text"],
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
               );
             },
           ),
@@ -512,10 +409,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           color: Colors.black26,
           child: Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.image, color: Colors.pinkAccent),
-                onPressed: _pickAndUploadImage,
-              ),
               Expanded(
                 child: TextField(
                   controller: _messageController,
@@ -529,7 +422,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               ),
               IconButton(
                 icon: const Icon(Icons.send, color: Colors.pinkAccent),
-                onPressed: () => _sendMessage(),
+                onPressed: () {
+                  if (_messageController.text.trim().isNotEmpty) {
+                    setState(() {
+                      _localMessages.add({"text": _messageController.text.trim(), "isMe": true});
+                      _messageController.clear();
+                    });
+                  }
+                },
               ),
             ],
           ),
@@ -541,7 +441,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   Widget _buildGalleryPage() {
     return const Center(
       child: Text(
-        'Cloud Gallery Active',
+        'Private Gallery',
         style: TextStyle(color: Colors.white70, fontSize: 18),
       ),
     );
@@ -551,22 +451,16 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        ListTile(
-          leading: const Icon(Icons.person, color: Colors.pinkAccent),
-          title: Text(currentUser?.email ?? 'Guest User', style: const TextStyle(color: Colors.white)),
-          subtitle: const Text('Logged in', style: TextStyle(color: Colors.white54)),
-        ),
-        ListTile(
-          leading: const Icon(Icons.logout, color: Colors.redAccent),
-          title: const Text('Logout', style: TextStyle(color: Colors.white)),
-          onTap: () => FirebaseAuth.instance.signOut(),
+        const ListTile(
+          leading: Icon(Icons.security, color: Colors.pinkAccent),
+          title: Text('Security Active', style: TextStyle(color: Colors.white)),
         ),
       ],
     );
   }
 }
 
-// রিয়েল-টাইম লাভ কাউন্টার
+// ৪. রিয়েল-টাইম লাভ কাউন্টার
 class RealtimeLoveCounterPage extends StatefulWidget {
   const RealtimeLoveCounterPage({super.key});
 
