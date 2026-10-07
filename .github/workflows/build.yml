@@ -28,7 +28,7 @@ jobs:
       run: |
         mkdir temp_app
         cd temp_app
-        flutter create . --org com.ourprivatespace.app
+        flutter create . --org com.privatespace.ourspace
         cp -R android ..
         cd ..
         rm -rf temp_app
