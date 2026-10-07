@@ -13,9 +13,9 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Java
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v3
       with:
-        distribution: 'zulu'
+        distribution: 'temurin'
         java-version: '17'
 
     - name: Set up Flutter
@@ -23,7 +23,6 @@ jobs:
       with:
         flutter-version: '3.19.0'
         channel: 'stable'
-        cache: true
 
     - name: Install dependencies
       run: flutter pub get
@@ -36,3 +35,4 @@ jobs:
       with:
         name: release-apk
         path: build/app/outputs/flutter-apk/app-release.apk
+ 
