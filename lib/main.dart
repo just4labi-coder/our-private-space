@@ -7,13 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:async';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    debugPrint("Firebase init error: $e");
-  }
   runApp(const EternalSpaceApp());
 }
 
@@ -26,32 +21,77 @@ class EternalSpaceApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Eternal Space',
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: Colors.black,
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
       ),
-      home: const AuthGate(),
+      home: const FirebaseInitWrapper(),
     );
   }
 }
 
-// ফায়ারবেস অ্যাকাউন্ট ও পিন গেটওয়ে
-class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
+// ফায়ারবেস সেফ ইনিশিয়ালাইজার (সাদা স্ক্রিন ইস্যু ফিক্সড)
+class FirebaseInitWrapper extends StatefulWidget {
+  const FirebaseInitWrapper({super.key});
+
+  @override
+  State<FirebaseInitWrapper> createState() => _FirebaseInitWrapperState();
+}
+
+class _FirebaseInitWrapperState extends State<FirebaseInitWrapper> {
+  bool _isInitialized = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initFirebase();
+  }
+
+  Future<void> _initFirebase() async {
+    try {
+      await Firebase.initializeApp().timeout(const Duration(seconds: 5));
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    } catch (e) {
+      debugPrint("Firebase Error: $e");
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isInitialized = true;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          return const PasscodeLockScreen();
-        }
-        return const LoginScreen();
-      },
-    );
+    if (!_isInitialized) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F172A),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.favorite, size: 70, color: Colors.pinkAccent),
+              SizedBox(height: 20),
+              CircularProgressIndicator(color: Colors.pinkAccent),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_hasError || FirebaseAuth.instance.currentUser == null) {
+      return const LoginScreen();
+    }
+
+    return const PasscodeLockScreen();
   }
 }
 
-// HyperOS Style Moving Color Glow Background
+// HyperOS Dynamic Moving Background
 class HyperOSAnimatedBackground extends StatefulWidget {
   final Widget child;
   const HyperOSAnimatedBackground({super.key, required this.child});
@@ -67,10 +107,7 @@ class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    )..repeat(reverse: true);
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 10))..repeat(reverse: true);
   }
 
   @override
@@ -105,7 +142,7 @@ class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
   }
 }
 
-// অ্যাকাউন্ট সাইন-আপ ও লগইন পেজ
+// লগইন স্ক্রিন
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -131,11 +168,24 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordController.text.trim(),
         );
       }
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const PasscodeLockScreen()),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}')),
       );
     }
+  }
+
+  void _bypassLogin() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const PasscodeLockScreen()),
+    );
   }
 
   @override
@@ -151,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const Icon(Icons.favorite, size: 80, color: Colors.pinkAccent),
                 const SizedBox(height: 10),
                 Text(
-                  isSignUp ? 'Create Cloud Account' : 'Welcome to Eternal Space',
+                  isSignUp ? 'Create Account' : 'Welcome to Eternal Space',
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 20),
@@ -189,6 +239,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     isSignUp ? 'Already have an account? Login' : "Don't have an account? Sign Up",
                     style: const TextStyle(color: Colors.white70),
                   ),
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _bypassLogin,
+                  child: const Text('Offline Preview (Skip Login)', style: TextStyle(color: Colors.pinkAccent)),
                 ),
               ],
             ),
@@ -407,7 +462,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             stream: FirebaseFirestore.instance.collection('chats').orderBy('timestamp', descending: true).snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return const Center(child: Text("বাফার লোড করতে সমস্যা হচ্ছে।", style: TextStyle(color: Colors.white70)));
+                return const Center(child: Text("চ্যাট লোড করতে সমস্যা হচ্ছে।", style: TextStyle(color: Colors.white70)));
               }
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
               var docs = snapshot.data!.docs;
@@ -418,7 +473,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 itemCount: docs.length,
                 itemBuilder: (context, index) {
                   var data = docs[index].data() as Map<String, dynamic>;
-                  bool isMe = data['senderId'] == currentUser?.uid;
+                  bool isMe = data['senderId'] == (currentUser?.uid ?? 'guest');
 
                   return Align(
                     alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -465,7 +520,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 child: TextField(
                   controller: _messageController,
                   style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(hintText: 'Type secret message...', border: InputBorder.none, hintStyle: TextStyle(color: Colors.white54)),
+                  decoration: const InputDecoration(
+                    hintText: 'Type secret message...',
+                    border: InputBorder.none,
+                    hintStyle: TextStyle(color: Colors.white54),
+                  ),
                 ),
               ),
               IconButton(
@@ -494,7 +553,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       children: [
         ListTile(
           leading: const Icon(Icons.person, color: Colors.pinkAccent),
-          title: Text(currentUser?.email ?? 'User', style: const TextStyle(color: Colors.white)),
+          title: Text(currentUser?.email ?? 'Guest User', style: const TextStyle(color: Colors.white)),
           subtitle: const Text('Logged in', style: TextStyle(color: Colors.white54)),
         ),
         ListTile(
