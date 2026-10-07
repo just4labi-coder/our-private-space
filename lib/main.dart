@@ -1,46 +1,159 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 void main() {
   runApp(const OurPrivateSpaceApp());
 }
 
-class OurPrivateSpaceApp extends StatefulWidget {
+class OurPrivateSpaceApp extends StatelessWidget {
   const OurPrivateSpaceApp({super.key});
-
-  @override
-  State<OurPrivateSpaceApp> createState() => _OurPrivateSpaceAppState();
-}
-
-class _OurPrivateSpaceAppState extends State<OurPrivateSpaceApp> {
-  bool isDarkMode = true;
-  bool isBengali = true;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Our Private Space',
-      theme: isDarkMode ? ThemeData.dark() : ThemeData.light(),
-      home: MainHomeScreen(
-        isBengali: isBengali,
-        onLanguageToggle: () => setState(() => isBengali = !isBengali),
-        onThemeToggle: () => setState(() => isDarkMode = !isDarkMode),
+      theme: ThemeData.dark(),
+      home: const PasscodeLockScreen(),
+    );
+  }
+}
+
+// ১. পাসকোড / পিন সিকিউরিটি স্ক্রিন
+class PasscodeLockScreen extends StatefulWidget {
+  const PasscodeLockScreen({super.key});
+
+  @override
+  State<PasscodeLockScreen> createState() => _PasscodeLockScreenState();
+}
+
+class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
+  final TextEditingController _pinController = TextEditingController();
+  final String _savedPin = "1234"; // ডিফল্ট পিন
+
+  void _verifyPin() {
+    if (_pinController.text == _savedPin) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const MainHomeScreen()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ভুল পিন! আবার চেষ্টা করুন।')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: AnimatedGradientBackground(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.lock_outline, size: 80, color: Colors.white),
+                const SizedBox(height: 20),
+                const Text(
+                  'প্রাইভেট স্পেসে ঢুকতে পিন দিন',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: 200,
+                  child: TextField(
+                    controller: _pinController,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
+                    decoration: InputDecoration(
+                      hintText: 'PIN',
+                      hintStyle: const TextStyle(color: Colors.white54, letterSpacing: 0),
+                      filled: true,
+                      fillColor: Colors.white12,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purpleAccent,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _verifyPin,
+                  child: const Text('প্রবেশ করুন', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-class MainHomeScreen extends StatefulWidget {
-  final bool isBengali;
-  final VoidCallback onLanguageToggle;
-  final VoidCallback onThemeToggle;
+// ২. সুন্দর কালারফুল চলাচল করা ব্যাকগ্রাউন্ড (HyperOS Gradient Effect)
+class AnimatedGradientBackground extends StatefulWidget {
+  final Widget child;
+  const AnimatedGradientBackground({super.key, required this.child});
 
-  const MainHomeScreen({
-    super.key,
-    required this.isBengali,
-    required this.onLanguageToggle,
-    required this.onThemeToggle,
-  });
+  @override
+  State<AnimatedGradientBackground> createState() => _AnimatedGradientBackgroundState();
+}
+
+class _AnimatedGradientBackgroundState extends State<AnimatedGradientBackground>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Alignment> _topAlignment;
+  late Animation<Alignment> _bottomAlignment;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat(reverse: true);
+    _topAlignment = Tween<Alignment>(begin: Alignment.topLeft, end: Alignment.topRight).animate(_controller);
+    _bottomAlignment = Tween<Alignment>(begin: Alignment.bottomRight, end: Alignment.bottomLeft).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: _topAlignment.value,
+              end: _bottomAlignment.value,
+              colors: const [
+                Color(0xFF1B0B38),
+                Color(0xFF2E1065),
+                Color(0xFF0F172A),
+                Color(0xFF3B0764),
+              ],
+            ),
+          ),
+          child: widget.child,
+        );
+      },
+    );
+  }
+}
+
+// ৩. মেইন অ্যাপ হোম স্ক্রিন
+class MainHomeScreen extends StatefulWidget {
+  const MainHomeScreen({super.key});
 
   @override
   State<MainHomeScreen> createState() => _MainHomeScreenState();
@@ -51,15 +164,26 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   bool _isPanicMode = false;
 
   final TextEditingController _messageController = TextEditingController();
-  final List<String> _dummyMessages = [
-    "হাই! কেমন আছো?",
-    "ভালো, তুমি কেমন আছো?",
-    "এই তো ভালো। অ্যাপটি কেমন লাগছে?"
+  final List<Map<String, dynamic>> _messages = [
+    {"text": "হাই! কেমন আছো?", "isMe": false},
+    {"text": "ভালো, তুমি কেমন আছো?", "isMe": true},
+    {"text": "এই তো ভালো!", "isMe": false},
   ];
+
+  final List<File> _galleryImages = [];
+  final ImagePicker _picker = ImagePicker();
+
+  Future<void> _pickImage(ImageSource source) async {
+    final XFile? image = await _picker.pickImage(source: source);
+    if (image != null) {
+      setState(() {
+        _galleryImages.add(File(image.path));
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // প্যানিক মোড / ফেক নোটপ্যাড স্ক্রিন
     if (_isPanicMode) {
       return Scaffold(
         appBar: AppBar(
@@ -76,7 +200,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           child: TextField(
             maxLines: null,
             decoration: InputDecoration(
-              hintText: 'Write your private note here...',
+              hintText: 'Write notes here...',
               border: InputBorder.none,
             ),
           ),
@@ -88,77 +212,60 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       _buildChatPage(),
       _buildGalleryPage(),
       _buildLoveCounterPage(),
-      _buildSettingsPage(),
     ];
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(widget.isBengali ? 'আওয়ার প্রাইভেট স্পেস' : 'Our Private Space'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text('Our Private Space'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.privacy_tip, color: Colors.redAccent),
-            tooltip: 'Panic Mode',
+            icon: const Icon(Icons.security, color: Colors.redAccent),
             onPressed: () => setState(() => _isPanicMode = true),
-          ),
-          IconButton(
-            icon: Icon(widget.isBengali ? Icons.language : Icons.g_translate),
-            onPressed: widget.onLanguageToggle,
-          ),
-          IconButton(
-            icon: const Icon(Icons.brightness_6),
-            onPressed: widget.onThemeToggle,
           ),
         ],
       ),
-      body: pages[_currentIndex],
+      body: AnimatedGradientBackground(
+        child: SafeArea(child: pages[_currentIndex]),
+      ),
       bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: const Color(0xFF0F172A),
         currentIndex: _currentIndex,
         selectedItemColor: Colors.pinkAccent,
         unselectedItemColor: Colors.grey,
         onTap: (index) => setState(() => _currentIndex = index),
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.chat_bubble),
-            label: widget.isBengali ? 'গোপন চ্যাট' : 'Chat',
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.photo_library),
-            label: widget.isBengali ? 'গ্যালারি' : 'Gallery',
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.favorite),
-            label: widget.isBengali ? 'কাউন্টার' : 'Counter',
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.security),
-            label: widget.isBengali ? 'সিকিউরিটি' : 'Security',
-          ),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'চ্যাট'),
+          BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: 'গ্যালারি'),
+          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'কাউন্টার'),
         ],
       ),
     );
   }
 
-  // ১. চ্যাট পেজ
+  // চ্যাট পেজ
   Widget _buildChatPage() {
     return Column(
       children: [
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(12),
-            itemCount: _dummyMessages.length,
+            itemCount: _messages.length,
             itemBuilder: (context, index) {
-              bool isMe = index % 2 == 0;
+              bool isMe = _messages[index]["isMe"];
               return Align(
                 alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: isMe ? Colors.pinkAccent : Colors.grey[800],
+                    color: isMe ? Colors.pinkAccent : Colors.white12,
                     borderRadius: BorderRadius.circular(15),
                   ),
                   child: Text(
-                    _dummyMessages[index],
+                    _messages[index]["text"],
                     style: const TextStyle(color: Colors.white),
                   ),
                 ),
@@ -167,19 +274,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          color: Colors.black26,
+          padding: const EdgeInsets.all(8),
+          color: Colors.black38,
           child: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.image, color: Colors.pinkAccent),
-                onPressed: () {},
+                icon: const Icon(Icons.camera_alt, color: Colors.purpleAccent),
+                onPressed: () => _pickImage(ImageSource.camera),
+              ),
+              IconButton(
+                icon: const Icon(Icons.image, color: Colors.purpleAccent),
+                onPressed: () => _pickImage(ImageSource.gallery),
               ),
               Expanded(
                 child: TextField(
                   controller: _messageController,
-                  decoration: InputDecoration(
-                    hintText: widget.isBengali ? 'গোপন বার্তা লিখুন...' : 'Type a private message...',
+                  decoration: const InputDecoration(
+                    hintText: 'গোপন বার্তা লিখুন...',
                     border: InputBorder.none,
                   ),
                 ),
@@ -189,7 +300,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 onPressed: () {
                   if (_messageController.text.isNotEmpty) {
                     setState(() {
-                      _dummyMessages.add(_messageController.text);
+                      _messages.add({"text": _messageController.text, "isMe": true});
                       _messageController.clear();
                     });
                   }
@@ -202,79 +313,43 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     );
   }
 
-  // ২. ফটো গ্যালারি পেজ
+  // গ্যালারি পেজ (ক্যামেরা ও ছবি যুক্ত সহ)
   Widget _buildGalleryPage() {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.pinkAccent,
-        onPressed: () {},
+        onPressed: () => _pickImage(ImageSource.gallery),
         child: const Icon(Icons.add_a_photo),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.photo_album, size: 70, color: Colors.grey),
-            const SizedBox(height: 10),
-            Text(
-              widget.isBengali
-                  ? 'আপনাদের গোপন ফটো গ্যালারি খালি'
-                  : 'Your private gallery is empty',
-              style: const TextStyle(fontSize: 16),
+      body: _galleryImages.isEmpty
+          ? const Center(child: Text('কোনো ছবি যুক্ত করা হয়নি'))
+          : GridView.builder(
+              padding: const EdgeInsets.all(10),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: _galleryImages.length,
+              itemBuilder: (context, index) {
+                return Image.file(_galleryImages[index], fit: BoxFit.cover);
+              },
             ),
-          ],
-        ),
-      ),
     );
   }
 
-  // ৩. লাভ কাউন্টার (আলাদা অপশনে)
+  // লাভ কাউন্টার
   Widget _buildLoveCounterPage() {
-    DateTime startDate = DateTime(2023, 1, 1); // উদাহরণস্বরূপ শুরুর তারিখ
-    int daysTogether = DateTime.now().difference(startDate).inDays;
-
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.favorite, size: 80, color: Colors.redAccent),
-          const SizedBox(height: 20),
-          Text(
-            widget.isBengali ? 'আমরা একসাথে আছি' : 'We have been together for',
-            style: const TextStyle(fontSize: 18),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '$daysTogether ${widget.isBengali ? 'দিন' : 'Days'}',
-            style: const TextStyle(
-                fontSize: 32, fontWeight: FontWeight.bold, color: Colors.pinkAccent),
-          ),
+          Icon(Icons.favorite, size: 80, color: Colors.redAccent),
+          SizedBox(height: 20),
+          Text('আমাদের নিজস্ব স্থান', style: TextStyle(fontSize: 22, color: Colors.white)),
         ],
       ),
-    );
-  }
-
-  // ৪. সিকিউরিটি সেটিং
-  Widget _buildSettingsPage() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        SwitchListTile(
-          title: Text(widget.isBengali ? 'পাসকোড সিকিউরিটি' : 'Passcode Lock'),
-          subtitle: Text(
-              widget.isBengali ? 'পিন/ফিঙ্গারপ্রিন্ট লক অন করুন' : 'Enable Pin/Biometrics'),
-          value: true,
-          onChanged: (val) {},
-        ),
-        const Divider(),
-        ListTile(
-          leading: const Icon(Icons.visibility_off, color: Colors.redAccent),
-          title: Text(widget.isBengali ? 'প্যানিক মোড' : 'Panic Mode'),
-          subtitle: Text(widget.isBengali
-              ? 'উপরের রেড বাটন চাপলে নোটপ্যাড ভেসে উঠবে'
-              : 'Tap red button on AppBar to show Fake Notepad'),
-        ),
-      ],
     );
   }
 }
