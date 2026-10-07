@@ -9,7 +9,11 @@ import 'dart:async';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Firebase init error: $e");
+  }
   runApp(const EternalSpaceApp());
 }
 
@@ -21,13 +25,15 @@ class EternalSpaceApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Eternal Space',
-      theme: ThemeData.dark(),
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: Colors.black,
+      ),
       home: const AuthGate(),
     );
   }
 }
 
-// ফায়ারবেস লগইন স্টেট চেক
+// ফায়ারবেস অ্যাকাউন্ট ও পিন গেটওয়ে
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -45,7 +51,61 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-// ফায়ারবেস অ্যাকাউন্ট তৈরি ও লগইন স্ক্রিন
+// HyperOS Style Moving Color Glow Background
+class HyperOSAnimatedBackground extends StatefulWidget {
+  final Widget child;
+  const HyperOSAnimatedBackground({super.key, required this.child});
+
+  @override
+  State<HyperOSAnimatedBackground> createState() => _HyperOSAnimatedBackgroundState();
+}
+
+class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        double val = _controller.value;
+        return Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(-1.0 + (val * 2.0), -0.8 + (val * 1.6)),
+              radius: 1.5,
+              colors: const [
+                Color(0xFF5B21B6),
+                Color(0xFF1E1B4B),
+                Color(0xFF0F172A),
+              ],
+              stops: const [0.0, 0.55, 1.0],
+            ),
+          ),
+          child: widget.child,
+        );
+      },
+    );
+  }
+}
+
+// অ্যাকাউন্ট সাইন-আপ ও লগইন পেজ
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -83,7 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: HyperOSAnimatedBackground(
         child: Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -92,28 +152,43 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 10),
                 Text(
                   isSignUp ? 'Create Cloud Account' : 'Welcome to Eternal Space',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 20),
                 TextField(
                   controller: _emailController,
-                  decoration: const InputDecoration(labelText: 'Email', filled: true, fillColor: Colors.white12),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    filled: true,
+                    fillColor: Colors.white12,
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Password', filled: true, fillColor: Colors.white12),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    filled: true,
+                    fillColor: Colors.white12,
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
                   onPressed: _submit,
-                  child: Text(isSignUp ? 'Sign Up' : 'Login'),
+                  child: Text(isSignUp ? 'Sign Up' : 'Login', style: const TextStyle(color: Colors.white)),
                 ),
                 TextButton(
                   onPressed: () => setState(() => isSignUp = !isSignUp),
-                  child: Text(isSignUp ? 'Already have an account? Login' : "Don't have an account? Sign Up"),
+                  child: Text(
+                    isSignUp ? 'Already have an account? Login' : "Don't have an account? Sign Up",
+                    style: const TextStyle(color: Colors.white70),
+                  ),
                 ),
               ],
             ),
@@ -124,58 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// HyperOS Dynamic Moving Background
-class HyperOSAnimatedBackground extends StatefulWidget {
-  final Widget child;
-  const HyperOSAnimatedBackground({super.key, required this.child});
-
-  @override
-  State<HyperOSAnimatedBackground> createState() => _HyperOSAnimatedBackgroundState();
-}
-
-class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 10))..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        double val = _controller.value;
-        return Container(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(-1.0 + (val * 2), -0.8 + (val * 1.6)),
-              radius: 1.4,
-              colors: const [
-                Color(0xFF5B21B6),
-                Color(0xFF1E1B4B),
-                Color(0xFF0F172A),
-              ],
-              stops: const [0.0, 0.55, 1.0],
-            ),
-          ),
-          child: widget.child,
-        );
-      },
-    );
-  }
-}
-
-// পিন স্ক্রিন
+// পিন সিকিউরিটি স্ক্রিন
 class PasscodeLockScreen extends StatefulWidget {
   const PasscodeLockScreen({super.key});
 
@@ -212,7 +236,7 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
               children: [
                 const Icon(Icons.lock_outline, size: 80, color: Colors.pinkAccent),
                 const SizedBox(height: 20),
-                const Text('Enter Passcode', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                const Text('Enter Passcode', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 20),
                 SizedBox(
                   width: 200,
@@ -221,7 +245,7 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
                     obscureText: true,
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 24, letterSpacing: 8),
+                    style: const TextStyle(fontSize: 24, letterSpacing: 8, color: Colors.white),
                     decoration: InputDecoration(
                       hintText: 'PIN',
                       filled: true,
@@ -234,7 +258,7 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
                   onPressed: _verifyPin,
-                  child: const Text('Unlock'),
+                  child: const Text('Unlock', style: TextStyle(color: Colors.white)),
                 ),
               ],
             ),
@@ -245,7 +269,7 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
   }
 }
 
-// মেইন হোম স্ক্রিন (রিয়েলটাইম ফায়ারবেস চ্যাট ও স্টোরেজ সহ)
+// মেইন হোম স্ক্রিন
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -263,27 +287,54 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   Future<void> _sendMessage({String? imageUrl}) async {
     if (_messageController.text.trim().isEmpty && imageUrl == null) return;
 
-    await FirebaseFirestore.instance.collection('chats').add({
-      'text': _messageController.text.trim(),
-      'imageUrl': imageUrl,
-      'senderId': currentUser?.uid,
-      'senderEmail': currentUser?.email,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-
-    _messageController.clear();
+    try {
+      await FirebaseFirestore.instance.collection('chats').add({
+        'text': _messageController.text.trim(),
+        'imageUrl': imageUrl,
+        'senderId': currentUser?.uid ?? 'guest',
+        'senderEmail': currentUser?.email ?? 'guest@space.com',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      _messageController.clear();
+    } catch (e) {
+      debugPrint("Send message error: $e");
+    }
   }
 
   Future<void> _pickAndUploadImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
-      File file = File(image.path);
-      String fileName = DateTime.now().millisecondsSinceEpoch.toString();
-      Reference ref = FirebaseStorage.instance.ref().child('chat_images/$fileName.jpg');
-      await ref.putFile(file);
-      String downloadUrl = await ref.getDownloadURL();
-      _sendMessage(imageUrl: downloadUrl);
+      try {
+        File file = File(image.path);
+        String fileName = DateTime.now().millisecondsSinceEpoch.toString();
+        Reference ref = FirebaseStorage.instance.ref().child('chat_images/$fileName.jpg');
+        await ref.putFile(file);
+        String downloadUrl = await ref.getDownloadURL();
+        _sendMessage(imageUrl: downloadUrl);
+      } catch (e) {
+        debugPrint("Image upload error: $e");
+      }
     }
+  }
+
+  void _openImageViewer(String imageUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
+          body: Center(
+            child: InteractiveViewer(
+              panEnabled: true,
+              minScale: 0.5,
+              maxScale: 4,
+              child: Image.network(imageUrl),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -311,7 +362,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
     final pages = [
       _buildChatPage(),
-      const Center(child: Text('Gallery - Cloud Syncing')),
+      _buildGalleryPage(),
       const RealtimeLoveCounterPage(),
       _buildSettingsPage(),
     ];
@@ -355,7 +406,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           child: StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance.collection('chats').orderBy('timestamp', descending: true).snapshots(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+              if (snapshot.hasError) {
+                return const Center(child: Text("বাফার লোড করতে সমস্যা হচ্ছে।", style: TextStyle(color: Colors.white70)));
+              }
+              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
               var docs = snapshot.data!.docs;
 
               return ListView.builder(
@@ -380,9 +434,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (data['imageUrl'] != null)
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Image.network(data['imageUrl'], height: 150, width: 200, fit: BoxFit.cover),
+                            GestureDetector(
+                              onTap: () => _openImageViewer(data['imageUrl']),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.network(data['imageUrl'], height: 150, width: 200, fit: BoxFit.cover),
+                              ),
                             ),
                           if (data['text'] != null && data['text'].toString().isNotEmpty)
                             Text(data['text'], style: const TextStyle(color: Colors.white)),
@@ -407,7 +464,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               Expanded(
                 child: TextField(
                   controller: _messageController,
-                  decoration: const InputDecoration(hintText: 'Type secret message...', border: InputBorder.none),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(hintText: 'Type secret message...', border: InputBorder.none, hintStyle: TextStyle(color: Colors.white54)),
                 ),
               ),
               IconButton(
@@ -421,18 +479,27 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     );
   }
 
+  Widget _buildGalleryPage() {
+    return const Center(
+      child: Text(
+        'Cloud Gallery Active',
+        style: TextStyle(color: Colors.white70, fontSize: 18),
+      ),
+    );
+  }
+
   Widget _buildSettingsPage() {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         ListTile(
           leading: const Icon(Icons.person, color: Colors.pinkAccent),
-          title: Text(currentUser?.email ?? 'User'),
-          subtitle: const Text('Logged in'),
+          title: Text(currentUser?.email ?? 'User', style: const TextStyle(color: Colors.white)),
+          subtitle: const Text('Logged in', style: TextStyle(color: Colors.white54)),
         ),
         ListTile(
           leading: const Icon(Icons.logout, color: Colors.redAccent),
-          title: const Text('Logout'),
+          title: const Text('Logout', style: TextStyle(color: Colors.white)),
           onTap: () => FirebaseAuth.instance.signOut(),
         ),
       ],
@@ -463,9 +530,11 @@ class _RealtimeLoveCounterPageState extends State<RealtimeLoveCounterPage> {
   }
 
   void _updateDuration() {
-    setState(() {
-      _duration = DateTime.now().difference(_startDate);
-    });
+    if (mounted) {
+      setState(() {
+        _duration = DateTime.now().difference(_startDate);
+      });
+    }
   }
 
   @override
