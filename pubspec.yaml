@@ -1,5 +1,5 @@
 name: our_private_space
-description: "A private space app for two"
+description: "A private space app for two with real-time Firebase sync"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,6 +11,10 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   image_picker: ^1.0.7
+  firebase_core: ^2.27.0
+  firebase_auth: ^4.17.8
+  cloud_firestore: ^4.15.8
+  firebase_storage: ^11.6.9
 
 dev_dependencies:
   flutter_test:
