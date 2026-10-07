@@ -139,19 +139,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   final ImagePicker _picker = ImagePicker();
 
   String _myName = "My Name";
-  String _myImgUrl = "";
+  final String _myImgUrl = "";
   List<Map<String, dynamic>> _messages = [];
-  List<String> _folders = ["General", "Memories"];
+  final List<String> _folders = ["General", "Memories"];
   final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
 
   @override
   void initState() {
     super.initState();
     _dbRef.child("chats").onValue.listen((event) {
-      final data = event.snapshot.value as Map?;
-      if (data != null) {
+      final data = event.snapshot.value;
+      if (data != null && data is Map) {
         List<Map<String, dynamic>> list = [];
-        data.forEach((k, v) => list.add({"key": k, ...Map<String, dynamic>.from(v)}));
+        data.forEach((k, v) {
+          if (v is Map) {
+            list.add({"key": k, ...Map<String, dynamic>.from(v)});
+          }
+        });
         list.sort((a, b) => (a["time"] ?? 0).compareTo(b["time"] ?? 0));
         setState(() => _messages = list);
       }
@@ -252,9 +256,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(m["sender"], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70)),
-                      if (m["imageUrl"] != "") Image.network(m["imageUrl"], height: 120, width: 160, fit: BoxFit.cover),
-                      if (m["text"] != "") Text(m["text"], style: const TextStyle(color: Colors.white)),
+                      Text(m["sender"] ?? "", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70)),
+                      if (m["imageUrl"] != null && m["imageUrl"].toString().isNotEmpty) 
+                        Image.network(m["imageUrl"], height: 120, width: 160, fit: BoxFit.cover),
+                      if (m["text"] != null && m["text"].toString().isNotEmpty) 
+                        Text(m["text"], style: const TextStyle(color: Colors.white)),
                     ],
                   ),
                 ),
@@ -331,10 +337,14 @@ class _FolderPageState extends State<FolderPage> {
   void initState() {
     super.initState();
     FirebaseDatabase.instance.ref().child("galleries/${widget.folderName}").onValue.listen((event) {
-      final data = event.snapshot.value as Map?;
-      if (data != null) {
+      final data = event.snapshot.value;
+      if (data != null && data is Map) {
         List<String> list = [];
-        data.forEach((k, v) => list.add(v["url"]));
+        data.forEach((k, v) {
+          if (v is Map && v["url"] != null) {
+            list.add(v["url"].toString());
+          }
+        });
         setState(() => _urls = list);
       }
     });
