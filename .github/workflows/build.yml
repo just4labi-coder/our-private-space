@@ -24,7 +24,16 @@ jobs:
         flutter-version: '3.22.x'
         channel: 'stable'
 
-    - name: Install dependencies
+    - name: Generate Flutter Project Structure
+      run: |
+        mkdir temp_app
+        cd temp_app
+        flutter create . --org com.ourprivatespace.app
+        cp -R android ..
+        cd ..
+        rm -rf temp_app
+
+    - name: Get Dependencies
       run: flutter pub get
 
     - name: Build APK
