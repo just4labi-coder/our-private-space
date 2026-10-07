@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'dart:async';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const EternalSpaceApp());
 }
 
@@ -20,60 +20,12 @@ class EternalSpaceApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Eternal Space',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0F172A),
-      ),
-      home: const FirebaseInitWrapper(),
+      theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: const Color(0xFF0F172A)),
+      home: const PasscodeLockScreen(),
     );
   }
 }
 
-// ফায়ারবেস সেফ লোডার
-class FirebaseInitWrapper extends StatefulWidget {
-  const FirebaseInitWrapper({super.key});
-
-  @override
-  State<FirebaseInitWrapper> createState() => _FirebaseInitWrapperState();
-}
-
-class _FirebaseInitWrapperState extends State<FirebaseInitWrapper> {
-  bool _isInitialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initFirebase();
-  }
-
-  Future<void> _initFirebase() async {
-    try {
-      await Firebase.initializeApp().timeout(const Duration(seconds: 4));
-    } catch (e) {
-      debugPrint("Firebase init failed/timed out: $e");
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_isInitialized) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0F172A),
-        body: Center(
-          child: CircularProgressIndicator(color: Colors.pinkAccent),
-        ),
-      );
-    }
-    return const LoginScreen();
-  }
-}
-
-// HyperOS Glow Background
 class HyperOSAnimatedBackground extends StatefulWidget {
   final Widget child;
   const HyperOSAnimatedBackground({super.key, required this.child});
@@ -82,8 +34,7 @@ class HyperOSAnimatedBackground extends StatefulWidget {
   State<HyperOSAnimatedBackground> createState() => _HyperOSAnimatedBackgroundState();
 }
 
-class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
-    with SingleTickerProviderStateMixin {
+class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
   @override
@@ -109,11 +60,7 @@ class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
             gradient: RadialGradient(
               center: Alignment(-1.0 + (val * 2.0), -0.8 + (val * 1.6)),
               radius: 1.5,
-              colors: const [
-                Color(0xFF5B21B6),
-                Color(0xFF1E1B4B),
-                Color(0xFF0F172A),
-              ],
+              colors: const [Color(0xFF831843), Color(0xFF4C1D95), Color(0xFF0F172A)],
               stops: const [0.0, 0.55, 1.0],
             ),
           ),
@@ -124,117 +71,6 @@ class _HyperOSAnimatedBackgroundState extends State<HyperOSAnimatedBackground>
   }
 }
 
-// ১. লগইন স্ক্রিন
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool isSignUp = false;
-
-  Future<void> _submit() async {
-    try {
-      if (isSignUp) {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      } else {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      }
-    } catch (e) {
-      debugPrint("Auth Error: $e");
-    }
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const PasscodeLockScreen()),
-      );
-    }
-  }
-
-  void _skipLogin() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const PasscodeLockScreen()),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: HyperOSAnimatedBackground(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.favorite, size: 80, color: Colors.pinkAccent),
-                const SizedBox(height: 10),
-                Text(
-                  isSignUp ? 'Create Account' : 'Welcome to Eternal Space',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: _emailController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    filled: true,
-                    fillColor: Colors.white12,
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    filled: true,
-                    fillColor: Colors.white12,
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
-                  onPressed: _submit,
-                  child: Text(isSignUp ? 'Sign Up' : 'Login', style: const TextStyle(color: Colors.white)),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => isSignUp = !isSignUp),
-                  child: Text(
-                    isSignUp ? 'Already have an account? Login' : "Don't have an account? Sign Up",
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _skipLogin,
-                  child: const Text('Offline Preview (Skip Login)', style: TextStyle(color: Colors.pinkAccent)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ২. পিন স্ক্রিন
 class PasscodeLockScreen extends StatefulWidget {
   const PasscodeLockScreen({super.key});
 
@@ -246,10 +82,11 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
   final TextEditingController _pinController = TextEditingController();
 
   void _verifyPin() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const MainHomeScreen()),
-    );
+    if (_pinController.text == "1234") {
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MainHomeScreen()));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ভুল পিন!')));
+    }
   }
 
   @override
@@ -274,20 +111,11 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 24, letterSpacing: 8, color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'PIN',
-                      filled: true,
-                      fillColor: Colors.white12,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                    ),
+                    decoration: InputDecoration(hintText: 'PIN', filled: true, fillColor: Colors.white12, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15))),
                   ),
                 ),
                 const SizedBox(height: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
-                  onPressed: _verifyPin,
-                  child: const Text('Unlock', style: TextStyle(color: Colors.white)),
-                ),
+                ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent), onPressed: _verifyPin, child: const Text('Unlock')),
               ],
             ),
           ),
@@ -297,7 +125,6 @@ class _PasscodeLockScreenState extends State<PasscodeLockScreen> {
   }
 }
 
-// ৩. মেইন হোম স্ক্রিন
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -308,96 +135,127 @@ class MainHomeScreen extends StatefulWidget {
 class _MainHomeScreenState extends State<MainHomeScreen> {
   int _currentIndex = 0;
   bool _isPanicMode = false;
-  final TextEditingController _messageController = TextEditingController();
-  final List<Map<String, dynamic>> _localMessages = [
-    {"text": "হাই! কেমন আছো?", "isMe": false},
-    {"text": "ভালো, তুমি কেমন আছো?", "isMe": true},
-  ];
+  final TextEditingController _msgCtrl = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
+
+  String _myName = "My Name";
+  String _myImgUrl = "";
+  List<Map<String, dynamic>> _messages = [];
+  List<String> _folders = ["General", "Memories"];
+  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
+
+  @override
+  void initState() {
+    super.initState();
+    _dbRef.child("chats").onValue.listen((event) {
+      final data = event.snapshot.value as Map?;
+      if (data != null) {
+        List<Map<String, dynamic>> list = [];
+        data.forEach((k, v) => list.add({"key": k, ...Map<String, dynamic>.from(v)}));
+        list.sort((a, b) => (a["time"] ?? 0).compareTo(b["time"] ?? 0));
+        setState(() => _messages = list);
+      }
+    });
+  }
+
+  void _editProfile() {
+    TextEditingController nameCtrl = TextEditingController(text: _myName);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B4B),
+        title: const Text('Edit Profile'),
+        content: TextField(controller: nameCtrl, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Name', labelStyle: TextStyle(color: Colors.white70))),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
+            onPressed: () {
+              if (nameCtrl.text.trim().isNotEmpty) {
+                setState(() => _myName = nameCtrl.text.trim());
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Save'),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _sendChat(String? imgUrl, String text) {
+    _dbRef.child("chats").push().set({
+      "text": text,
+      "sender": _myName,
+      "profileImg": _myImgUrl,
+      "imageUrl": imgUrl ?? "",
+      "time": ServerValue.timestamp,
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     if (_isPanicMode) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Notes'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.lock_open),
-              onPressed: () => setState(() => _isPanicMode = false),
-            )
-          ],
-        ),
-        body: const Padding(
-          padding: EdgeInsets.all(16.0),
-          child: TextField(
-            maxLines: null,
-            decoration: InputDecoration(hintText: 'Write private notes here...', border: InputBorder.none),
-          ),
-        ),
+        appBar: AppBar(title: const Text('Calculator'), actions: [IconButton(icon: const Icon(Icons.lock_open), onPressed: () => setState(() => _isPanicMode = false))]),
+        body: const Center(child: Text('0', style: TextStyle(fontSize: 60, color: Colors.white))),
       );
     }
 
     final pages = [
-      _buildChatPage(),
-      _buildGalleryPage(),
       const RealtimeLoveCounterPage(),
-      _buildSettingsPage(),
+      _buildChatView(),
+      _buildGalleryView(),
+      _buildSettingsView(),
     ];
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        elevation: 0,
         title: const Text('Eternal Space', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.security, color: Colors.redAccent),
-            onPressed: () => setState(() => _isPanicMode = true),
-          ),
+          if (_currentIndex == 1) IconButton(icon: const Icon(Icons.edit, color: Colors.pinkAccent), onPressed: _editProfile),
+          IconButton(icon: const Icon(Icons.security, color: Colors.redAccent), onPressed: () => setState(() => _isPanicMode = true)),
         ],
       ),
-      body: HyperOSAnimatedBackground(
-        child: SafeArea(child: pages[_currentIndex]),
-      ),
+      body: HyperOSAnimatedBackground(child: SafeArea(child: pages[_currentIndex])),
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F172A),
         currentIndex: _currentIndex,
         selectedItemColor: Colors.pinkAccent,
         unselectedItemColor: Colors.grey,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (i) => setState(() => _currentIndex = i),
         items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Journey'),
           BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Chat'),
           BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: 'Gallery'),
-          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Journey'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
     );
   }
 
-  Widget _buildChatPage() {
+  Widget _buildChatView() {
     return Column(
       children: [
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: _localMessages.length,
-            itemBuilder: (context, index) {
-              bool isMe = _localMessages[index]["isMe"];
+            itemCount: _messages.length,
+            itemBuilder: (context, i) {
+              var m = _messages[i];
+              bool isMe = m["sender"] == _myName;
               return Align(
                 alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  padding: const EdgeInsets.all(12),
-                  constraints: const BoxConstraints(maxWidth: 250),
-                  decoration: BoxDecoration(
-                    color: isMe ? Colors.pinkAccent : Colors.white12,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Text(
-                    _localMessages[index]["text"],
-                    style: const TextStyle(color: Colors.white),
+                  margin: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: isMe ? Colors.pinkAccent : Colors.white12, borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(m["sender"], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70)),
+                      if (m["imageUrl"] != "") Image.network(m["imageUrl"], height: 120, width: 160, fit: BoxFit.cover),
+                      if (m["text"] != "") Text(m["text"], style: const TextStyle(color: Colors.white)),
+                    ],
                   ),
                 ),
               );
@@ -406,28 +264,27 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         ),
         Container(
           padding: const EdgeInsets.all(8),
-          color: Colors.black26,
           child: Row(
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _messageController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'Type secret message...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.white54),
-                  ),
-                ),
+              IconButton(
+                icon: const Icon(Icons.image, color: Colors.pinkAccent),
+                onPressed: () async {
+                  XFile? img = await _picker.pickImage(source: ImageSource.gallery);
+                  if (img != null) {
+                    Reference ref = FirebaseStorage.instance.ref().child("chats/${DateTime.now().millisecondsSinceEpoch}.jpg");
+                    await ref.putFile(File(img.path));
+                    String url = await ref.getDownloadURL();
+                    _sendChat(url, "");
+                  }
+                },
               ),
+              Expanded(child: TextField(controller: _msgCtrl, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Type message...', border: InputBorder.none))),
               IconButton(
                 icon: const Icon(Icons.send, color: Colors.pinkAccent),
                 onPressed: () {
-                  if (_messageController.text.trim().isNotEmpty) {
-                    setState(() {
-                      _localMessages.add({"text": _messageController.text.trim(), "isMe": true});
-                      _messageController.clear();
-                    });
+                  if (_msgCtrl.text.trim().isNotEmpty) {
+                    _sendChat("", _msgCtrl.text.trim());
+                    _msgCtrl.clear();
                   }
                 },
               ),
@@ -438,29 +295,78 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     );
   }
 
-  Widget _buildGalleryPage() {
-    return const Center(
-      child: Text(
-        'Private Gallery',
-        style: TextStyle(color: Colors.white70, fontSize: 18),
+  Widget _buildGalleryView() {
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10),
+      itemCount: _folders.length,
+      itemBuilder: (context, i) => GestureDetector(
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => FolderPage(folderName: _folders[i]))),
+        child: Container(
+          decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.pinkAccent.withOpacity(0.4))),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.folder, size: 50, color: Colors.pinkAccent), Text(_folders[i], style: const TextStyle(fontWeight: FontWeight.bold))]),
+        ),
       ),
     );
   }
 
-  Widget _buildSettingsPage() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const ListTile(
-          leading: Icon(Icons.security, color: Colors.pinkAccent),
-          title: Text('Security Active', style: TextStyle(color: Colors.white)),
-        ),
-      ],
+  Widget _buildSettingsView() {
+    return const Center(child: Text('Firebase Cloud Sync Active', style: TextStyle(color: Colors.white70)));
+  }
+}
+
+class FolderPage extends StatefulWidget {
+  final String folderName;
+  const FolderPage({super.key, required this.folderName});
+
+  @override
+  State<FolderPage> createState() => _FolderPageState();
+}
+
+class _FolderPageState extends State<FolderPage> {
+  List<String> _urls = [];
+  final ImagePicker _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    FirebaseDatabase.instance.ref().child("galleries/${widget.folderName}").onValue.listen((event) {
+      final data = event.snapshot.value as Map?;
+      if (data != null) {
+        List<String> list = [];
+        data.forEach((k, v) => list.add(v["url"]));
+        setState(() => _urls = list);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.folderName)),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.pinkAccent,
+        onPressed: () async {
+          XFile? img = await _picker.pickImage(source: ImageSource.gallery);
+          if (img != null) {
+            Reference ref = FirebaseStorage.instance.ref().child("galleries/${widget.folderName}/${DateTime.now().millisecondsSinceEpoch}.jpg");
+            await ref.putFile(File(img.path));
+            String url = await ref.getDownloadURL();
+            FirebaseDatabase.instance.ref().child("galleries/${widget.folderName}").push().set({"url": url});
+          }
+        },
+        child: const Icon(Icons.add),
+      ),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(10),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
+        itemCount: _urls.length,
+        itemBuilder: (context, i) => Image.network(_urls[i], fit: BoxFit.cover),
+      ),
     );
   }
 }
 
-// ৪. রিয়েল-টাইম লাভ কাউন্টার
 class RealtimeLoveCounterPage extends StatefulWidget {
   const RealtimeLoveCounterPage({super.key});
 
@@ -476,18 +382,9 @@ class _RealtimeLoveCounterPageState extends State<RealtimeLoveCounterPage> {
   @override
   void initState() {
     super.initState();
-    _updateDuration();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _updateDuration();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (mounted) setState(() => _duration = DateTime.now().difference(_startDate));
     });
-  }
-
-  void _updateDuration() {
-    if (mounted) {
-      setState(() {
-        _duration = DateTime.now().difference(_startDate);
-      });
-    }
   }
 
   @override
@@ -500,24 +397,24 @@ class _RealtimeLoveCounterPageState extends State<RealtimeLoveCounterPage> {
   Widget build(BuildContext context) {
     int days = _duration.inDays;
     int hours = _duration.inHours % 24;
-    int minutes = _duration.inMinutes % 60;
-    int seconds = _duration.inSeconds % 60;
+    int mins = _duration.inMinutes % 60;
+    int secs = _duration.inSeconds % 60;
 
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.favorite, size: 90, color: Colors.redAccent),
+          const Icon(Icons.favorite, size: 90, color: Colors.pinkAccent),
           const SizedBox(height: 20),
-          const Text('Our Endless Journey', style: TextStyle(fontSize: 22, color: Colors.white70, fontWeight: FontWeight.bold)),
+          const Text('Our Endless Journey', style: TextStyle(fontSize: 22, color: Colors.white, fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildTimeBox(days.toString(), 'Days'),
-              _buildTimeBox(hours.toString().padLeft(2, '0'), 'Hours'),
-              _buildTimeBox(minutes.toString().padLeft(2, '0'), 'Mins'),
-              _buildTimeBox(seconds.toString().padLeft(2, '0'), 'Secs'),
+              _box(days.toString(), 'Days'),
+              _box(hours.toString().padLeft(2, '0'), 'Hours'),
+              _box(mins.toString().padLeft(2, '0'), 'Mins'),
+              _box(secs.toString().padLeft(2, '0'), 'Secs'),
             ],
           ),
         ],
@@ -525,21 +422,12 @@ class _RealtimeLoveCounterPageState extends State<RealtimeLoveCounterPage> {
     );
   }
 
-  Widget _buildTimeBox(String value, String label) {
+  Widget _box(String val, String lbl) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white12,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.pinkAccent.withOpacity(0.5)),
-      ),
-      child: Column(
-        children: [
-          Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.pinkAccent)),
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.white70)),
-        ],
-      ),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.pinkAccent.withOpacity(0.5))),
+      child: Column(children: [Text(val, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.pinkAccent)), Text(lbl, style: const TextStyle(fontSize: 11))]),
     );
   }
 }
