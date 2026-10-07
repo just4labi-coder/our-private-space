@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "257215969796",
+    "project_id": "our-privet-space",
+    "storage_bucket": "our-privet-space.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:257215969796:android:6a57c31826fb40501e1351",
+        "android_client_info": {
+          "package_name": "com.privatespace.ourspace"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA4TdriDJFH1KkWWhPNnD9n742bdzAB8KE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
