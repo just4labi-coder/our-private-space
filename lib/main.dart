@@ -381,22 +381,16 @@ class _HomePageState extends State<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _header(),
-
           const SizedBox(height: 24),
-
           _loveCounter(
             days,
             hours,
             minutes,
             seconds,
           ),
-
           const SizedBox(height: 22),
-
           _privateCard(),
-
           const SizedBox(height: 22),
-
           const Text(
             'Our Space',
             style: TextStyle(
@@ -404,9 +398,7 @@ class _HomePageState extends State<HomePage> {
               fontWeight: FontWeight.w700,
             ),
           ),
-
           const SizedBox(height: 14),
-
           Row(
             children: [
               Expanded(
@@ -430,9 +422,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           _featureCard(
             icon: Icons.favorite_rounded,
             title: 'Our Journey',
@@ -471,8 +461,7 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 3),
               Text(
-                'A private world for $ 
-               {widget.partnerName} & you',
+                'A private world for ${widget.partnerName} & you',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.52),
                   fontSize: 11,
@@ -553,9 +542,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
-
           Text(
             'Together since 7 August 2025',
             style: TextStyle(
@@ -563,12 +550,15 @@ class _HomePageState extends State<HomePage> {
               fontSize: 12,
             ),
           ),
-
           const SizedBox(height: 20),
-
           Row(
             children: [
-              Expanded(child: _counter(days.toString(), 'DAYS')),
+              Expanded(
+                child: _counter(
+                  days.toString(),
+                  'DAYS',
+                ),
+              ),
               _divider(),
               Expanded(
                 child: _counter(
@@ -760,6 +750,7 @@ class _HomePageState extends State<HomePage> {
 class ChatPage extends StatefulWidget {
   final String myName;
   final String partnerName;
+
   final Future<void> Function(
     String myName,
     String partnerName,
@@ -819,7 +810,6 @@ class _ChatPageState extends State<ChatPage> {
     return Column(
       children: [
         _header(),
-
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(
@@ -834,7 +824,6 @@ class _ChatPageState extends State<ChatPage> {
             },
           ),
         ),
-
         _input(),
       ],
     );
@@ -853,9 +842,7 @@ class _ChatPageState extends State<ChatPage> {
               color: pink,
             ),
           ),
-
           const SizedBox(width: 12),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -878,7 +865,6 @@ class _ChatPageState extends State<ChatPage> {
               ],
             ),
           ),
-
           IconButton(
             onPressed: _openProfile,
             icon: const Icon(
@@ -985,7 +971,6 @@ class _ChatPageState extends State<ChatPage> {
               color: violet,
             ),
           ),
-
           Expanded(
             child: TextField(
               controller: _messageController,
@@ -1006,9 +991,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
-
           const SizedBox(width: 7),
-
           Container(
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
@@ -1056,9 +1039,7 @@ class _ChatPageState extends State<ChatPage> {
             left: 22,
             right: 22,
             top: 24,
-            bottom: MediaQuery.of(sheetContext)
-                    .viewInsets
-                    .bottom +
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom +
                 24,
           ),
           child: SingleChildScrollView(
@@ -1072,9 +1053,7 @@ class _ChatPageState extends State<ChatPage> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-
                 const SizedBox(height: 8),
-
                 const Text(
                   'Set the names shown in your private space.',
                   style: TextStyle(
@@ -1082,9 +1061,7 @@ class _ChatPageState extends State<ChatPage> {
                     fontSize: 12,
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
                 TextField(
                   controller: myController,
                   textCapitalization: TextCapitalization.words,
@@ -1102,9 +1079,7 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 14),
-
                 TextField(
                   controller: partnerController,
                   textCapitalization: TextCapitalization.words,
@@ -1122,9 +1097,7 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -1293,7 +1266,6 @@ class _GalleryPageState extends State<GalleryPage> {
                   ],
                 ),
               ),
-
               Container(
                 decoration: BoxDecoration(
                   color: pink.withOpacity(0.12),
@@ -1309,9 +1281,7 @@ class _GalleryPageState extends State<GalleryPage> {
               ),
             ],
           ),
-
           const SizedBox(height: 22),
-
           GestureDetector(
             onTap: () {
               _showInfo(
@@ -1366,9 +1336,7 @@ class _GalleryPageState extends State<GalleryPage> {
               ),
             ),
           ),
-
           const SizedBox(height: 25),
-
           const Text(
             'Folders',
             style: TextStyle(
@@ -1376,9 +1344,7 @@ class _GalleryPageState extends State<GalleryPage> {
               fontWeight: FontWeight.w700,
             ),
           ),
-
           const SizedBox(height: 13),
-
           ...widget.folders.map(
             (folder) => _folderTile(folder),
           ),
@@ -1414,9 +1380,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 color: violet,
               ),
             ),
-
             const SizedBox(width: 13),
-
             Expanded(
               child: Text(
                 name,
@@ -1425,7 +1389,6 @@ class _GalleryPageState extends State<GalleryPage> {
                 ),
               ),
             ),
-
             const Icon(
               Icons.chevron_right_rounded,
               color: Colors.white38,
@@ -1551,9 +1514,7 @@ class SettingsPage extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-
           const SizedBox(height: 5),
-
           const Text(
             'Make your private space yours.',
             style: TextStyle(
@@ -1561,13 +1522,9 @@ class SettingsPage extends StatelessWidget {
               fontSize: 12,
             ),
           ),
-
           const SizedBox(height: 25),
-
           _profilePreview(context),
-
           const SizedBox(height: 18),
-
           _section(
             title: 'Our Space',
             children: [
@@ -1595,9 +1552,7 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 18),
-
           _section(
             title: 'Security',
             children: [
@@ -1629,9 +1584,7 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 18),
-
           _section(
             title: 'About',
             children: [
@@ -1683,9 +1636,7 @@ class SettingsPage extends StatelessWidget {
                 size: 30,
               ),
             ),
-
             const SizedBox(width: 14),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1708,7 +1659,6 @@ class SettingsPage extends StatelessWidget {
                 ],
               ),
             ),
-
             const Icon(
               Icons.edit_rounded,
               color: Colors.white54,
@@ -1744,9 +1694,7 @@ class SettingsPage extends StatelessWidget {
             left: 22,
             right: 22,
             top: 24,
-            bottom: MediaQuery.of(sheetContext)
-                    .viewInsets
-                    .bottom +
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom +
                 24,
           ),
           child: Column(
@@ -1759,9 +1707,7 @@ class SettingsPage extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-
               const SizedBox(height: 20),
-
               TextField(
                 controller: myController,
                 decoration: const InputDecoration(
@@ -1772,9 +1718,7 @@ class SettingsPage extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(height: 12),
-
               TextField(
                 controller: partnerController,
                 decoration: const InputDecoration(
@@ -1785,9 +1729,7 @@ class SettingsPage extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -1951,7 +1893,6 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
             const ColoredBox(
               color: darkBg,
             ),
-
             Positioned(
               left: -150 + value * 120,
               top: -120,
@@ -1960,7 +1901,6 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                 deepBlue,
               ),
             ),
-
             Positioned(
               right: -150 + value * 140,
               top: 130,
@@ -1969,7 +1909,6 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                 violet,
               ),
             ),
-
             Positioned(
               left: -120,
               bottom: -150 + value * 100,
@@ -1978,7 +1917,6 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                 pink,
               ),
             ),
-
             Positioned(
               right: -100,
               bottom: -120,
