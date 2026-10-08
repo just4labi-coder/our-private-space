@@ -1,4 +1,3 @@
-
 plugins {
     id "com.android.application"
     id "kotlin-android"
@@ -7,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.our_private_space"
+    namespace = "com.privatespace.ourspace"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,10 +20,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.our_private_space"
+        applicationId = "com.privatespace.ourspace"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-
         versionCode 1
         versionName "1.0"
     }
