@@ -637,7 +637,6 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
                 const SizedBox(height: 18),
-
                 ListTile(
                   leading: const Icon(
                     Icons.info_outline,
@@ -649,7 +648,6 @@ class _ChatPageState extends State<ChatPage> {
                     _showMessageDetails(message);
                   },
                 ),
-
                 if (!message.deleted)
                   ListTile(
                     leading: const Icon(
@@ -784,7 +782,6 @@ class _ChatPageState extends State<ChatPage> {
             ],
           ),
         ),
-
         Expanded(
           child: widget.messages.isEmpty
               ? const Center(
@@ -807,7 +804,6 @@ class _ChatPageState extends State<ChatPage> {
                   },
                 ),
         ),
-
         _ChatInput(
           controller: _controller,
           onSend: _sendMessage,
@@ -2025,8 +2021,8 @@ class _LoveNotesPageState extends State<LoveNotesPage> {
                   const SizedBox(height: 10),
                   Text(
                     note.text,
-                    style: const TextStyle(
-                      color: Colors.white75,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.75),
                       height: 1.5,
                     ),
                   ),
@@ -2641,9 +2637,9 @@ class SimpleFeaturePage extends StatelessWidget {
             Text(title),
             Text(
               subtitle,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10,
-                color: Colors.white45,
+                color: Colors.white.withOpacity(0.45),
               ),
             ),
           ],
@@ -2835,8 +2831,8 @@ class FeatureCard extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white45,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.45),
                     fontSize: 10,
                   ),
                 ),
@@ -2922,8 +2918,8 @@ class SettingsTile extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                      color: Colors.white45,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.45),
                       fontSize: 11,
                     ),
                   ),
@@ -2970,8 +2966,8 @@ class DetailRow extends StatelessWidget {
             width: 60,
             child: Text(
               title,
-              style: const TextStyle(
-                color: Colors.white45,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.45),
                 fontSize: 12,
               ),
             ),
