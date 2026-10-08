@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -19,34 +18,33 @@ class EternalSpaceApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF070513),
+        scaffoldBackgroundColor: darkBg,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF2E93),
+          seedColor: pink,
           brightness: Brightness.dark,
         ).copyWith(
-          primary: const Color(0xFFFF2E93),
-          secondary: const Color(0xFF8B5CF6),
+          primary: pink,
+          secondary: violet,
           surface: const Color(0xFF100A20),
         ),
-        fontFamily: 'sans',
       ),
       home: const SplashScreen(),
     );
   }
 }
 
-// ============================================================
+// =========================
 // COLORS
-// ============================================================
+// =========================
 
 const Color pink = Color(0xFFFF2E93);
 const Color violet = Color(0xFF8B5CF6);
 const Color deepBlue = Color(0xFF172554);
 const Color darkBg = Color(0xFF070513);
 
-// ============================================================
+// =========================
 // SPLASH SCREEN
-// ============================================================
+// =========================
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -57,9 +55,9 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _fadeAnimation;
+  late final AnimationController _controller;
+  late final Animation<double> _scaleAnimation;
+  late final Animation<double> _fadeAnimation;
 
   @override
   void initState() {
@@ -82,7 +80,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Timer(const Duration(milliseconds: 2400), () {
+    Future.delayed(const Duration(milliseconds: 2400), () {
       if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
@@ -105,7 +103,6 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         children: [
           const AnimatedBackground(),
-
           Center(
             child: FadeTransition(
               opacity: _fadeAnimation,
@@ -153,9 +150,9 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-// ============================================================
+// =========================
 // MAIN SCREEN
-// ============================================================
+// =========================
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -181,7 +178,6 @@ class _MainScreenState extends State<MainScreen> {
       body: Stack(
         children: [
           const AnimatedBackground(),
-
           SafeArea(
             bottom: false,
             child: IndexedStack(
@@ -247,9 +243,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// ============================================================
+// =========================
 // HOME PAGE
-// ============================================================
+// =========================
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -261,7 +257,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   Timer? _timer;
 
-  DateTime _startDate = DateTime(2025, 8, 7);
+  final DateTime _startDate = DateTime(2025, 8, 7);
 
   Duration _duration = Duration.zero;
 
@@ -281,13 +277,14 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
 
     final now = DateTime.now();
+    var difference = now.difference(_startDate);
+
+    if (difference.isNegative) {
+      difference = Duration.zero;
+    }
 
     setState(() {
-      _duration = now.difference(_startDate);
-
-      if (_duration.isNegative) {
-        _duration = Duration.zero;
-      }
+      _duration = difference;
     });
   }
 
@@ -403,20 +400,12 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              const Text(
                 'Eternal Space',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
-                  foreground: Paint()
-                    ..shader = const LinearGradient(
-                      colors: [
-                        Color(0xFFFF6BAE),
-                        Color(0xFFB794F4),
-                      ],
-                    ).createShader(
-                      const Rect.fromLTWH(0, 0, 200, 40),
-                    ),
+                  color: Color(0xFFFF6BAE),
                 ),
               ),
               const SizedBox(height: 3),
@@ -486,7 +475,7 @@ class _HomePageState extends State<HomePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              const Icon(
                 Icons.favorite_rounded,
                 color: pink,
                 size: 18,
@@ -502,7 +491,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(
+              const Icon(
                 Icons.favorite_rounded,
                 color: pink,
                 size: 18,
@@ -630,7 +619,9 @@ class _HomePageState extends State<HomePage> {
               size: 23,
             ),
           ),
+
           const SizedBox(width: 14),
+
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -693,7 +684,9 @@ class _HomePageState extends State<HomePage> {
                 size: 22,
               ),
             ),
+
             const SizedBox(width: 12),
+
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -716,6 +709,7 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+
             const Icon(
               Icons.arrow_forward_ios_rounded,
               size: 13,
@@ -728,9 +722,9 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// ============================================================
+// =========================
 // CHAT PAGE
-// ============================================================
+// =========================
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -789,9 +783,7 @@ class _ChatPageState extends State<ChatPage> {
             physics: const BouncingScrollPhysics(),
             itemCount: _messages.length,
             itemBuilder: (context, index) {
-              final message = _messages[index];
-
-              return _messageBubble(message);
+              return _messageBubble(_messages[index]);
             },
           ),
         ),
@@ -814,7 +806,9 @@ class _ChatPageState extends State<ChatPage> {
               color: pink,
             ),
           ),
+
           const SizedBox(width: 12),
+
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -837,6 +831,7 @@ class _ChatPageState extends State<ChatPage> {
               ],
             ),
           ),
+
           IconButton(
             onPressed: () {
               _showProfileDialog(context);
@@ -917,6 +912,7 @@ class _ChatPageState extends State<ChatPage> {
               color: violet,
             ),
           ),
+
           Expanded(
             child: TextField(
               controller: _messageController,
@@ -941,7 +937,9 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
+
           const SizedBox(width: 7),
+
           Container(
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
@@ -989,7 +987,9 @@ class _ChatPageState extends State<ChatPage> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+
                 const SizedBox(height: 22),
+
                 const CircleAvatar(
                   radius: 42,
                   backgroundColor: Color(0x332E1A4F),
@@ -999,22 +999,25 @@ class _ChatPageState extends State<ChatPage> {
                     color: violet,
                   ),
                 ),
+
                 const SizedBox(height: 15),
+
                 const Text(
                   'Profile picture & name',
                   style: TextStyle(
                     color: Colors.white70,
                   ),
                 ),
+
                 const SizedBox(height: 20),
+
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () {
                       Navigator.pop(context);
 
-                      ScaffoldMessenger.of(this.context)
-                          .showSnackBar(
+                      ScaffoldMessenger.of(this.context).showSnackBar(
                         const SnackBar(
                           content: Text(
                             'Gallery picker will be connected in the next step.',
@@ -1022,8 +1025,12 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.photo_library_rounded),
-                    label: const Text('Choose Profile Picture'),
+                    icon: const Icon(
+                      Icons.photo_library_rounded,
+                    ),
+                    label: const Text(
+                      'Choose Profile Picture',
+                    ),
                   ),
                 ),
               ],
@@ -1035,9 +1042,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-// ============================================================
+// =========================
 // GALLERY PAGE
-// ============================================================
+// =========================
 
 class GalleryPage extends StatefulWidget {
   const GalleryPage({super.key});
@@ -1128,6 +1135,7 @@ class _GalleryPageState extends State<GalleryPage> {
                   ],
                 ),
               ),
+
               Container(
                 decoration: BoxDecoration(
                   color: pink.withOpacity(0.12),
@@ -1212,7 +1220,9 @@ class _GalleryPageState extends State<GalleryPage> {
                 size: 31,
               ),
             ),
+
             const SizedBox(height: 14),
+
             const Text(
               'Add Photos & Videos',
               style: TextStyle(
@@ -1220,7 +1230,9 @@ class _GalleryPageState extends State<GalleryPage> {
                 fontSize: 16,
               ),
             ),
+
             const SizedBox(height: 5),
+
             const Text(
               'Shared with your partner when Firebase sync is enabled',
               textAlign: TextAlign.center,
@@ -1252,7 +1264,7 @@ class _GalleryPageState extends State<GalleryPage> {
             width: 47,
             height: 47,
             decoration: BoxDecoration(
-              color: const Color(0xFF8B5CF6).withOpacity(0.13),
+              color: violet.withOpacity(0.13),
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Icon(
@@ -1260,7 +1272,9 @@ class _GalleryPageState extends State<GalleryPage> {
               color: violet,
             ),
           ),
+
           const SizedBox(width: 13),
+
           Expanded(
             child: Text(
               name,
@@ -1269,6 +1283,7 @@ class _GalleryPageState extends State<GalleryPage> {
               ),
             ),
           ),
+
           const Icon(
             Icons.chevron_right_rounded,
             color: Colors.white38,
@@ -1279,9 +1294,9 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 }
 
-// ============================================================
+// =========================
 // SETTINGS PAGE
-// ============================================================
+// =========================
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -1300,7 +1315,9 @@ class SettingsPage extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
+
           const SizedBox(height: 5),
+
           const Text(
             'Make your private space yours.',
             style: TextStyle(
@@ -1395,7 +1412,9 @@ class SettingsPage extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+
         const SizedBox(height: 10),
+
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(23),
@@ -1470,9 +1489,14 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-// ============================================================
+// =========================
 // ANIMATED BACKGROUND
-// ============================================================
+// =========================
+//
+// এখানে BackdropFilter/blur ব্যবহার করা হয়নি।
+// তার বদলে RadialGradient glow ব্যবহার করা হয়েছে,
+// যাতে rendering আরও simple ও safe থাকে.
+//
 
 class AnimatedBackground extends StatefulWidget {
   const AnimatedBackground({super.key});
@@ -1484,7 +1508,7 @@ class AnimatedBackground extends StatefulWidget {
 
 class _AnimatedBackgroundState extends State<AnimatedBackground>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  late final AnimationController _controller;
 
   @override
   void initState() {
@@ -1512,53 +1536,43 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
         return Stack(
           fit: StackFit.expand,
           children: [
-            Container(
+            const ColoredBox(
               color: darkBg,
             ),
 
             Positioned(
-              left: -120 + (value * 100),
-              top: -100,
+              left: -150 + (value * 120),
+              top: -120,
+              child: _glowOrb(
+                size: 360,
+                color: deepBlue,
+              ),
+            ),
+
+            Positioned(
+              right: -150 + (value * 140),
+              top: 130,
+              child: _glowOrb(
+                size: 350,
+                color: violet,
+              ),
+            ),
+
+            Positioned(
+              left: -120,
+              bottom: -150 + (value * 100),
               child: _glowOrb(
                 size: 330,
-                color: deepBlue.withOpacity(0.55),
+                color: pink,
               ),
             ),
 
             Positioned(
-              right: -130 + (value * 120),
-              top: 160,
+              right: -100,
+              bottom: -120,
               child: _glowOrb(
-                size: 320,
-                color: violet.withOpacity(0.30),
-              ),
-            ),
-
-            Positioned(
-              left: -100,
-              bottom: -120 + (value * 90),
-              child: _glowOrb(
-                size: 300,
-                color: pink.withOpacity(0.18),
-              ),
-            ),
-
-            Positioned(
-              right: -80,
-              bottom: -90,
-              child: _glowOrb(
-                size: 240,
-                color: const Color(0xFF2563EB).withOpacity(0.22),
-              ),
-            ),
-
-            BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: 65,
-                sigmaY: 65,
-              ),
-              child: Container(
-                color: Colors.transparent,
+                size: 280,
+                color: const Color(0xFF2563EB),
               ),
             ),
           ],
@@ -1576,15 +1590,26 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: color,
+        gradient: RadialGradient(
+          colors: [
+            color.withOpacity(0.38),
+            color.withOpacity(0.18),
+            color.withOpacity(0.0),
+          ],
+          stops: const [
+            0.0,
+            0.45,
+            1.0,
+          ],
+        ),
       ),
     );
   }
 }
 
-// ============================================================
+// =========================
 // APP LOGO
-// ============================================================
+// =========================
 
 class AppLogo extends StatelessWidget {
   final double size;
@@ -1631,9 +1656,9 @@ class AppLogo extends StatelessWidget {
   }
 }
 
-// ============================================================
+// =========================
 // CHAT MODEL
-// ============================================================
+// =========================
 
 class ChatMessage {
   final String text;
