@@ -471,7 +471,8 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 3),
               Text(
-                'A private world for $partnerName & you',
+                'A private world for $ 
+               {widget.partnerName} & you',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.52),
                   fontSize: 11,
