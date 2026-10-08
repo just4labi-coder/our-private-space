@@ -23,8 +23,8 @@ android {
         applicationId "com.example.our_private_space"
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion flutter.targetSdkVersion
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
+        versionCode flutter.versionCode.toInteger()
+        versionName flutter.versionName
     }
 
     buildTypes {
