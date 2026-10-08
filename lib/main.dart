@@ -1,11 +1,25 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const EternalSpaceApp());
 }
+
+// ============================================================
+// COLORS
+// ============================================================
+
+const Color pink = Color(0xFFFF2E93);
+const Color violet = Color(0xFF8B5CF6);
+const Color deepBlue = Color(0xFF172554);
+const Color darkBg = Color(0xFF070513);
+
+// ============================================================
+// APP
+// ============================================================
 
 class EternalSpaceApp extends StatelessWidget {
   const EternalSpaceApp({super.key});
@@ -33,18 +47,9 @@ class EternalSpaceApp extends StatelessWidget {
   }
 }
 
-// =========================
-// COLORS
-// =========================
-
-const Color pink = Color(0xFFFF2E93);
-const Color violet = Color(0xFF8B5CF6);
-const Color deepBlue = Color(0xFF172554);
-const Color darkBg = Color(0xFF070513);
-
-// =========================
-// SPLASH SCREEN
-// =========================
+// ============================================================
+// SPLASH
+// ============================================================
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -118,7 +123,6 @@ class _SplashScreenState extends State<SplashScreen>
                       style: TextStyle(
                         fontSize: 30,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -150,9 +154,9 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-// =========================
+// ============================================================
 // MAIN SCREEN
-// =========================
+// ============================================================
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -164,15 +168,82 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = const [
-    HomePage(),
-    ChatPage(),
-    GalleryPage(),
-    SettingsPage(),
+  String myName = 'Me';
+  String partnerName = 'My Love';
+
+  final List<String> folders = [
+    'Our Memories',
+    'Special Days',
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (!mounted) return;
+
+    setState(() {
+      myName = prefs.getString('my_name') ?? 'Me';
+      partnerName = prefs.getString('partner_name') ?? 'My Love';
+    });
+  }
+
+  Future<void> _saveProfile(
+    String newMyName,
+    String newPartnerName,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString('my_name', newMyName);
+    await prefs.setString('partner_name', newPartnerName);
+
+    if (!mounted) return;
+
+    setState(() {
+      myName = newMyName;
+      partnerName = newPartnerName;
+    });
+  }
+
+  void _openTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final pages = [
+      HomePage(
+        onOpenChat: () => _openTab(1),
+        onOpenGallery: () => _openTab(2),
+        partnerName: partnerName,
+      ),
+      ChatPage(
+        myName: myName,
+        partnerName: partnerName,
+        onProfileChanged: _saveProfile,
+      ),
+      GalleryPage(
+        folders: folders,
+        onFolderCreated: (name) {
+          setState(() {
+            folders.add(name);
+          });
+        },
+      ),
+      SettingsPage(
+        myName: myName,
+        partnerName: partnerName,
+        onProfileChanged: _saveProfile,
+      ),
+    ];
+
     return Scaffold(
       extendBody: true,
       body: Stack(
@@ -182,7 +253,7 @@ class _MainScreenState extends State<MainScreen> {
             bottom: false,
             child: IndexedStack(
               index: _selectedIndex,
-              children: _pages,
+              children: pages,
             ),
           ),
         ],
@@ -200,7 +271,6 @@ class _MainScreenState extends State<MainScreen> {
               BoxShadow(
                 color: pink.withOpacity(0.10),
                 blurRadius: 25,
-                spreadRadius: 1,
               ),
             ],
           ),
@@ -208,11 +278,7 @@ class _MainScreenState extends State<MainScreen> {
             backgroundColor: Colors.transparent,
             elevation: 0,
             selectedIndex: _selectedIndex,
-            onDestinationSelected: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
+            onDestinationSelected: _openTab,
             indicatorColor: pink.withOpacity(0.18),
             destinations: const [
               NavigationDestination(
@@ -243,12 +309,21 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// =========================
-// HOME PAGE
-// =========================
+// ============================================================
+// HOME
+// ============================================================
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final VoidCallback onOpenChat;
+  final VoidCallback onOpenGallery;
+  final String partnerName;
+
+  const HomePage({
+    super.key,
+    required this.onOpenChat,
+    required this.onOpenGallery,
+    required this.partnerName,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -258,7 +333,6 @@ class _HomePageState extends State<HomePage> {
   Timer? _timer;
 
   final DateTime _startDate = DateTime(2025, 8, 7);
-
   Duration _duration = Duration.zero;
 
   @override
@@ -276,8 +350,7 @@ class _HomePageState extends State<HomePage> {
   void _updateCounter() {
     if (!mounted) return;
 
-    final now = DateTime.now();
-    var difference = now.difference(_startDate);
+    var difference = DateTime.now().difference(_startDate);
 
     if (difference.isNegative) {
       difference = Duration.zero;
@@ -307,20 +380,20 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(),
+          _header(),
 
           const SizedBox(height: 24),
 
-          _buildLoveCounter(
-            days: days,
-            hours: hours,
-            minutes: minutes,
-            seconds: seconds,
+          _loveCounter(
+            days,
+            hours,
+            minutes,
+            seconds,
           ),
 
           const SizedBox(height: 22),
 
-          _buildSpaceCard(),
+          _privateCard(),
 
           const SizedBox(height: 22),
 
@@ -337,38 +410,22 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               Expanded(
-                child: _buildFeatureCard(
+                child: _featureCard(
                   icon: Icons.chat_bubble_rounded,
                   title: 'Private Chat',
                   subtitle: 'Just between us',
                   color: pink,
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Chat is ready for the next development step.',
-                        ),
-                      ),
-                    );
-                  },
+                  onTap: widget.onOpenChat,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildFeatureCard(
+                child: _featureCard(
                   icon: Icons.photo_library_rounded,
                   title: 'Memories',
                   subtitle: 'Our shared gallery',
                   color: violet,
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Gallery is ready for the next development step.',
-                        ),
-                      ),
-                    );
-                  },
+                  onTap: widget.onOpenGallery,
                 ),
               ),
             ],
@@ -376,26 +433,30 @@ class _HomePageState extends State<HomePage> {
 
           const SizedBox(height: 12),
 
-          _buildFeatureCard(
+          _featureCard(
             icon: Icons.favorite_rounded,
             title: 'Our Journey',
             subtitle: 'Together since 7 August 2025',
             color: const Color(0xFFFF4F81),
+            onTap: () {
+              _showInfo(
+                context,
+                'Our Journey',
+                'Together since 7 August 2025 ❤️',
+              );
+            },
             fullWidth: true,
-            onTap: () {},
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _header() {
     return Row(
       children: [
         const AppLogo(size: 52),
-
         const SizedBox(width: 14),
-
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -410,26 +471,28 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 3),
               Text(
-                'Welcome to our private world',
+                'A private world for $partnerName & you',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.52),
-                  fontSize: 12,
+                  fontSize: 11,
                 ),
               ),
             ],
           ),
         ),
-
         Container(
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.06),
             shape: BoxShape.circle,
-            border: Border.all(
-              color: Colors.white.withOpacity(0.08),
-            ),
           ),
           child: IconButton(
-            onPressed: () {},
+            onPressed: () {
+              _showInfo(
+                context,
+                'Eternal Space',
+                'Your private little universe.',
+              );
+            },
             icon: const Icon(
               Icons.notifications_none_rounded,
               color: Colors.white70,
@@ -440,20 +503,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildLoveCounter({
-    required int days,
-    required int hours,
-    required int minutes,
-    required int seconds,
-  }) {
+  Widget _loveCounter(
+    int days,
+    int hours,
+    int minutes,
+    int seconds,
+  ) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
           colors: [
             const Color(0xFF281044).withOpacity(0.95),
             const Color(0xFF111A3D).withOpacity(0.95),
@@ -462,26 +523,19 @@ class _HomePageState extends State<HomePage> {
         border: Border.all(
           color: pink.withOpacity(0.22),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: pink.withOpacity(0.10),
-            blurRadius: 30,
-            spreadRadius: 2,
-          ),
-        ],
       ),
       child: Column(
         children: [
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
+              Icon(
                 Icons.favorite_rounded,
                 color: pink,
                 size: 18,
               ),
-              const SizedBox(width: 8),
-              const Text(
+              SizedBox(width: 8),
+              Text(
                 'OUR JOURNEY',
                 style: TextStyle(
                   fontSize: 12,
@@ -490,8 +544,8 @@ class _HomePageState extends State<HomePage> {
                   color: Colors.white70,
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(
+              SizedBox(width: 8),
+              Icon(
                 Icons.favorite_rounded,
                 color: pink,
                 size: 18,
@@ -513,31 +567,26 @@ class _HomePageState extends State<HomePage> {
 
           Row(
             children: [
+              Expanded(child: _counter(days.toString(), 'DAYS')),
+              _divider(),
               Expanded(
-                child: _counterItem(
-                  value: days.toString(),
-                  label: 'DAYS',
+                child: _counter(
+                  hours.toString().padLeft(2, '0'),
+                  'HOURS',
                 ),
               ),
-              _verticalDivider(),
+              _divider(),
               Expanded(
-                child: _counterItem(
-                  value: hours.toString().padLeft(2, '0'),
-                  label: 'HOURS',
+                child: _counter(
+                  minutes.toString().padLeft(2, '0'),
+                  'MIN',
                 ),
               ),
-              _verticalDivider(),
+              _divider(),
               Expanded(
-                child: _counterItem(
-                  value: minutes.toString().padLeft(2, '0'),
-                  label: 'MIN',
-                ),
-              ),
-              _verticalDivider(),
-              Expanded(
-                child: _counterItem(
-                  value: seconds.toString().padLeft(2, '0'),
-                  label: 'SEC',
+                child: _counter(
+                  seconds.toString().padLeft(2, '0'),
+                  'SEC',
                 ),
               ),
             ],
@@ -547,10 +596,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _counterItem({
-    required String value,
-    required String label,
-  }) {
+  Widget _counter(String value, String label) {
     return Column(
       children: [
         Text(
@@ -574,7 +620,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _verticalDivider() {
+  Widget _divider() {
     return Container(
       width: 1,
       height: 35,
@@ -582,7 +628,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSpaceCard() {
+  Widget _privateCard() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -598,30 +644,18 @@ class _HomePageState extends State<HomePage> {
           Container(
             width: 50,
             height: 50,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [
-                  pink,
-                  violet,
-                ],
+              gradient: LinearGradient(
+                colors: [pink, violet],
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: pink.withOpacity(0.25),
-                  blurRadius: 15,
-                ),
-              ],
             ),
             child: const Icon(
               Icons.lock_rounded,
               color: Colors.white,
-              size: 23,
             ),
           ),
-
           const SizedBox(width: 14),
-
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -649,7 +683,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildFeatureCard({
+  Widget _featureCard({
     required IconData icon,
     required String title,
     required String subtitle,
@@ -681,12 +715,9 @@ class _HomePageState extends State<HomePage> {
               child: Icon(
                 icon,
                 color: color,
-                size: 22,
               ),
             ),
-
             const SizedBox(width: 12),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -709,7 +740,6 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-
             const Icon(
               Icons.arrow_forward_ios_rounded,
               size: 13,
@@ -722,12 +752,24 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// =========================
-// CHAT PAGE
-// =========================
+// ============================================================
+// CHAT
+// ============================================================
 
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key});
+  final String myName;
+  final String partnerName;
+  final Future<void> Function(
+    String myName,
+    String partnerName,
+  ) onProfileChanged;
+
+  const ChatPage({
+    super.key,
+    required this.myName,
+    required this.partnerName,
+    required this.onProfileChanged,
+  });
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -775,25 +817,29 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _buildChatHeader(),
+        _header(),
 
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 15),
-            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(
+              18,
+              12,
+              18,
+              15,
+            ),
             itemCount: _messages.length,
             itemBuilder: (context, index) {
-              return _messageBubble(_messages[index]);
+              return _bubble(_messages[index]);
             },
           ),
         ),
 
-        _buildMessageInput(),
+        _input(),
       ],
     );
   }
 
-  Widget _buildChatHeader() {
+  Widget _header() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
       child: Row(
@@ -809,20 +855,20 @@ class _ChatPageState extends State<ChatPage> {
 
           const SizedBox(width: 12),
 
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Private Chat',
-                  style: TextStyle(
+                  widget.partnerName,
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                SizedBox(height: 3),
-                Text(
-                  'Only us • Private space',
+                const SizedBox(height: 3),
+                const Text(
+                  'Private Chat • Only us',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 11,
@@ -833,9 +879,7 @@ class _ChatPageState extends State<ChatPage> {
           ),
 
           IconButton(
-            onPressed: () {
-              _showProfileDialog(context);
-            },
+            onPressed: _openProfile,
             icon: const Icon(
               Icons.edit_rounded,
               color: Colors.white70,
@@ -846,65 +890,93 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _messageBubble(ChatMessage message) {
+  Widget _bubble(ChatMessage message) {
+    final sender =
+        message.isMe ? widget.myName : widget.partnerName;
+
     return Align(
       alignment:
           message.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: const BoxConstraints(
-          maxWidth: 300,
+          maxWidth: 310,
         ),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 15,
-          vertical: 11,
-        ),
-        decoration: BoxDecoration(
-          gradient: message.isMe
-              ? const LinearGradient(
-                  colors: [
-                    pink,
-                    Color(0xFFB026FF),
-                  ],
-                )
-              : null,
-          color: message.isMe
-              ? null
-              : Colors.white.withOpacity(0.07),
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(
-              message.isMe ? 18 : 4,
+        margin: const EdgeInsets.only(bottom: 11),
+        child: Column(
+          crossAxisAlignment: message.isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 5,
+              ),
+              child: Text(
+                sender,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 10,
+                ),
+              ),
             ),
-            bottomRight: Radius.circular(
-              message.isMe ? 4 : 18,
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 15,
+                vertical: 11,
+              ),
+              decoration: BoxDecoration(
+                gradient: message.isMe
+                    ? const LinearGradient(
+                        colors: [
+                          pink,
+                          Color(0xFFB026FF),
+                        ],
+                      )
+                    : null,
+                color: message.isMe
+                    ? null
+                    : Colors.white.withOpacity(0.07),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(
+                    message.isMe ? 18 : 4,
+                  ),
+                  bottomRight: Radius.circular(
+                    message.isMe ? 4 : 18,
+                  ),
+                ),
+              ),
+              child: Text(
+                message.text,
+                style: const TextStyle(
+                  fontSize: 14,
+                ),
+              ),
             ),
-          ),
-        ),
-        child: Text(
-          message.text,
-          style: const TextStyle(
-            fontSize: 14,
-          ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildMessageInput() {
+  Widget _input() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        100,
+      ),
       child: Row(
         children: [
           IconButton(
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Media sharing will be connected with Firebase later.',
-                  ),
-                ),
+              _showInfo(
+                context,
+                'Media',
+                'Photo/video sharing will be connected with Firebase later.',
               );
             },
             icon: const Icon(
@@ -930,10 +1002,6 @@ class _ChatPageState extends State<ChatPage> {
                   borderRadius: BorderRadius.circular(25),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 17,
-                  vertical: 13,
-                ),
               ),
             ),
           ),
@@ -955,7 +1023,6 @@ class _ChatPageState extends State<ChatPage> {
               icon: const Icon(
                 Icons.send_rounded,
                 color: Colors.white,
-                size: 20,
               ),
             ),
           ),
@@ -964,48 +1031,94 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showProfileDialog(BuildContext context) {
-    showModalBottomSheet(
+  Future<void> _openProfile() async {
+    final myController = TextEditingController(
+      text: widget.myName,
+    );
+
+    final partnerController = TextEditingController(
+      text: widget.partnerName,
+    );
+
+    final result = await showModalBottomSheet<bool>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF120A24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(28),
         ),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 22,
+            right: 22,
+            top: 24,
+            bottom: MediaQuery.of(sheetContext)
+                    .viewInsets
+                    .bottom +
+                24,
+          ),
+          child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Profile',
+                  'Our Profile',
                   style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
 
-                const SizedBox(height: 22),
-
-                const CircleAvatar(
-                  radius: 42,
-                  backgroundColor: Color(0x332E1A4F),
-                  child: Icon(
-                    Icons.person_rounded,
-                    size: 40,
-                    color: violet,
-                  ),
-                ),
-
-                const SizedBox(height: 15),
+                const SizedBox(height: 8),
 
                 const Text(
-                  'Profile picture & name',
+                  'Set the names shown in your private space.',
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                TextField(
+                  controller: myController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Your name',
+                    prefixIcon: const Icon(
+                      Icons.person_rounded,
+                      color: pink,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.06),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                TextField(
+                  controller: partnerController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Partner name',
+                    prefixIcon: const Icon(
+                      Icons.favorite_rounded,
+                      color: violet,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.06),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
 
@@ -1013,23 +1126,44 @@ class _ChatPageState extends State<ChatPage> {
 
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final myName =
+                          myController.text.trim();
+                      final partnerName =
+                          partnerController.text.trim();
 
-                      ScaffoldMessenger.of(this.context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Gallery picker will be connected in the next step.',
+                      if (myName.isEmpty ||
+                          partnerName.isEmpty) {
+                        ScaffoldMessenger.of(sheetContext)
+                            .showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'দুটো নামই দিতে হবে।',
+                            ),
                           ),
-                        ),
+                        );
+                        return;
+                      }
+
+                      await widget.onProfileChanged(
+                        myName,
+                        partnerName,
                       );
+
+                      if (sheetContext.mounted) {
+                        Navigator.pop(
+                          sheetContext,
+                          true,
+                        );
+                      }
                     },
-                    icon: const Icon(
-                      Icons.photo_library_rounded,
-                    ),
-                    label: const Text(
-                      'Choose Profile Picture',
+                    child: const Text(
+                      'Save Changes',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -1039,26 +1173,35 @@ class _ChatPageState extends State<ChatPage> {
         );
       },
     );
+
+    myController.dispose();
+    partnerController.dispose();
+
+    if (result == true && mounted) {
+      setState(() {});
+    }
   }
 }
 
-// =========================
-// GALLERY PAGE
-// =========================
+// ============================================================
+// GALLERY
+// ============================================================
 
 class GalleryPage extends StatefulWidget {
-  const GalleryPage({super.key});
+  final List<String> folders;
+  final ValueChanged<String> onFolderCreated;
+
+  const GalleryPage({
+    super.key,
+    required this.folders,
+    required this.onFolderCreated,
+  });
 
   @override
   State<GalleryPage> createState() => _GalleryPageState();
 }
 
 class _GalleryPageState extends State<GalleryPage> {
-  final List<String> _folders = [
-    'Our Memories',
-    'Special Days',
-  ];
-
   void _createFolder() {
     final controller = TextEditingController();
 
@@ -1087,9 +1230,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 final name = controller.text.trim();
 
                 if (name.isNotEmpty) {
-                  setState(() {
-                    _folders.add(name);
-                  });
+                  widget.onFolderCreated(name);
                 }
 
                 Navigator.pop(dialogContext);
@@ -1104,10 +1245,26 @@ class _GalleryPageState extends State<GalleryPage> {
     });
   }
 
+  void _openFolder(String name) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FolderPage(
+          folderName: name,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 120),
+      padding: const EdgeInsets.fromLTRB(
+        20,
+        18,
+        20,
+        120,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1154,7 +1311,60 @@ class _GalleryPageState extends State<GalleryPage> {
 
           const SizedBox(height: 22),
 
-          _buildUploadCard(),
+          GestureDetector(
+            onTap: () {
+              _showInfo(
+                context,
+                'Add Photos & Videos',
+                'Gallery picker and Firebase Storage will be connected in the next step.',
+              );
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                vertical: 27,
+                horizontal: 20,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(25),
+                gradient: LinearGradient(
+                  colors: [
+                    pink.withOpacity(0.13),
+                    violet.withOpacity(0.13),
+                  ],
+                ),
+                border: Border.all(
+                  color: pink.withOpacity(0.20),
+                ),
+              ),
+              child: const Column(
+                children: [
+                  Icon(
+                    Icons.cloud_upload_rounded,
+                    color: pink,
+                    size: 42,
+                  ),
+                  SizedBox(height: 14),
+                  Text(
+                    'Add Photos & Videos',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(height: 5),
+                  Text(
+                    'Shared memories for both of you',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
           const SizedBox(height: 25),
 
@@ -1168,7 +1378,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
           const SizedBox(height: 13),
 
-          ..._folders.map(
+          ...widget.folders.map(
             (folder) => _folderTile(folder),
           ),
         ],
@@ -1176,117 +1386,124 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
-  Widget _buildUploadCard() {
+  Widget _folderTile(String name) {
     return GestureDetector(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Photo/video picker will be connected with Firebase Storage next.',
-            ),
-          ),
-        );
-      },
+      onTap: () => _openFolder(name),
       child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          vertical: 27,
-          horizontal: 20,
-        ),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(25),
-          gradient: LinearGradient(
-            colors: [
-              pink.withOpacity(0.13),
-              violet.withOpacity(0.13),
-            ],
-          ),
+          borderRadius: BorderRadius.circular(20),
+          color: Colors.white.withOpacity(0.045),
           border: Border.all(
-            color: pink.withOpacity(0.20),
+            color: Colors.white.withOpacity(0.07),
           ),
         ),
-        child: Column(
+        child: Row(
           children: [
             Container(
-              width: 62,
-              height: 62,
+              width: 47,
+              height: 47,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.07),
+                color: violet.withOpacity(0.13),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: const Icon(
-                Icons.cloud_upload_rounded,
-                color: pink,
-                size: 31,
+                Icons.folder_rounded,
+                color: violet,
               ),
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(width: 13),
 
-            const Text(
-              'Add Photos & Videos',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
 
-            const SizedBox(height: 5),
-
-            const Text(
-              'Shared with your partner when Firebase sync is enabled',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0x73FFFFFF),
-                fontSize: 11,
-              ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white38,
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _folderTile(String name) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Colors.white.withOpacity(0.045),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.07),
-        ),
+// ============================================================
+// FOLDER PAGE
+// ============================================================
+
+class FolderPage extends StatelessWidget {
+  final String folderName;
+
+  const FolderPage({
+    super.key,
+    required this.folderName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: darkBg,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        title: Text(folderName),
       ),
-      child: Row(
+      body: Stack(
         children: [
-          Container(
-            width: 47,
-            height: 47,
-            decoration: BoxDecoration(
-              color: violet.withOpacity(0.13),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.folder_rounded,
-              color: violet,
-            ),
-          ),
-
-          const SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
+          const AnimatedBackground(),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(30),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.photo_library_outlined,
+                    size: 65,
+                    color: violet,
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    folderName,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'No memories added yet.',
+                    style: TextStyle(
+                      color: Colors.white54,
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _showInfo(
+                        context,
+                        'Coming Next',
+                        'Photo and video upload will be connected with Firebase Storage.',
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.add_photo_alternate_rounded,
+                    ),
+                    label: const Text(
+                      'Add Memory',
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: Colors.white38,
           ),
         ],
       ),
@@ -1294,17 +1511,35 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 }
 
-// =========================
-// SETTINGS PAGE
-// =========================
+// ============================================================
+// SETTINGS
+// ============================================================
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+  final String myName;
+  final String partnerName;
+
+  final Future<void> Function(
+    String myName,
+    String partnerName,
+  ) onProfileChanged;
+
+  const SettingsPage({
+    super.key,
+    required this.myName,
+    required this.partnerName,
+    required this.onProfileChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 120),
+      padding: const EdgeInsets.fromLTRB(
+        20,
+        18,
+        20,
+        120,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1328,25 +1563,33 @@ class SettingsPage extends StatelessWidget {
 
           const SizedBox(height: 25),
 
-          _settingsSection(
+          _profilePreview(context),
+
+          const SizedBox(height: 18),
+
+          _section(
             title: 'Our Space',
             children: [
-              _settingTile(
+              _tile(
                 icon: Icons.favorite_border_rounded,
                 title: 'Couple Space',
                 subtitle: 'Connect your private space later',
                 color: pink,
                 onTap: () {
-                  _comingSoon(context);
+                  _showInfo(
+                    context,
+                    'Couple Space',
+                    'Couple Code and Firebase connection will be added later.',
+                  );
                 },
               ),
-              _settingTile(
+              _tile(
                 icon: Icons.person_outline_rounded,
                 title: 'Profile',
-                subtitle: 'Name and profile picture',
+                subtitle: 'Name and profile information',
                 color: violet,
                 onTap: () {
-                  _comingSoon(context);
+                  _openProfileEditor(context);
                 },
               ),
             ],
@@ -1354,25 +1597,33 @@ class SettingsPage extends StatelessWidget {
 
           const SizedBox(height: 18),
 
-          _settingsSection(
+          _section(
             title: 'Security',
             children: [
-              _settingTile(
+              _tile(
                 icon: Icons.pin_outlined,
                 title: 'PIN Lock',
                 subtitle: 'Will be added with Login system',
                 color: const Color(0xFF60A5FA),
                 onTap: () {
-                  _comingSoon(context);
+                  _showInfo(
+                    context,
+                    'PIN Lock',
+                    'PIN Lock will be added after the account system.',
+                  );
                 },
               ),
-              _settingTile(
+              _tile(
                 icon: Icons.lock_outline_rounded,
                 title: 'Account & Login',
                 subtitle: 'Coming at the final development stage',
                 color: const Color(0xFFA78BFA),
                 onTap: () {
-                  _comingSoon(context);
+                  _showInfo(
+                    context,
+                    'Account & Login',
+                    'Firebase Authentication will be connected at the final stage.',
+                  );
                 },
               ),
             ],
@@ -1380,15 +1631,21 @@ class SettingsPage extends StatelessWidget {
 
           const SizedBox(height: 18),
 
-          _settingsSection(
+          _section(
             title: 'About',
             children: [
-              _settingTile(
+              _tile(
                 icon: Icons.info_outline_rounded,
                 title: 'Eternal Space',
                 subtitle: 'Version 1.0.0 • Trial Mode',
                 color: pink,
-                onTap: () {},
+                onTap: () {
+                  _showInfo(
+                    context,
+                    'Eternal Space',
+                    'Your private little universe ❤️',
+                  );
+                },
               ),
             ],
           ),
@@ -1397,7 +1654,179 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  Widget _settingsSection({
+  Widget _profilePreview(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _openProfileEditor(context),
+      child: Container(
+        padding: const EdgeInsets.all(17),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(23),
+          gradient: LinearGradient(
+            colors: [
+              pink.withOpacity(0.12),
+              violet.withOpacity(0.12),
+            ],
+          ),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.08),
+          ),
+        ),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 28,
+              backgroundColor: Color(0x332E1A4F),
+              child: Icon(
+                Icons.person_rounded,
+                color: pink,
+                size: 30,
+              ),
+            ),
+
+            const SizedBox(width: 14),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    myName,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'With $partnerName ❤️',
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Icon(
+              Icons.edit_rounded,
+              color: Colors.white54,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProfileEditor(BuildContext context) async {
+    final myController = TextEditingController(
+      text: myName,
+    );
+
+    final partnerController = TextEditingController(
+      text: partnerName,
+    );
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF120A24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(28),
+        ),
+      ),
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 22,
+            right: 22,
+            top: 24,
+            bottom: MediaQuery.of(sheetContext)
+                    .viewInsets
+                    .bottom +
+                24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Edit Profile',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              TextField(
+                controller: myController,
+                decoration: const InputDecoration(
+                  labelText: 'Your name',
+                  prefixIcon: Icon(
+                    Icons.person_rounded,
+                    color: pink,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              TextField(
+                controller: partnerController,
+                decoration: const InputDecoration(
+                  labelText: 'Partner name',
+                  prefixIcon: Icon(
+                    Icons.favorite_rounded,
+                    color: violet,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final newMyName =
+                        myController.text.trim();
+                    final newPartnerName =
+                        partnerController.text.trim();
+
+                    if (newMyName.isEmpty ||
+                        newPartnerName.isEmpty) {
+                      return;
+                    }
+
+                    await onProfileChanged(
+                      newMyName,
+                      newPartnerName,
+                    );
+
+                    if (sheetContext.mounted) {
+                      Navigator.pop(sheetContext);
+                    }
+                  },
+                  child: const Text(
+                    'Save Changes',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    myController.dispose();
+    partnerController.dispose();
+  }
+
+  Widget _section({
     required String title,
     required List<Widget> children,
   }) {
@@ -1412,9 +1841,7 @@ class SettingsPage extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-
         const SizedBox(height: 10),
-
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(23),
@@ -1431,7 +1858,7 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  Widget _settingTile({
+  Widget _tile({
     required IconData icon,
     required String title,
     required String subtitle,
@@ -1454,7 +1881,6 @@ class SettingsPage extends StatelessWidget {
         child: Icon(
           icon,
           color: color,
-          size: 21,
         ),
       ),
       title: Text(
@@ -1477,26 +1903,11 @@ class SettingsPage extends StatelessWidget {
       ),
     );
   }
-
-  void _comingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'This feature will be connected in the next development stage.',
-        ),
-      ),
-    );
-  }
 }
 
-// =========================
+// ============================================================
 // ANIMATED BACKGROUND
-// =========================
-//
-// এখানে BackdropFilter/blur ব্যবহার করা হয়নি।
-// তার বদলে RadialGradient glow ব্যবহার করা হয়েছে,
-// যাতে rendering আরও simple ও safe থাকে.
-//
+// ============================================================
 
 class AnimatedBackground extends StatefulWidget {
   const AnimatedBackground({super.key});
@@ -1541,38 +1952,38 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
             ),
 
             Positioned(
-              left: -150 + (value * 120),
+              left: -150 + value * 120,
               top: -120,
-              child: _glowOrb(
-                size: 360,
-                color: deepBlue,
+              child: _glow(
+                360,
+                deepBlue,
               ),
             ),
 
             Positioned(
-              right: -150 + (value * 140),
+              right: -150 + value * 140,
               top: 130,
-              child: _glowOrb(
-                size: 350,
-                color: violet,
+              child: _glow(
+                350,
+                violet,
               ),
             ),
 
             Positioned(
               left: -120,
-              bottom: -150 + (value * 100),
-              child: _glowOrb(
-                size: 330,
-                color: pink,
+              bottom: -150 + value * 100,
+              child: _glow(
+                330,
+                pink,
               ),
             ),
 
             Positioned(
               right: -100,
               bottom: -120,
-              child: _glowOrb(
-                size: 280,
-                color: const Color(0xFF2563EB),
+              child: _glow(
+                280,
+                const Color(0xFF2563EB),
               ),
             ),
           ],
@@ -1581,10 +1992,10 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
     );
   }
 
-  Widget _glowOrb({
-    required double size,
-    required Color color,
-  }) {
+  Widget _glow(
+    double size,
+    Color color,
+  ) {
     return Container(
       width: size,
       height: size,
@@ -1594,12 +2005,12 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
           colors: [
             color.withOpacity(0.38),
             color.withOpacity(0.18),
-            color.withOpacity(0.0),
+            color.withOpacity(0),
           ],
           stops: const [
-            0.0,
+            0,
             0.45,
-            1.0,
+            1,
           ],
         ),
       ),
@@ -1607,9 +2018,9 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
   }
 }
 
-// =========================
+// ============================================================
 // APP LOGO
-// =========================
+// ============================================================
 
 class AppLogo extends StatelessWidget {
   final double size;
@@ -1639,7 +2050,6 @@ class AppLogo extends StatelessWidget {
           BoxShadow(
             color: pink.withOpacity(0.35),
             blurRadius: size * 0.28,
-            spreadRadius: 2,
           ),
           BoxShadow(
             color: violet.withOpacity(0.25),
@@ -1656,9 +2066,9 @@ class AppLogo extends StatelessWidget {
   }
 }
 
-// =========================
-// CHAT MODEL
-// =========================
+// ============================================================
+// MODEL
+// ============================================================
 
 class ChatMessage {
   final String text;
@@ -1668,4 +2078,38 @@ class ChatMessage {
     required this.text,
     required this.isMe,
   });
+}
+
+// ============================================================
+// HELPER
+// ============================================================
+
+void _showInfo(
+  BuildContext context,
+  String title,
+  String message,
+) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        backgroundColor: const Color(0xFF17102A),
+        title: Text(title),
+        content: Text(
+          message,
+          style: const TextStyle(
+            color: Colors.white70,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      );
+    },
+  );
 }
