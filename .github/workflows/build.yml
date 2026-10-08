@@ -27,12 +27,18 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build Debug APK
-        run: flutter build apk --debug
+      - name: Check Flutter
+        run: flutter doctor -v
 
-      - name: Upload Debug APK
+      - name: Analyze project
+        run: flutter analyze
+
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: eternal-space-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: eternal-space-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
