@@ -2,44 +2,29 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: 'zulu'
           java-version: '17'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6'
+          flutter-version: '3.19.0'
           cache: true
 
-      - name: Create Android boilerplate if missing
-        run: |
-          if [ ! -d "android" ]; then
-            flutter create . --platforms=android --project-name=our_private_space
-          fi
-
-      - name: Get Flutter dependencies
+      - name: Install dependencies
         run: flutter pub get
 
-      - name: Build APK Release
+      - name: Build APK
         run: flutter build apk --release
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
