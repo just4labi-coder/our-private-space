@@ -1225,7 +1225,7 @@ class _GalleryPageState extends State<GalleryPage> {
               'Shared with your partner when Firebase sync is enabled',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white45,
+                color: Color(0x73FFFFFF),
                 fontSize: 11,
               ),
             ),
