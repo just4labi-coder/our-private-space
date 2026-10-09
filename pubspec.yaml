@@ -11,22 +11,22 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.2
-  shared_preferences: ^2.2.2
-  image_picker: ^1.0.8
-  video_player: ^2.8.6
-  flutter_local_notifications: ^17.2.1
-  timezone: ^0.9.4
+  cupertino_icons: 1.0.2
+  shared_preferences: 2.2.2
+  image_picker: 1.0.8
+  video_player: 2.8.6
+  flutter_local_notifications: 17.2.1
+  timezone: 0.9.4
 
-  firebase_core: 3.6.0
-  firebase_auth: 5.3.1
-  cloud_firestore: 5.4.4
-  firebase_storage: 12.3.2
+  firebase_core: 3.4.1
+  firebase_auth: 5.2.1
+  cloud_firestore: 5.4.1
+  firebase_storage: 12.3.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: 3.0.0
 
 flutter:
   uses-material-design: true
