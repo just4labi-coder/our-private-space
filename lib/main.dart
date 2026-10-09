@@ -56,7 +56,7 @@ class EternalSpaceApp extends StatelessWidget {
         useMaterial3: true,
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.white.withOpacity(0.055),
+          fillColor: Colors.white.withValues(alpha: 0.055),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
@@ -208,17 +208,17 @@ class GlowBackground extends StatelessWidget {
           Positioned(
             top: -130,
             left: -100,
-            child: _glow(300, blueColor.withOpacity(0.14)),
+            child: _glow(300, blueColor.withValues(alpha: 0.14)),
           ),
           Positioned(
             bottom: -150,
             right: -100,
-            child: _glow(320, pinkColor.withOpacity(0.12)),
+            child: _glow(320, pinkColor.withValues(alpha: 0.12)),
           ),
           Positioned(
             top: 250,
             right: -160,
-            child: _glow(280, purpleColor.withOpacity(0.10)),
+            child: _glow(280, purpleColor.withValues(alpha: 0.10)),
           ),
           SafeArea(child: child),
         ],
@@ -234,7 +234,7 @@ class GlowBackground extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: RadialGradient(
-            colors: [color, color.withOpacity(0)],
+            colors: [color, color.withValues(alpha: 0)],
           ),
         ),
       ),
@@ -291,7 +291,7 @@ class _MainScreenState extends State<MainScreen> {
       body: GlowBackground(child: pages[selectedIndex]),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF10142D),
-        indicatorColor: blueColor.withOpacity(0.25),
+        indicatorColor: blueColor.withValues(alpha: 0.25),
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
           setState(() => selectedIndex = index);
@@ -471,11 +471,13 @@ class _CoupleCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(25),
         gradient: LinearGradient(
           colors: [
-            blueColor.withOpacity(0.22),
-            pinkColor.withOpacity(0.16),
+            blueColor.withValues(alpha: 0.22),
+            pinkColor.withValues(alpha: 0.16),
           ],
         ),
-        border: Border.all(color: Colors.white.withOpacity(0.09)),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.09),
+        ),
       ),
       child: Row(
         children: [
@@ -530,7 +532,7 @@ class _AvatarLetter extends StatelessWidget {
   Widget build(BuildContext context) {
     return CircleAvatar(
       radius: 25,
-      backgroundColor: color.withOpacity(0.23),
+      backgroundColor: color.withValues(alpha: 0.23),
       child: Text(
         name.isEmpty ? '?' : name[0].toUpperCase(),
         style: TextStyle(
@@ -588,8 +590,10 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
       padding: const EdgeInsets.all(21),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: surfaceColor.withOpacity(0.86),
-        border: Border.all(color: pinkColor.withOpacity(0.25)),
+        color: surfaceColor.withValues(alpha: 0.86),
+        border: Border.all(
+          color: pinkColor.withValues(alpha: 0.25),
+        ),
       ),
       child: Column(
         children: [
@@ -702,7 +706,7 @@ class FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: surfaceColor.withOpacity(0.82),
+      color: surfaceColor.withValues(alpha: 0.82),
       borderRadius: BorderRadius.circular(21),
       child: InkWell(
         onTap: onTap,
@@ -711,7 +715,9 @@ class FeatureCard extends StatelessWidget {
           padding: const EdgeInsets.all(15),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(21),
-            border: Border.all(color: Colors.white.withOpacity(0.055)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.055),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -973,7 +979,7 @@ class _ChatPageState extends State<ChatPage> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: mine
-                                ? blueColor.withOpacity(0.25)
+                                ? blueColor.withValues(alpha: 0.25)
                                 : surfaceColor,
                             borderRadius: BorderRadius.circular(18),
                           ),
@@ -2084,7 +2090,7 @@ class _LoveNotesPageState extends State<LoveNotesPage> {
                     color: surfaceColor,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: pinkColor.withOpacity(0.14),
+                      color: pinkColor.withValues(alpha: 0.14),
                     ),
                   ),
                   child: Row(
