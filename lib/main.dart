@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -1655,20 +1654,26 @@ class _SpecialDatesPageState extends State<SpecialDatesPage> {
     if (date == null) return;
 
     final now = DateTime.now();
+    final yearly = !item.containsKey('yearly') || item['yearly'] == true;
+
     DateTime reminderDate = DateTime(
-      now.year,
+      yearly ? now.year : date.year,
       date.month,
       date.day,
       9,
     );
 
-    if (!item.containsKey('yearly') || item['yearly'] == true) {
+    if (yearly) {
       if (!reminderDate.isAfter(now)) {
-        reminderDate = DateTime(now.year + 1, date.month, date.day, 9);
+        reminderDate = DateTime(
+          now.year + 1,
+          date.month,
+          date.day,
+          9,
+        );
       }
-    } else {
-      reminderDate = DateTime(date.year, date.month, date.day, 9);
-      if (!reminderDate.isAfter(now)) return;
+    } else if (!reminderDate.isAfter(now)) {
+      return;
     }
 
     final id = '${item['id']}'.hashCode & 0x7fffffff;
@@ -1690,9 +1695,10 @@ class _SpecialDatesPageState extends State<SpecialDatesPage> {
         ),
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      matchDateTimeComponents: item['yearly'] == true
-          ? DateTimeComponents.dateAndTime
-          : null,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents:
+          yearly ? DateTimeComponents.dateAndTime : null,
     );
   }
 
