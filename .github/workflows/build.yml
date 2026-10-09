@@ -42,7 +42,12 @@ jobs:
  
       - name: Get Android SHA-1
         run: |
-          find . -name gradlew -type f
+          echo "Current directory:"
+          pwd
+          echo "Gradle wrapper files:"
+          find . -type f -name "gradlew" -print
+          echo "Android directory:"
+          ls -la android
 
 
       - name: Check Java environment
