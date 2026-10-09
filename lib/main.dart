@@ -124,7 +124,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const MainScreen()),
+      MaterialPageRoute(builder: (_) => const PinLockScreen()),
     );
   }
 
@@ -157,6 +157,137 @@ class _SplashScreenState extends State<SplashScreen> {
                 height: 28,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PinLockScreen extends StatefulWidget {
+  const PinLockScreen({super.key});
+
+  @override
+  State<PinLockScreen> createState() => _PinLockScreenState();
+}
+
+class _PinLockScreenState extends State<PinLockScreen> {
+  String enteredPin = '';
+  final String correctPin = '1234'; // ডিফল্ট পিন
+
+  void _onNumberTap(String number) {
+    if (enteredPin.length < 4) {
+      setState(() {
+        enteredPin += number;
+      });
+      if (enteredPin.length == 4) {
+        if (enteredPin == correctPin) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const MainScreen()),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Incorrect PIN! Try 1234')),
+          );
+          setState(() {
+            enteredPin = '';
+          });
+        }
+      }
+    }
+  }
+
+  void _onClear() {
+    if (enteredPin.isNotEmpty) {
+      setState(() {
+        enteredPin = enteredPin.substring(0, enteredPin.length - 1);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      body: GlowBackground(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock_rounded, size: 50, color: pinkColor),
+              const SizedBox(height: 16),
+              const Text(
+                'Enter Private PIN',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Default PIN is 1234',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 30),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(4, (index) {
+                  bool filled = index < enteredPin.length;
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: filled ? pinkColor : Colors.white24,
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 40),
+              for (var row in [
+                ['1', '2', '3'],
+                ['4', '5', '6'],
+                ['7', '8', '9'],
+                ['', '0', '⌫']
+              ])
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: row.map((item) {
+                      if (item.isEmpty) {
+                        return const SizedBox(width: 70, height: 70);
+                      }
+                      return Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 12),
+                        width: 65,
+                        height: 65,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: surfaceColor,
+                            shape: const CircleBorder(),
+                          ),
+                          onPressed: () {
+                            if (item == '⌫') {
+                              _onClear();
+                            } else {
+                              _onNumberTap(item);
+                            }
+                          },
+                          child: Text(
+                            item,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
             ],
           ),
         ),
@@ -235,12 +366,22 @@ class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
   String partnerOne = 'Tawsif';
   String partnerTwo = 'Nabila';
+  String avatarOne = '';
+  String avatarTwo = '';
 
   @override
   void initState() {
     super.initState();
-    partnerOne = SpaceStore.readString('partnerOne', 'Tawsif');
-    partnerTwo = SpaceStore.readString('partnerTwo', 'Nabila');
+    _loadProfile();
+  }
+
+  void _loadProfile() {
+    setState(() {
+      partnerOne = SpaceStore.readString('partnerOne', 'Tawsif');
+      partnerTwo = SpaceStore.readString('partnerTwo', 'Nabila');
+      avatarOne = SpaceStore.readString('avatarOne', '');
+      avatarTwo = SpaceStore.readString('avatarTwo', '');
+    });
   }
 
   @override
@@ -249,6 +390,8 @@ class _MainScreenState extends State<MainScreen> {
       HomePage(
         partnerOne: partnerOne,
         partnerTwo: partnerTwo,
+        avatarOne: avatarOne,
+        avatarTwo: avatarTwo,
         onNavigate: (index) => setState(() => selectedIndex = index),
       ),
       const ChatPage(),
@@ -256,11 +399,10 @@ class _MainScreenState extends State<MainScreen> {
       SettingsPage(
         partnerOne: partnerOne,
         partnerTwo: partnerTwo,
-        onSave: (first, second) {
-          setState(() {
-            partnerOne = first;
-            partnerTwo = second;
-          });
+        avatarOne: avatarOne,
+        avatarTwo: avatarTwo,
+        onSave: () {
+          _loadProfile();
         },
       ),
     ];
@@ -304,12 +446,16 @@ class _MainScreenState extends State<MainScreen> {
 class HomePage extends StatelessWidget {
   final String partnerOne;
   final String partnerTwo;
+  final String avatarOne;
+  final String avatarTwo;
   final ValueChanged<int> onNavigate;
 
   const HomePage({
     super.key,
     required this.partnerOne,
     required this.partnerTwo,
+    required this.avatarOne,
+    required this.avatarTwo,
     required this.onNavigate,
   });
 
@@ -347,7 +493,12 @@ class HomePage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 26),
-        _CoupleCard(first: partnerOne, second: partnerTwo),
+        _CoupleCard(
+          first: partnerOne,
+          second: partnerTwo,
+          avatarOne: avatarOne,
+          avatarTwo: avatarTwo,
+        ),
         const SizedBox(height: 18),
         const LoveCounterCard(),
         const SizedBox(height: 26),
@@ -424,8 +575,15 @@ class HomePage extends StatelessWidget {
 class _CoupleCard extends StatelessWidget {
   final String first;
   final String second;
+  final String avatarOne;
+  final String avatarTwo;
 
-  const _CoupleCard({required this.first, required this.second});
+  const _CoupleCard({
+    required this.first,
+    required this.second,
+    required this.avatarOne,
+    required this.avatarTwo,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -443,12 +601,12 @@ class _CoupleCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _AvatarLetter(name: first, color: blueColor),
+          _AvatarView(name: first, imagePath: avatarOne, color: blueColor),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 13),
             child: Icon(Icons.favorite_rounded, color: pinkColor, size: 27),
           ),
-          _AvatarLetter(name: second, color: pinkColor),
+          _AvatarView(name: second, imagePath: avatarTwo, color: pinkColor),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -477,25 +635,33 @@ class _CoupleCard extends StatelessWidget {
   }
 }
 
-class _AvatarLetter extends StatelessWidget {
+class _AvatarView extends StatelessWidget {
   final String name;
+  final String imagePath;
   final Color color;
 
-  const _AvatarLetter({required this.name, required this.color});
+  const _AvatarView({
+    required this.name,
+    required this.imagePath,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return CircleAvatar(
       radius: 25,
       backgroundColor: color.withOpacity(0.23),
-      child: Text(
-        name.isEmpty ? '?' : name[0].toUpperCase(),
-        style: TextStyle(
-          fontSize: 21,
-          fontWeight: FontWeight.bold,
-          color: color,
-        ),
-      ),
+      backgroundImage: imagePath.isNotEmpty ? FileImage(File(imagePath)) : null,
+      child: imagePath.isEmpty
+          ? Text(
+              name.isEmpty ? '?' : name[0].toUpperCase(),
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            )
+          : null,
     );
   }
 }
@@ -2226,12 +2392,16 @@ class _TimelinePageState extends State<TimelinePage> {
 class SettingsPage extends StatefulWidget {
   final String partnerOne;
   final String partnerTwo;
-  final void Function(String first, String second) onSave;
+  final String avatarOne;
+  final String avatarTwo;
+  final VoidCallback onSave;
 
   const SettingsPage({
     super.key,
     required this.partnerOne,
     required this.partnerTwo,
+    required this.avatarOne,
+    required this.avatarTwo,
     required this.onSave,
   });
 
@@ -2242,19 +2412,16 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late TextEditingController firstController;
   late TextEditingController secondController;
+  late String avatarOnePath;
+  late String avatarTwoPath;
 
   @override
   void initState() {
     super.initState();
     firstController = TextEditingController(text: widget.partnerOne);
     secondController = TextEditingController(text: widget.partnerTwo);
-  }
-
-  @override
-  void didUpdateWidget(covariant SettingsPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    firstController.text = widget.partnerOne;
-    secondController.text = widget.partnerTwo;
+    avatarOnePath = widget.avatarOne;
+    avatarTwoPath = widget.avatarTwo;
   }
 
   @override
@@ -2262,6 +2429,20 @@ class _SettingsPageState extends State<SettingsPage> {
     firstController.dispose();
     secondController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage(bool isFirst) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) {
+      setState(() {
+        if (isFirst) {
+          avatarOnePath = picked.path;
+        } else {
+          avatarTwoPath = picked.path;
+        }
+      });
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -2272,12 +2453,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
     await SpaceStore.saveString('partnerOne', first);
     await SpaceStore.saveString('partnerTwo', second);
+    await SpaceStore.saveString('avatarOne', avatarOnePath);
+    await SpaceStore.saveString('avatarTwo', avatarTwoPath);
 
-    widget.onSave(first, second);
+    widget.onSave();
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile names saved')),
+      const SnackBar(content: Text('Profile names & pictures saved')),
     );
   }
 
@@ -2296,8 +2479,52 @@ class _SettingsPageState extends State<SettingsPage> {
           style: TextStyle(color: Colors.white54),
         ),
         const SizedBox(height: 25),
-        const SectionHeading(title: 'Couple profile'),
-        const SizedBox(height: 12),
+        const SectionHeading(title: 'Couple profile & avatars'),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            Column(
+              children: [
+                GestureDetector(
+                  onTap: () => _pickImage(true),
+                  child: CircleAvatar(
+                    radius: 35,
+                    backgroundColor: blueColor.withOpacity(0.3),
+                    backgroundImage: avatarOnePath.isNotEmpty
+                        ? FileImage(File(avatarOnePath))
+                        : null,
+                    child: avatarOnePath.isEmpty
+                        ? const Icon(Icons.add_a_photo, color: blueColor)
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text('Your Photo', style: TextStyle(fontSize: 11)),
+              ],
+            ),
+            Column(
+              children: [
+                GestureDetector(
+                  onTap: () => _pickImage(false),
+                  child: CircleAvatar(
+                    radius: 35,
+                    backgroundColor: pinkColor.withOpacity(0.3),
+                    backgroundImage: avatarTwoPath.isNotEmpty
+                        ? FileImage(File(avatarTwoPath))
+                        : null,
+                    child: avatarTwoPath.isEmpty
+                        ? const Icon(Icons.add_a_photo, color: pinkColor)
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text("Partner's Photo", style: TextStyle(fontSize: 11)),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
         TextField(
           controller: firstController,
           decoration: const InputDecoration(
@@ -2326,9 +2553,9 @@ class _SettingsPageState extends State<SettingsPage> {
           color: surfaceColor,
           child: ListTile(
             leading: Icon(Icons.lock_outline, color: blueColor),
-            title: Text('Private by design'),
+            title: Text('PIN Security Enabled'),
             subtitle: Text(
-              'This version stores supported app data locally on this device.',
+              'App is locked with PIN (1234) on startup.',
             ),
           ),
         ),
@@ -2339,16 +2566,6 @@ class _SettingsPageState extends State<SettingsPage> {
             title: Text('Firebase Sync'),
             subtitle: Text(
               'Not connected yet. Real two-device sync needs Firebase setup.',
-            ),
-          ),
-        ),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(Icons.notifications_active_outlined, color: pinkColor),
-            title: Text('Special date reminders'),
-            subtitle: Text(
-              'Reminders can be scheduled for dates you add.',
             ),
           ),
         ),
