@@ -29,16 +29,15 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK 35
+      - name: Install Android SDK packages
         run: |
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
           yes | sdkmanager --licenses
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Check Flutter and Dart versions
         run: flutter --version
 
-      - name: Check Java and Gradle environment
+      - name: Check Java environment
         run: java -version
 
       - name: Install dependencies
