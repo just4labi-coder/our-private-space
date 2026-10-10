@@ -2264,3 +2264,41 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
+
+// ============================================================
+// ETERNAL SPACE - COMPLAINT MODEL
+// ============================================================
+
+class SpaceComplaint {
+  final String id;
+  final String author;
+  final String title;
+  final String details;
+  final String createdAt;
+
+  const SpaceComplaint({
+    required this.id,
+    required this.author,
+    required this.title,
+    required this.details,
+    required this.createdAt,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'author': author,
+        'title': title,
+        'details': details,
+        'createdAt': createdAt,
+      };
+
+  factory SpaceComplaint.fromMap(Map<String, dynamic> map) {
+    return SpaceComplaint(
+      id: map['id']?.toString() ?? '',
+      author: map['author']?.toString() ?? '',
+      title: map['title']?.toString() ?? '',
+      details: map['details']?.toString() ?? '',
+      createdAt: map['createdAt']?.toString() ?? '',
+    );
+  }
+}
