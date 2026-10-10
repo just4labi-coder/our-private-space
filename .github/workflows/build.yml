@@ -41,13 +41,23 @@ jobs:
         run: flutter --version
  
       
+      
       - name: Get Android SHA-1
         run: |
-          keytool -list -v \
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair \
             -keystore "$HOME/.android/debug.keystore" \
             -storepass android \
             -alias androiddebugkey \
-            -keypass android
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+          keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey
 
 
 
