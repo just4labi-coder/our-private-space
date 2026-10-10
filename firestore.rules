@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -10,16 +11,18 @@ service cloud.firestore {
     function isMember(spaceId) {
       return signedIn()
         && request.auth.uid in
-          get(/databases/$(database)/documents/privateSpaces/$(spaceId))
-            .data.memberUids;
+          get(
+            /databases/$(database)/documents/privateSpaces/$(spaceId)
+          ).data.memberUids;
     }
 
     function validInviteForSpace(spaceId, code) {
-      let invitePath =
-        /databases/$(database)/documents/spaceInvites/$(code);
-
-      return exists(invitePath)
-        && get(invitePath).data.spaceId == spaceId;
+      return exists(
+          /databases/$(database)/documents/spaceInvites/$(code)
+        )
+        && get(
+          /databases/$(database)/documents/spaceInvites/$(code)
+        ).data.spaceId == spaceId;
     }
 
     match /privateSpaces/{spaceId} {
@@ -44,8 +47,9 @@ service cloud.firestore {
       allow update: if signedIn()
         && resource.data.memberUids is list
         && resource.data.memberUids.size() == 1
-        && request.auth.uid in request.resource.data.memberUids
+        && request.resource.data.memberUids is list
         && request.resource.data.memberUids.size() == 2
+        && request.auth.uid in request.resource.data.memberUids
         && request.resource.data.memberUids.hasAll(
           resource.data.memberUids
         )
@@ -55,7 +59,10 @@ service cloud.firestore {
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.inviteCode == resource.data.inviteCode
         && request.resource.data.createdAt == resource.data.createdAt
-        && validInviteForSpace(spaceId, resource.data.inviteCode);
+        && validInviteForSpace(
+          spaceId,
+          resource.data.inviteCode
+        );
 
       allow delete: if false;
 
@@ -73,17 +80,12 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.spaceId is string
-        && request.resource.data.createdAt == request.time
-          ? false
-          : signedIn()
-            && request.resource.data.createdBy == request.auth.uid
-            && request.resource.data.spaceId is string
-            && getAfter(
-              /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
-            ).data.createdBy == request.auth.uid
-            && getAfter(
-              /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
-            ).data.inviteCode == code;
+        && getAfter(
+          /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
+        ).data.createdBy == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
+        ).data.inviteCode == code;
 
       allow update, delete: if false;
     }
