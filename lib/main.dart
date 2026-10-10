@@ -14,11 +14,11 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:video_player/video_player.dart';
 
-const Color backgroundColor = Color(0xFF080B20);
-const Color surfaceColor = Color(0xFF141936);
-const Color blueColor = Color(0xFF5577FF);
-const Color pinkColor = Color(0xFFFF5FA2);
-const Color purpleColor = Color(0xFF9A70FF);
+const Color backgroundColor = Color(0xFF070513);
+const Color surfaceColor = Color(0xFF111026);
+const Color blueColor = Color(0xFF172554);
+const Color pinkColor = Color(0xFFFF2E93);
+const Color purpleColor = Color(0xFF8B5CF6);
 
 final FlutterLocalNotificationsPlugin notifications =
     FlutterLocalNotificationsPlugin();
@@ -220,10 +220,10 @@ class GlowBackground extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF090D27),
-            Color(0xFF17133D),
-            Color(0xFF250F35),
-            Color(0xFF090D27),
+            Color(0xFF070513),
+            Color(0xFF111026),
+            Color(0xFF172554),
+            Color(0xFF070513),
           ],
         ),
       ),
@@ -314,7 +314,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: GlowBackground(child: pages[selectedIndex]),
       bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF10142D),
+        backgroundColor: surfaceColor,
         indicatorColor: blueColor.withValues(alpha: 0.25),
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
@@ -423,20 +423,6 @@ class HomePage extends StatelessWidget {
           childAspectRatio: 1.32,
           children: [
             FeatureCard(
-              icon: Icons.chat_bubble_rounded,
-              title: 'Private Chat',
-              subtitle: 'Just between us',
-              color: blueColor,
-              onTap: () => onNavigate(1),
-            ),
-            FeatureCard(
-              icon: Icons.photo_library_rounded,
-              title: 'Memories',
-              subtitle: 'Photos and videos',
-              color: pinkColor,
-              onTap: () => onNavigate(2),
-            ),
-            FeatureCard(
               icon: Icons.event_rounded,
               title: 'Special Dates',
               subtitle: 'Our important days',
@@ -449,27 +435,6 @@ class HomePage extends StatelessWidget {
               subtitle: 'Words from the heart',
               color: pinkColor,
               onTap: () => _open(context, const LoveNotesPage()),
-            ),
-            FeatureCard(
-              icon: Icons.music_note_rounded,
-              title: 'Our Music',
-              subtitle: 'Songs that mean us',
-              color: blueColor,
-              onTap: () => _open(context, const OurMusicPage()),
-            ),
-            FeatureCard(
-              icon: Icons.card_giftcard_rounded,
-              title: 'Surprise',
-              subtitle: 'A little something',
-              color: purpleColor,
-              onTap: () => _open(context, const SurprisePage()),
-            ),
-            FeatureCard(
-              icon: Icons.timeline_rounded,
-              title: 'Relationship Timeline',
-              subtitle: 'Our story so far',
-              color: pinkColor,
-              onTap: () => _open(context, const TimelinePage()),
             ),
           ],
         ),
@@ -2129,386 +2094,6 @@ class _LoveNotesPageState extends State<LoveNotesPage> {
                           await SpaceStore.saveList('loveNotes', notes);
                         },
                         icon: const Icon(Icons.delete_outline, size: 20),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-// ============================================================
-// OUR MUSIC
-// ============================================================
-
-class OurMusicPage extends StatefulWidget {
-  const OurMusicPage({super.key});
-
-  @override
-  State<OurMusicPage> createState() => _OurMusicPageState();
-}
-
-class _OurMusicPageState extends State<OurMusicPage> {
-  List<Map<String, dynamic>> songs = [];
-
-  @override
-  void initState() {
-    super.initState();
-    songs = SpaceStore.readList('ourMusic');
-  }
-
-  Future<void> _addSong() async {
-    final titleController = TextEditingController();
-    final artistController = TextEditingController();
-
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Add a song'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              decoration: const InputDecoration(labelText: 'Song title'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: artistController,
-              decoration: const InputDecoration(labelText: 'Artist'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext, {
-                'title': titleController.text.trim(),
-                'artist': artistController.text.trim(),
-              });
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    titleController.dispose();
-    artistController.dispose();
-
-    if (result == null || (result['title'] ?? '').isEmpty) return;
-
-    setState(() {
-      songs.add({
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        ...result,
-      });
-    });
-
-    await SpaceStore.saveList('ourMusic', songs);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: const Text('Our Music'),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addSong,
-        child: const Icon(Icons.add),
-      ),
-      body: songs.isEmpty
-          ? const Center(
-              child: Text(
-                'Add songs that remind you of each other.',
-                style: TextStyle(color: Colors.white54),
-                textAlign: TextAlign.center,
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: songs.length,
-              itemBuilder: (context, index) {
-                final song = songs[index];
-
-                return Card(
-                  color: surfaceColor,
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Color(0x335577FF),
-                      child: Icon(
-                        Icons.music_note_rounded,
-                        color: blueColor,
-                      ),
-                    ),
-                    title: Text('${song['title']}'),
-                    subtitle: Text('${song['artist'] ?? ''}'),
-                    trailing: IconButton(
-                      onPressed: () async {
-                        setState(() => songs.removeAt(index));
-                        await SpaceStore.saveList('ourMusic', songs);
-                      },
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-// ============================================================
-// SURPRISE
-// ============================================================
-
-class SurprisePage extends StatelessWidget {
-  const SurprisePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: const Text('A Little Surprise'),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.card_giftcard_rounded,
-                size: 82,
-                color: pinkColor,
-              ),
-              const SizedBox(height: 25),
-              const Text(
-                'You are my favorite part of every day.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'No matter how ordinary a day feels, you make it special.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white60,
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: 30),
-              FilledButton.icon(
-                onPressed: () {
-                  showDialog<void>(
-                    context: context,
-                    builder: (dialogContext) => AlertDialog(
-                      backgroundColor: surfaceColor,
-                      title: const Text('One little promise 💗'),
-                      content: const Text(
-                        'Let us keep choosing kindness, honesty, and each other.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          child: const Text('Always'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.favorite),
-                label: const Text('Open your surprise'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// RELATIONSHIP TIMELINE
-// ============================================================
-
-class TimelinePage extends StatefulWidget {
-  const TimelinePage({super.key});
-
-  @override
-  State<TimelinePage> createState() => _TimelinePageState();
-}
-
-class _TimelinePageState extends State<TimelinePage> {
-  List<Map<String, dynamic>> events = [];
-
-  @override
-  void initState() {
-    super.initState();
-    events = SpaceStore.readList('relationshipTimeline');
-  }
-
-  Future<void> _addEvent() async {
-    final titleController = TextEditingController();
-    final detailController = TextEditingController();
-
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Add to our story'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              decoration: const InputDecoration(labelText: 'Event'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: detailController,
-              maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Memory'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext, {
-                'title': titleController.text.trim(),
-                'detail': detailController.text.trim(),
-              });
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    titleController.dispose();
-    detailController.dispose();
-
-    if (result == null || (result['title'] ?? '').isEmpty) return;
-
-    setState(() {
-      events.insert(0, {
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        ...result,
-        'date': DateTime.now().toIso8601String(),
-      });
-    });
-
-    await SpaceStore.saveList('relationshipTimeline', events);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: const Text('Our Story'),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addEvent,
-        child: const Icon(Icons.add),
-      ),
-      body: events.isEmpty
-          ? const Center(
-              child: Text(
-                'Add the moments that shaped your story.',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: events.length,
-              itemBuilder: (context, index) {
-                final event = events[index];
-                final detail = '${event['detail'] ?? ''}';
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.favorite, color: pinkColor),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: surfaceColor,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${event['title']}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              if (detail.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  detail,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    height: 1.5,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 8),
-                              Text(
-                                '${event['date'] ?? ''}'.split('T').first,
-                                style: const TextStyle(
-                                  color: Colors.white38,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: IconButton(
-                                  onPressed: () async {
-                                    setState(() => events.removeAt(index));
-
-                                    await SpaceStore.saveList(
-                                      'relationshipTimeline',
-                                      events,
-                                    );
-                                  },
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 19,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       ),
                     ],
                   ),
