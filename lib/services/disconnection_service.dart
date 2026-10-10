@@ -13,9 +13,11 @@ class DisconnectionService {
 
   static String get _uid {
     final user = _auth.currentUser;
+
     if (user == null) {
       throw Exception('আগে Firebase-এ সাইন ইন করতে হবে।');
     }
+
     return user.uid;
   }
 
@@ -26,6 +28,7 @@ class DisconnectionService {
   }
 
   /// একজন সদস্য বিচ্ছিন্ন হওয়ার অনুরোধ পাঠায়।
+  /// এতে শুধু বর্তমান সদস্যের সম্মতি সংরক্ষিত হয়।
   static Future<void> requestDisconnection(
     String spaceId,
   ) async {
@@ -44,12 +47,15 @@ class DisconnectionService {
         data['memberUids'] ?? [],
       );
 
-      if (!members.contains(uid) || members.length != 2) {
-        throw Exception('দুজনের সংযোগ সক্রিয় নেই।');
+      if (members.length != 2 || !members.contains(uid)) {
+        throw Exception('দুজনের সক্রিয় সংযোগ পাওয়া যায়নি।');
       }
 
-      final approvals =
-          Map<String, dynamic>.from(
+      if (data['connectionStatus'] == 'disconnected') {
+        throw Exception('Space ইতিমধ্যে বিচ্ছিন্ন।');
+      }
+
+      final approvals = Map<String, dynamic>.from(
         data['disconnectionApprovals'] ?? {},
       );
 
@@ -63,9 +69,7 @@ class DisconnectionService {
     });
   }
 
-  /// অন্য সদস্যের অনুরোধে সম্মতি দেয়।
-  /// উভয়ের সম্মতি হলে Space-এর শেয়ার করা ডেটার
-  /// অ্যাক্সেস বন্ধ করার জন্য বিচ্ছিন্ন অবস্থা সেট করে।
+  /// অন্য সদস্যের সম্মতি দেওয়ার পর বিচ্ছিন্নতা সম্পন্ন করে।
   static Future<void> approveDisconnection(
     String spaceId,
   ) async {
@@ -84,22 +88,25 @@ class DisconnectionService {
         data['memberUids'] ?? [],
       );
 
-      if (!members.contains(uid) || members.length != 2) {
-        throw Exception('দুজনের সংযোগ সক্রিয় নেই।');
+      if (members.length != 2 || !members.contains(uid)) {
+        throw Exception('দুজনের সক্রিয় সংযোগ পাওয়া যায়নি।');
       }
 
-      final approvals =
-          Map<String, dynamic>.from(
+      if (data['connectionStatus'] == 'disconnected') {
+        throw Exception('Space ইতিমধ্যে বিচ্ছিন্ন।');
+      }
+
+      final otherUid = members.firstWhere(
+        (member) => member != uid,
+      );
+
+      final approvals = Map<String, dynamic>.from(
         data['disconnectionApprovals'] ?? {},
       );
 
-      final otherMembers =
-          members.where((member) => member != uid).toList();
-
-      if (otherMembers.isEmpty ||
-          approvals[otherMembers.first] != true) {
+      if (approvals[otherUid] != true) {
         throw Exception(
-          'আগে অন্য সদস্যকে বিচ্ছিন্ন হওয়ার অনুরোধ পাঠাতে হবে।',
+          'অন্য সদস্যের অনুরোধের অপেক্ষায় থাকতে হবে।',
         );
       }
 
@@ -113,40 +120,14 @@ class DisconnectionService {
     });
   }
 
-  /// পুনরায় যুক্ত হওয়ার অনুরোধের জন্য আগের অনুমোদন
-  /// মুছে দিয়ে Space-কে পুনরায় সক্রিয় করে।
-  /// এটি কেবল দুজন সদস্য একই Space-এ ফিরে আসার
-  /// প্রক্রিয়ার অংশ হিসেবে ব্যবহার করতে হবে।
+  /// একতরফাভাবে Space পুনরায় চালু করা নিষিদ্ধ।
+  /// পারস্পরিক পুনঃসংযোগের ব্যবস্থা তৈরি না হওয়া পর্যন্ত
+  /// এই পদ্ধতি ইচ্ছাকৃতভাবে কোনো পরিবর্তন করে না।
   static Future<void> reactivateSpace(
     String spaceId,
   ) async {
-    final uid = _uid;
-    final ref = _space(spaceId);
-
-    await _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(ref);
-
-      if (!snapshot.exists) {
-        throw Exception('পুরোনো Private Space পাওয়া যায়নি।');
-      }
-
-      final data = snapshot.data()!;
-      final members = List<String>.from(
-        data['memberUids'] ?? [],
-      );
-
-      if (!members.contains(uid) || members.length != 2) {
-        throw Exception(
-          'পুরোনো Space-এর দুজন সদস্যকে পুনরায় যুক্ত হতে হবে।',
-        );
-      }
-
-      transaction.update(ref, {
-        'connectionStatus': 'connected',
-        'disconnectionApprovals': <String, bool>{},
-        'disconnectionRequestedAt': FieldValue.delete(),
-        'disconnectedAt': FieldValue.delete(),
-      });
-    });
+    throw Exception(
+      'নিরাপদ পারস্পরিক পুনঃসংযোগের ব্যবস্থা এখনো তৈরি হয়নি।',
+    );
   }
 }
