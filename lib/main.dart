@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:video_player/video_player.dart';
+import 'screens/partner_connection_page.dart';
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -411,6 +412,39 @@ class HomePage extends StatelessWidget {
         _CoupleCard(first: partnerOne, second: partnerTwo),
         const SizedBox(height: 18),
         const LoveCounterCard(),
+        const SizedBox(height: 18),
+        Card(
+          color: surfaceColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0x338B5CF6),
+              child: Icon(
+                Icons.people_alt_rounded,
+                color: purpleColor,
+              ),
+            ),
+            title: const Text(
+              'Partner Connection',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: const Text(
+              'Create or join our private space',
+              style: TextStyle(color: Colors.white54),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PartnerConnectionPage(),
+                ),
+              );
+            },
+          ),
+        ),
         const SizedBox(height: 18),
         // Complaints Box Card
         Card(
