@@ -14,6 +14,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:video_player/video_player.dart';
 import 'screens/partner_connection_page.dart';
+import 'services/space_sync_service.dart';
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -2365,6 +2366,73 @@ class _SettingsPageState extends State<SettingsPage> {
           label: const Text('Save profile'),
         ),
         const SizedBox(height: 28),
+        const SectionHeading(title: 'Cloud Sync'),
+        const SizedBox(height: 10),
+        Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: const Icon(
+              Icons.cloud_sync_rounded,
+              color: purpleColor,
+            ),
+            title: const Text('Sync from Firebase'),
+            subtitle: const Text('Download shared app data'),
+            onTap: () async {
+              try {
+                await SpaceStore.syncFromFirebase();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Firebase sync completed'),
+                  ),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Sync failed: $e')),
+                );
+              }
+            },
+          ),
+        ),
+        Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: const Icon(
+              Icons.backup_rounded,
+              color: pinkColor,
+            ),
+            title: const Text('Backup to Google Drive'),
+            subtitle: const Text('Save app data to your Drive'),
+            onTap: () async {
+              try {
+                await SpaceSyncService.backupToGoogleDrive({
+                  'partnerOne': SpaceStore.readString('partnerOne'),
+                  'partnerTwo': SpaceStore.readString('partnerTwo'),
+                  'chatMessages': SpaceStore.readList('chatMessages'),
+                  'galleryFolders': SpaceStore.readList('galleryFolders'),
+                  'galleryMedia': SpaceStore.readList('galleryMedia'),
+                  'loveNotes': SpaceStore.readList('loveNotes'),
+                  'specialDates': SpaceStore.readList('specialDates'),
+                  'spaceComplaints': SpaceStore.readList('spaceComplaints'),
+                });
+
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Google Drive backup completed'),
+                  ),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Drive backup failed: $e')),
+                );
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'App information'),
         const SizedBox(height: 10),
         const Card(
