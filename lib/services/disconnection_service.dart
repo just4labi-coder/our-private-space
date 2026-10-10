@@ -27,52 +27,69 @@ class DisconnectionService {
     return _db.collection('privateSpaces').doc(spaceId);
   }
 
-  /// একজন সদস্য বিচ্ছিন্ন হওয়ার অনুরোধ পাঠায়।
-  /// এতে শুধু বর্তমান সদস্যের সম্মতি সংরক্ষিত হয়।
   static Future<void> requestDisconnection(
     String spaceId,
   ) async {
-    final uid = _uid;
-    final ref = _space(spaceId);
-
-    await _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(ref);
-
-      if (!snapshot.exists) {
-        throw Exception('Private Space পাওয়া যায়নি।');
-      }
-
-      final data = snapshot.data()!;
-      final members = List<String>.from(
-        data['memberUids'] ?? [],
-      );
-
-      if (members.length != 2 || !members.contains(uid)) {
-        throw Exception('দুজনের সক্রিয় সংযোগ পাওয়া যায়নি।');
-      }
-
-      if (data['connectionStatus'] == 'disconnected') {
-        throw Exception('Space ইতিমধ্যে বিচ্ছিন্ন।');
-      }
-
-      final approvals = Map<String, dynamic>.from(
-        data['disconnectionApprovals'] ?? {},
-      );
-
-      approvals[uid] = true;
-
-      transaction.update(ref, {
-        'disconnectionApprovals': approvals,
-        'disconnectionRequestedAt':
-            FieldValue.serverTimestamp(),
-      });
-    });
+    await _saveApproval(
+      spaceId: spaceId,
+      approvalField: 'disconnectionApprovals',
+      requestedAtField: 'disconnectionRequestedAt',
+      requiredStatus: 'connected',
+      completedStatus: 'disconnected',
+      completedAtField: 'disconnectedAt',
+    );
   }
 
-  /// অন্য সদস্যের সম্মতি দেওয়ার পর বিচ্ছিন্নতা সম্পন্ন করে।
   static Future<void> approveDisconnection(
     String spaceId,
   ) async {
+    await _saveApproval(
+      spaceId: spaceId,
+      approvalField: 'disconnectionApprovals',
+      requestedAtField: 'disconnectionRequestedAt',
+      requiredStatus: 'connected',
+      completedStatus: 'disconnected',
+      completedAtField: 'disconnectedAt',
+      requireOtherApproval: true,
+    );
+  }
+
+  static Future<void> requestReconnection(
+    String spaceId,
+  ) async {
+    await _saveApproval(
+      spaceId: spaceId,
+      approvalField: 'reconnectionApprovals',
+      requestedAtField: 'reconnectionRequestedAt',
+      requiredStatus: 'disconnected',
+      completedStatus: 'connected',
+      completedAtField: 'reconnectedAt',
+    );
+  }
+
+  static Future<void> approveReconnection(
+    String spaceId,
+  ) async {
+    await _saveApproval(
+      spaceId: spaceId,
+      approvalField: 'reconnectionApprovals',
+      requestedAtField: 'reconnectionRequestedAt',
+      requiredStatus: 'disconnected',
+      completedStatus: 'connected',
+      completedAtField: 'reconnectedAt',
+      requireOtherApproval: true,
+    );
+  }
+
+  static Future<void> _saveApproval({
+    required String spaceId,
+    required String approvalField,
+    required String requestedAtField,
+    required String requiredStatus,
+    required String completedStatus,
+    required String completedAtField,
+    bool requireOtherApproval = false,
+  }) async {
     final uid = _uid;
     final ref = _space(spaceId);
 
@@ -89,45 +106,58 @@ class DisconnectionService {
       );
 
       if (members.length != 2 || !members.contains(uid)) {
-        throw Exception('দুজনের সক্রিয় সংযোগ পাওয়া যায়নি।');
+        throw Exception('দুজনের সদস্যপদ নিশ্চিত করা যায়নি।');
       }
 
-      if (data['connectionStatus'] == 'disconnected') {
-        throw Exception('Space ইতিমধ্যে বিচ্ছিন্ন।');
+      final status = data['connectionStatus'] ?? 'connected';
+
+      if (status != requiredStatus) {
+        throw Exception(
+          requiredStatus == 'connected'
+              ? 'Space ইতিমধ্যে বিচ্ছিন্ন বা পরিবর্তিত হয়েছে।'
+              : 'Space এখন বিচ্ছিন্ন অবস্থায় নেই।',
+        );
       }
 
       final otherUid = members.firstWhere(
         (member) => member != uid,
       );
 
-      final approvals = Map<String, dynamic>.from(
-        data['disconnectionApprovals'] ?? {},
-      );
+      final raw = data[approvalField];
+      final approvals = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{};
 
-      if (approvals[otherUid] != true) {
+      if (requireOtherApproval && approvals[otherUid] != true) {
         throw Exception(
-          'অন্য সদস্যের অনুরোধের অপেক্ষায় থাকতে হবে।',
+          'আগে অন্য সদস্যের সম্মতি প্রয়োজন।',
         );
       }
 
       approvals[uid] = true;
 
-      transaction.update(ref, {
-        'disconnectionApprovals': approvals,
-        'connectionStatus': 'disconnected',
-        'disconnectedAt': FieldValue.serverTimestamp(),
-      });
-    });
-  }
+      final bothApproved =
+          approvals[uid] == true &&
+          approvals[otherUid] == true;
 
-  /// একতরফাভাবে Space পুনরায় চালু করা নিষিদ্ধ।
-  /// পারস্পরিক পুনঃসংযোগের ব্যবস্থা তৈরি না হওয়া পর্যন্ত
-  /// এই পদ্ধতি ইচ্ছাকৃতভাবে কোনো পরিবর্তন করে না।
-  static Future<void> reactivateSpace(
-    String spaceId,
-  ) async {
-    throw Exception(
-      'নিরাপদ পারস্পরিক পুনঃসংযোগের ব্যবস্থা এখনো তৈরি হয়নি।',
-    );
+      final updates = <String, dynamic>{
+        approvalField: approvals,
+        requestedAtField: FieldValue.serverTimestamp(),
+      };
+
+      if (bothApproved) {
+        updates['connectionStatus'] = completedStatus;
+        updates[completedAtField] = FieldValue.serverTimestamp();
+
+        // পরবর্তী চক্রের সম্মতি যেন পুরোনো সম্মতি থেকে না আসে।
+        if (completedStatus == 'disconnected') {
+          updates['reconnectionApprovals'] = <String, bool>{};
+        } else {
+          updates['disconnectionApprovals'] = <String, bool>{};
+        }
+      }
+
+      transaction.update(ref, updates);
+    });
   }
 }
