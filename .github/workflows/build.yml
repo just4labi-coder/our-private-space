@@ -40,14 +40,15 @@ jobs:
       - name: Check Flutter and Dart versions
         run: flutter --version
  
+      
       - name: Get Android SHA-1
         run: |
-          echo "Current directory:"
-          pwd
-          echo "Gradle wrapper files:"
-          find . -type f -name "gradlew" -print
-          echo "Android directory:"
-          ls -la android
+          keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android
+
 
 
       - name: Check Java environment
