@@ -8,43 +8,30 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function spaceData(spaceId) {
+      return get(
+        /databases/$(database)/documents/privateSpaces/$(spaceId)
+      ).data;
+    }
+
     function isMember(spaceId) {
       return signedIn()
-        && request.auth.uid in
-          get(
-            /databases/$(database)/documents/privateSpaces/$(spaceId)
-          ).data.memberUids;
+        && request.auth.uid in spaceData(spaceId).memberUids
+        && spaceData(spaceId).get('connectionStatus', 'connected')
+          != 'disconnected';
     }
 
     function validInviteForSpace(spaceId, code) {
       return exists(
-          /databases/$(database)/documents/spaceInvites/$(code)
-        )
+        /databases/$(database)/documents/spaceInvites/$(code)
+      )
         && get(
           /databases/$(database)/documents/spaceInvites/$(code)
         ).data.spaceId == spaceId;
     }
 
-    match /privateSpaces/{spaceId} {
-
-      allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.memberUids == [request.auth.uid]
-        && request.resource.data.inviteCode is string
-        && request.resource.data.inviteCode.size() == 6;
-
-      allow get: if signedIn()
-        && (
-          request.auth.uid in resource.data.memberUids
-          || validInviteForSpace(
-            spaceId,
-            resource.data.inviteCode
-          )
-        );
-
-      allow list: if false;
-
-      allow update: if signedIn()
+    function validJoin(spaceId) {
+      return signedIn()
         && resource.data.memberUids is list
         && resource.data.memberUids.size() == 1
         && request.resource.data.memberUids is list
@@ -59,10 +46,80 @@ service cloud.firestore {
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.inviteCode == resource.data.inviteCode
         && request.resource.data.createdAt == resource.data.createdAt
-        && validInviteForSpace(
-          spaceId,
-          resource.data.inviteCode
+        && validInviteForSpace(spaceId, resource.data.inviteCode)
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['memberUids']);
+    }
+
+    function validDisconnectionUpdate() {
+      let oldApprovals =
+        resource.data.get('disconnectionApprovals', {});
+      let newApprovals =
+        request.resource.data.get('disconnectionApprovals', {});
+      let members = resource.data.memberUids;
+      let otherUid = members[0] == request.auth.uid
+        ? members[1]
+        : members[0];
+      let oldStatus =
+        resource.data.get('connectionStatus', 'connected');
+      let newStatus =
+        request.resource.data.get('connectionStatus', 'connected');
+
+      return signedIn()
+        && members is list
+        && members.size() == 2
+        && request.auth.uid in members
+        && request.resource.data.memberUids == members
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'disconnectionApprovals',
+            'disconnectionRequestedAt',
+            'connectionStatus',
+            'disconnectedAt'
+          ])
+        && newApprovals is map
+        && newApprovals.keys().hasOnly(members)
+        && newApprovals.get(request.auth.uid, false) == true
+        && newApprovals.get(otherUid, false)
+          == oldApprovals.get(otherUid, false)
+        && newApprovals.diff(oldApprovals)
+          .affectedKeys().hasOnly([request.auth.uid])
+        && oldStatus == 'connected'
+        && (
+          (
+            newStatus == 'connected'
+            && newApprovals.get(otherUid, false) != true
+          )
+          ||
+          (
+            newStatus == 'disconnected'
+            && newApprovals.get(otherUid, false) == true
+            && newApprovals.get(request.auth.uid, false) == true
+          )
         );
+    }
+
+    match /privateSpaces/{spaceId} {
+
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid]
+        && request.resource.data.inviteCode is string
+        && request.resource.data.inviteCode.size() == 6;
+
+      allow get: if signedIn()
+        && (
+          request.auth.uid in resource.data.memberUids
+          || validInviteForSpace(spaceId, resource.data.inviteCode)
+        );
+
+      allow list: if false;
+
+      allow update: if validJoin(spaceId)
+        || validDisconnectionUpdate();
 
       allow delete: if false;
 
@@ -88,6 +145,13 @@ service cloud.firestore {
         ).data.inviteCode == code;
 
       allow update, delete: if false;
+    }
+
+    match /users/{uid} {
+      allow get, create, update: if signedIn()
+        && request.auth.uid == uid;
+
+      allow list, delete: if false;
     }
   }
 }
