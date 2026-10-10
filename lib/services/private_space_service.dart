@@ -16,44 +16,35 @@ class PrivateSpaceService {
   /// পরে চাইলে স্থায়ী লগইনের সঙ্গে যুক্ত করা যাবে।
   static Future<User> ensureSignedIn() async {
     User? user = _auth.currentUser;
-
     if (user == null) {
       final result = await _auth.signInAnonymously();
       user = result.user;
     }
-
     if (user == null) {
       throw Exception('Firebase sign-in failed.');
     }
-
     return user;
   }
 
   /// নতুন private space তৈরি করে 6 অক্ষরের invite code দেয়।
   static Future<String> createSpace() async {
     final user = await ensureSignedIn();
-
     for (int attempt = 0; attempt < 5; attempt++) {
-      final code =
-          DateTime.now().microsecondsSinceEpoch
-              .toRadixString(36)
-              .toUpperCase()
-              .substring(0, 6);
-
-      final existing = await _db
-          .collection('spaceInvites')
-          .doc(code)
-          .get();
-
+      final code = DateTime.now()
+          .microsecondsSinceEpoch
+          .toRadixString(36)
+          .toUpperCase()
+          .substring(0, 6);
+      final existing = await _db.collection('spaceInvites').doc(code).get();
       if (existing.exists) continue;
 
       final spaceRef = _spaces.doc();
-
       final batch = _db.batch();
 
       batch.set(spaceRef, {
         'memberUids': [user.uid],
         'createdBy': user.uid,
+        'inviteCode': code,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -66,7 +57,6 @@ class PrivateSpaceService {
       await batch.commit();
       return code;
     }
-
     throw Exception('Invite code তৈরি করা যায়নি। আবার চেষ্টা করো।');
   }
 
@@ -74,24 +64,23 @@ class PrivateSpaceService {
   static Future<void> joinSpace(String inviteCode) async {
     final user = await ensureSignedIn();
     final code = inviteCode.trim().toUpperCase();
-
     if (code.isEmpty) {
       throw Exception('Invite code লিখতে হবে।');
     }
 
     final inviteRef = _db.collection('spaceInvites').doc(code);
+
     final spaceId = await _db.runTransaction<String>((transaction) async {
       final invite = await transaction.get(inviteRef);
-
       if (!invite.exists) {
         throw Exception('Invite code সঠিক নয়।');
       }
 
       final data = invite.data()!;
       final id = data['spaceId'] as String;
+
       final spaceRef = _spaces.doc(id);
       final space = await transaction.get(spaceRef);
-
       if (!space.exists) {
         throw Exception('Private space পাওয়া যায়নি।');
       }
@@ -115,7 +104,6 @@ class PrivateSpaceService {
 
     // এই ID পরে অ্যাপের shared profile-এ সংরক্ষণ করতে হবে।
     await user.getIdToken();
-    // Returning successfully means the join transaction completed.
     assert(spaceId.isNotEmpty);
   }
 
