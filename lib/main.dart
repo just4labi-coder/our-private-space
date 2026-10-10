@@ -2302,3 +2302,287 @@ class SpaceComplaint {
     );
   }
 }
+
+// ============================================================
+// ETERNAL SPACE - COMPLAINTS PAGE
+// ============================================================
+
+class ComplaintsPage extends StatefulWidget {
+  const ComplaintsPage({super.key});
+
+  @override
+  State<ComplaintsPage> createState() => _ComplaintsPageState();
+}
+
+class _ComplaintsPageState extends State<ComplaintsPage> {
+  List<SpaceComplaint> complaints = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComplaints();
+  }
+
+  void _loadComplaints() {
+    final data = SpaceStore.readList('spaceComplaints');
+    complaints = data.map(SpaceComplaint.fromMap).toList();
+  }
+
+  Future<void> _saveComplaints() async {
+    await SpaceStore.saveList(
+      'spaceComplaints',
+      complaints.map((item) => item.toMap()).toList(),
+    );
+  }
+
+  Future<void> _editComplaint({SpaceComplaint? existing}) async {
+    final titleController = TextEditingController(text: existing?.title ?? '');
+    final detailsController =
+        TextEditingController(text: existing?.details ?? '');
+    String author = existing?.author ?? 'You';
+
+    final result = await showDialog<SpaceComplaint>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                existing == null ? 'New Complaint' : 'Edit Complaint',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: author,
+                      decoration: const InputDecoration(
+                        labelText: 'Complaint by',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'You',
+                          child: Text('You'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Partner',
+                          child: Text('Partner'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => author = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Complaint title',
+                        hintText: 'What happened?',
+                      ),
+                      maxLength: 80,
+                    ),
+                    TextField(
+                      controller: detailsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Details',
+                        hintText: 'Explain the complaint...',
+                      ),
+                      maxLines: 4,
+                      maxLength: 1000,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final title = titleController.text.trim();
+                    final details = detailsController.text.trim();
+
+                    if (title.isEmpty || details.isEmpty) return;
+
+                    Navigator.pop(
+                      dialogContext,
+                      SpaceComplaint(
+                        id: existing?.id ??
+                            DateTime.now()
+                                .microsecondsSinceEpoch
+                                .toString(),
+                        author: author,
+                        title: title,
+                        details: details,
+                        createdAt: existing?.createdAt ??
+                            DateTime.now().toIso8601String(),
+                      ),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    titleController.dispose();
+    detailsController.dispose();
+
+    if (result == null) return;
+
+    setState(() {
+      final index = complaints.indexWhere((c) => c.id == result.id);
+      if (index == -1) {
+        complaints.insert(0, result);
+      } else {
+        complaints[index] = result;
+      }
+    });
+
+    await _saveComplaints();
+  }
+
+  Future<void> _deleteComplaint(SpaceComplaint complaint) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete complaint?'),
+        content: const Text(
+          'This complaint will be removed from this phone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      complaints.removeWhere((item) => item.id == complaint.id);
+    });
+
+    await _saveComplaints();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Complaints Box'),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _editComplaint(),
+        icon: const Icon(Icons.add),
+        label: const Text('New Complaint'),
+      ),
+      body: complaints.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.chat_bubble_outline,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No complaints yet',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Share what is bothering you and talk it out together.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+              itemCount: complaints.length,
+              itemBuilder: (context, index) {
+                final complaint = complaints[index];
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      child: Icon(
+                        complaint.author == 'You'
+                            ? Icons.person
+                            : Icons.favorite_outline,
+                      ),
+                    ),
+                    title: Text(
+                      complaint.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${complaint.author} • ${complaint.details}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () {
+                      showDialog<void>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: Text(complaint.title),
+                          content: SingleChildScrollView(
+                            child: Text(
+                              'By: ${complaint.author}\n\n'
+                              '${complaint.details}',
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _editComplaint(existing: complaint);
+                              },
+                              child: const Text('Edit'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _deleteComplaint(complaint);
+                              },
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
