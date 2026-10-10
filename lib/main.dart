@@ -2638,3 +2638,58 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
     );
   }
 }
+
+// ============================================================
+// FIREBASE COMPLAINT STORAGE
+// ============================================================
+
+class FirebaseComplaintStore {
+  // দুই ফোনে একই private-space ID ব্যবহার করতে হবে।
+  // পরে এটি partner connection system-এর সঙ্গে যুক্ত হবে।
+  static const String spaceId = 'REPLACE_WITH_SHARED_SPACE_ID';
+
+  static CollectionReference<Map<String, dynamic>> get complaintsRef =>
+      FirebaseFirestore.instance
+          .collection('privateSpaces')
+          .doc(spaceId)
+          .collection('complaints');
+
+  static Future<void> addComplaint(
+    SpaceComplaint complaint,
+  ) async {
+    await complaintsRef.doc(complaint.id).set({
+      ...complaint.toMap(),
+      'createdAt': complaint.createdAt,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> updateComplaint(
+    SpaceComplaint complaint,
+  ) async {
+    await complaintsRef.doc(complaint.id).update({
+      ...complaint.toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> deleteComplaint(String id) async {
+    await complaintsRef.doc(id).delete();
+  }
+
+  static Stream<List<SpaceComplaint>> watchComplaints() {
+    return complaintsRef
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(
+                (doc) => SpaceComplaint.fromMap({
+                  ...doc.data(),
+                  'id': doc.id,
+                }),
+              )
+              .toList(),
+        );
+  }
+}
