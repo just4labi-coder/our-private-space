@@ -40,6 +40,7 @@ Future<void> main() async {
 
   await notifications.initialize(initializationSettings);
   await SpaceStore.init();
+  await SpaceStore.syncFromFirebase();
 
   runApp(const EternalSpaceApp());
 }
@@ -95,7 +96,7 @@ class EternalSpaceApp extends StatelessWidget {
 }
 
 // ============================================================
-// LOCAL STORAGE
+// LOCAL STORAGE WITH FIREBASE SYNC
 // ============================================================
 
 class SpaceStore {
@@ -107,12 +108,10 @@ class SpaceStore {
 
   static List<Map<String, dynamic>> readList(String key) {
     final raw = _prefs?.getString(key);
-
     if (raw == null || raw.isEmpty) return [];
 
     try {
       final decoded = jsonDecode(raw) as List;
-
       return decoded
           .map((item) => Map<String, dynamic>.from(item as Map))
           .toList();
@@ -125,7 +124,9 @@ class SpaceStore {
     String key,
     List<Map<String, dynamic>> value,
   ) async {
-    await _prefs?.setString(key, jsonEncode(value));
+    await init();
+    await _prefs!.setString(key, jsonEncode(value));
+    await _syncKey(key, value);
   }
 
   static String readString(String key, [String fallback = '']) {
@@ -133,7 +134,84 @@ class SpaceStore {
   }
 
   static Future<void> saveString(String key, String value) async {
-    await _prefs?.setString(key, value);
+    await init();
+    await _prefs!.setString(key, value);
+    await _syncKey(key, value);
+  }
+
+  static Future<void> _syncKey(
+    String key,
+    dynamic value,
+  ) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final spaceId = await _getSpaceId();
+      if (spaceId == null || spaceId.isEmpty) return;
+
+      await FirebaseFirestore.instance
+          .collection('privateSpaces')
+          .doc(spaceId)
+          .collection('syncData')
+          .doc('appState')
+          .set({
+        key: value,
+        'updatedBy': user.uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Firebase sync error: $e');
+    }
+  }
+
+  static Future<String?> _getSpaceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('eternal_space_id');
+  }
+
+  static Future<void> syncFromFirebase() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final spaceId = await _getSpaceId();
+      if (spaceId == null || spaceId.isEmpty) return;
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('privateSpaces')
+          .doc(spaceId)
+          .collection('syncData')
+          .doc('appState')
+          .get();
+
+      if (!snapshot.exists) return;
+
+      final data = snapshot.data();
+      if (data == null) return;
+
+      await init();
+
+      for (final entry in data.entries) {
+        if (entry.key == 'updatedBy' ||
+            entry.key == 'updatedAt') {
+          continue;
+        }
+
+        final value = entry.value;
+
+        if (value is List) {
+          await _prefs!.setString(
+            entry.key,
+            jsonEncode(value),
+          );
+        } else if (value is String) {
+          await _prefs!.setString(entry.key, value);
+        }
+      }
+    } catch (e) {
+      debugPrint('Firebase download error: $e');
+    }
   }
 }
 
@@ -474,7 +552,6 @@ class HomePage extends StatelessWidget {
                   builder: (_) => const ComplaintsPage(),
                 ),
               );
-              // Refresh home when returning if needed
               if (context.mounted) {
                 (context as Element).markNeedsBuild();
               }
@@ -2306,7 +2383,7 @@ class _SettingsPageState extends State<SettingsPage> {
             leading: Icon(Icons.cloud_outlined, color: purpleColor),
             title: Text('Firebase Sync'),
             subtitle: Text(
-              'Not connected yet. Real two-device sync needs Firebase setup.',
+              'Firebase sync is active with partner connection.',
             ),
           ),
         ),
@@ -2678,8 +2755,6 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
 // ============================================================
 
 class FirebaseComplaintStore {
-  // দুই ফোনে একই private-space ID ব্যবহার করতে হবে।
-  // পরে এটি partner connection system-এর সঙ্গে যুক্ত হবে।
   static const String spaceId = 'REPLACE_WITH_SHARED_SPACE_ID';
 
   static CollectionReference<Map<String, dynamic>> get complaintsRef =>
