@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -76,7 +75,15 @@ service cloud.firestore {
         && request.resource.data.spaceId is string
         && request.resource.data.createdAt == request.time
           ? false
-          : false;
+          : signedIn()
+            && request.resource.data.createdBy == request.auth.uid
+            && request.resource.data.spaceId is string
+            && getAfter(
+              /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
+            ).data.createdBy == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
+            ).data.inviteCode == code;
 
       allow update, delete: if false;
     }
