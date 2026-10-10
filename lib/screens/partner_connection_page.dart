@@ -1,6 +1,9 @@
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/private_space_service.dart';
+import '../services/disconnection_service.dart';
 
 class PartnerConnectionPage extends StatefulWidget {
   const PartnerConnectionPage({super.key});
@@ -54,18 +57,18 @@ class _PartnerConnectionPageState
     } catch (_) {
       if (!mounted) return;
 
-      setState(() {
-        _loading = false;
-      });
-
+      setState(() => _loading = false);
       _showMessage(
-        'সংযোগের তথ্য লোড করা যায়নি। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+        'সংযোগের তথ্য লোড করা যায়নি। ইন্টারনেট পরীক্ষা করো।',
         isError: true,
       );
     }
   }
 
-  void _showMessage(String message, {required bool isError}) {
+  void _showMessage(
+    String message, {
+    required bool isError,
+  }) {
     if (!mounted) return;
 
     setState(() {
@@ -91,20 +94,19 @@ class _PartnerConnectionPageState
       setState(() {
         _savedCode = code;
         _spaceId = id;
-        _messageIsError = false;
-        _message =
-            'তোমার Private Space তৈরি হয়েছে! ❤️\n'
-            'এখন এই Invite Code-টি সঙ্গীকে দাও।';
       });
+
+      _showMessage(
+        'Private Space তৈরি হয়েছে! ❤️\nInvite Code-টি সঙ্গীকে দাও।',
+        isError: false,
+      );
     } catch (e) {
       _showMessage(
         _friendlyError(e, creating: true),
         isError: true,
       );
     } finally {
-      if (mounted) {
-        setState(() => _working = false);
-      }
+      if (mounted) setState(() => _working = false);
     }
   }
 
@@ -113,17 +115,9 @@ class _PartnerConnectionPageState
 
     final code = _codeController.text.trim().toUpperCase();
 
-    if (code.isEmpty) {
-      _showMessage(
-        'আগে সঙ্গীর ৬ অক্ষরের Invite Code লিখো।',
-        isError: true,
-      );
-      return;
-    }
-
     if (code.length != 6) {
       _showMessage(
-        'Invite Code-টি ৬ অক্ষরের হতে হবে। কোডটি আবার পরীক্ষা করো।',
+        'সঠিক ৬ অক্ষরের Invite Code লিখো।',
         isError: true,
       );
       return;
@@ -146,57 +140,294 @@ class _PartnerConnectionPageState
       setState(() {
         _spaceId = id;
         _savedCode = savedCode;
-        _messageIsError = false;
-        _message =
-            'সফলভাবে Partner Space-এ যুক্ত হয়েছ! 💕\n'
-            'এখন এই Space-এর সদস্যসংখ্যা ও সংযোগের অবস্থা নিচে দেখতে পাবে।';
       });
+
+      _showMessage(
+        'সফলভাবে Partner Space-এ যুক্ত হয়েছ! 💕',
+        isError: false,
+      );
     } catch (e) {
       _showMessage(
         _friendlyError(e, creating: false),
         isError: true,
       );
     } finally {
-      if (mounted) {
-        setState(() => _working = false);
-      }
+      if (mounted) setState(() => _working = false);
     }
   }
 
-  String _friendlyError(Object error, {required bool creating}) {
+  String _friendlyError(
+    Object error, {
+    required bool creating,
+  }) {
     final raw = error.toString().toLowerCase();
 
     if (raw.contains('network') ||
         raw.contains('unavailable') ||
         raw.contains('timeout')) {
-      return 'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না।\n'
-          'ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।';
+      return 'ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।';
     }
 
     if (raw.contains('permission-denied') ||
         raw.contains('permission denied')) {
-      return 'Firebase অনুমতি দেয়নি।\n'
-          'Firestore Rules ও Firebase Authentication সেটিংস পরীক্ষা করতে হবে।';
-    }
-
-    if (raw.contains('already has') ||
-        raw.contains('ইতিমধ্যে দুজন')) {
-      return 'এই Private Space-এ ইতিমধ্যে দুজন সদস্য আছে।';
+      return 'Firebase অনুমতি দেয়নি। Firestore Rules পরীক্ষা করো।';
     }
 
     if (raw.contains('invite code') ||
         raw.contains('সঠিক নয়') ||
         raw.contains('মেলেনি')) {
-      return 'Invite Code সঠিক নয়। সঙ্গীর কাছ থেকে কোডটি আবার নিয়ে চেষ্টা করো।';
+      return 'Invite Code সঠিক নয়। আবার পরীক্ষা করো।';
     }
 
     return creating
-        ? 'Private Space তৈরি করা যায়নি।\n'
-            'ইন্টারনেট ও Firebase সেটিংস পরীক্ষা করে আবার চেষ্টা করো।\n'
-            'বিস্তারিত: $error'
-        : 'Partner Space-এ যুক্ত হওয়া যায়নি।\n'
-            'কোড ও Firebase সেটিংস পরীক্ষা করে আবার চেষ্টা করো।\n'
-            'বিস্তারিত: $error';
+        ? 'Private Space তৈরি হয়নি।\n$error'
+        : 'Space-এ যুক্ত হওয়া যায়নি।\n$error';
+  }
+
+  Future<void> _runDisconnectionAction({
+    required String spaceId,
+    required bool approve,
+  }) async {
+    if (_working) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text(
+          approve
+              ? 'বিচ্ছিন্নতায় সম্মতি দেবে?'
+              : 'বিচ্ছিন্নতার অনুরোধ পাঠাবে?',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'দুজন সম্মতি দিলে Space-এর শেয়ার করা তথ্য অ্যাপ থেকে '
+          'অ্যাক্সেস করা যাবে না। ডেটা মুছে ফেলা হবে না। '
+          'পুনঃসংযোগের সুবিধা এখনো তৈরি হয়নি।',
+          style: TextStyle(
+            color: Colors.white70,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, false),
+            child: const Text('এখন নয়'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: _pink,
+            ),
+            child: const Text('আমি নিশ্চিত'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _working = true;
+      _message = null;
+    });
+
+    try {
+      if (approve) {
+        await DisconnectionService.approveDisconnection(
+          spaceId,
+        );
+
+        _showMessage(
+          'দুজনের সম্মতিতে Space বিচ্ছিন্ন হয়েছে। '
+          'ডেটা মুছে ফেলা হয়নি।',
+          isError: false,
+        );
+      } else {
+        await DisconnectionService.requestDisconnection(
+          spaceId,
+        );
+
+        _showMessage(
+          'তোমার সম্মতি সংরক্ষিত হয়েছে। '
+          'এখন সঙ্গীর সম্মতির অপেক্ষা করো।',
+          isError: false,
+        );
+      }
+    } catch (e) {
+      _showMessage(
+        'অনুরোধ সম্পন্ন হয়নি। Firebase Rules পরীক্ষা করো।\n$e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Widget _disconnectionPanel(
+    String spaceId,
+    Map<String, dynamic> data,
+    List members,
+  ) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid == null || !members.contains(uid)) {
+      return const SizedBox.shrink();
+    }
+
+    final rawApprovals = data['disconnectionApprovals'];
+    final approvals = rawApprovals is Map
+        ? Map<String, dynamic>.from(rawApprovals)
+        : <String, dynamic>{};
+
+    final status = data['connectionStatus'] ?? 'connected';
+
+    if (status == 'disconnected') {
+      return _panelContainer(
+        color: const Color(0xFF35131F),
+        borderColor: const Color(0xFFFF7185),
+        child: const Column(
+          children: [
+            Icon(
+              Icons.link_off_rounded,
+              color: Color(0xFFFF7185),
+              size: 30,
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Private Space বিচ্ছিন্ন',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'শেয়ার করা ডেটা মুছে ফেলা হয়নি। '
+              'অ্যাক্সেস বন্ধ রয়েছে। পুনঃসংযোগের সুবিধা '
+              'এখনো তৈরি হয়নি।',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white70,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (members.length != 2) {
+      return const SizedBox.shrink();
+    }
+
+    final otherUid = members.firstWhere(
+      (member) => member != uid,
+    );
+
+    final ownApproval = approvals[uid] == true;
+    final otherApproval = approvals[otherUid] == true;
+
+    final bool canApprove = otherApproval && !ownApproval;
+    final bool alreadyWaiting = ownApproval && !otherApproval;
+
+    final String description;
+
+    if (alreadyWaiting) {
+      description =
+          'তোমার সম্মতি দেওয়া হয়েছে। এখন সঙ্গীর সম্মতির অপেক্ষা।';
+    } else if (canApprove) {
+      description =
+          'সঙ্গী বিচ্ছিন্ন হওয়ার অনুরোধ করেছে। '
+          'সম্মতি দিলে Space বিচ্ছিন্ন হবে।';
+    } else {
+      description =
+          'অনুরোধ পাঠাও। Space বিচ্ছিন্ন করতে দুজনের সম্মতি লাগবে।';
+    }
+
+    return _panelContainer(
+      color: const Color(0xFF21172E),
+      borderColor: _purple,
+      child: Column(
+        children: [
+          const Icon(
+            Icons.link_off_rounded,
+            color: _pink,
+            size: 30,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Private Space বিচ্ছিন্নকরণ',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white70,
+              height: 1.5,
+            ),
+          ),
+          if (!alreadyWaiting) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _working
+                    ? null
+                    : () => _runDisconnectionAction(
+                          spaceId: spaceId,
+                          approve: canApprove,
+                        ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _pink,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  canApprove
+                      ? 'বিচ্ছিন্ন হতে সম্মতি দাও'
+                      : 'বিচ্ছিন্নতার অনুরোধ',
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          const Text(
+            'এতে Firestore ডেটা ডিলিট করা হয় না।',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _panelContainer({
+    required Color color,
+    required Color borderColor,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: child,
+    );
   }
 
   Widget _statusCard() {
@@ -214,7 +445,6 @@ class _PartnerConnectionPageState
           color: isError
               ? const Color(0xFFFF5C75)
               : const Color(0xFF4ADE80),
-          width: 1.3,
         ),
       ),
       child: Row(
@@ -227,9 +457,9 @@ class _PartnerConnectionPageState
             color: isError
                 ? const Color(0xFFFF7185)
                 : const Color(0xFF4ADE80),
-            size: 30,
+            size: 28,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               _message ?? '',
@@ -237,21 +467,15 @@ class _PartnerConnectionPageState
                 color: isError
                     ? const Color(0xFFFFC5CE)
                     : const Color(0xFFB8FFD6),
-                fontSize: 14,
                 height: 1.6,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ),
           IconButton(
-            tooltip: 'বন্ধ করো',
-            onPressed: () {
-              setState(() => _message = null);
-            },
+            onPressed: () => setState(() => _message = null),
             icon: const Icon(
               Icons.close_rounded,
               color: Colors.white60,
-              size: 19,
             ),
           ),
         ],
@@ -272,11 +496,10 @@ class _PartnerConnectionPageState
         final data = snapshot.data;
         final members = data?['memberUids'];
 
-        final memberCount = members is List
-            ? members.length
-            : 0;
-
-        final connected = memberCount >= 2;
+        final memberList = members is List ? members : <dynamic>[];
+        final memberCount = memberList.length;
+        final connected = memberCount == 2 &&
+            data?['connectionStatus'] != 'disconnected';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 22),
@@ -311,11 +534,7 @@ class _PartnerConnectionPageState
                     ? 'সংযোগ যাচাই করা যাচ্ছে না'
                     : connected
                         ? 'তোমরা দুজন যুক্ত হয়েছ! ❤️'
-                        : snapshot.connectionState ==
-                                ConnectionState.waiting &&
-                            !snapshot.hasData
-                            ? 'Space-এর তথ্য লোড হচ্ছে...'
-                            : 'Space তৈরি হয়েছে',
+                        : 'Space-এর তথ্য',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 19,
@@ -324,9 +543,7 @@ class _PartnerConnectionPageState
               ),
               const SizedBox(height: 8),
               Text(
-                snapshot.hasError
-                    ? 'Firestore Rules ও ইন্টারনেট পরীক্ষা করো।'
-                    : 'সদস্য: $memberCount / 2',
+                'সদস্য: $memberCount / 2',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white70,
@@ -337,7 +554,7 @@ class _PartnerConnectionPageState
               Text(
                 connected
                     ? 'দুই ফোন একই Private Space-এ যুক্ত।'
-                    : 'সঙ্গী Join করলে এই তথ্য স্বয়ংক্রিয়ভাবে আপডেট হবে।',
+                    : 'সঙ্গী Join করলে তথ্য আপডেট হবে।',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white54,
@@ -365,15 +582,18 @@ class _PartnerConnectionPageState
               if (snapshot.hasError) ...[
                 const SizedBox(height: 10),
                 const Text(
-                  'সদস্যসংখ্যা নিশ্চিত করা যায়নি। শুধু আগের সংরক্ষিত Space ID-কে সফল সংযোগ হিসেবে ধরে নেওয়া হচ্ছে না।',
+                  'Firestore Rules ও ইন্টারনেট পরীক্ষা করো।',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Color(0xFFFFA7B4),
                     fontSize: 12,
-                    height: 1.5,
                   ),
                 ),
               ],
+              if (data != null &&
+                  members is List &&
+                  !snapshot.hasError)
+                _disconnectionPanel(id, data, memberList),
             ],
           ),
         );
@@ -420,14 +640,11 @@ class _PartnerConnectionPageState
                   ),
                 ),
                 const SizedBox(height: 24),
-
                 _connectionCard(),
-
                 FilledButton.icon(
-                  onPressed:
-                      _working || _spaceId != null
-                          ? null
-                          : _createSpace,
+                  onPressed: _working || _spaceId != null
+                      ? null
+                      : _createSpace,
                   icon: const Icon(Icons.add_link_rounded),
                   label: const Text('Create Private Space'),
                   style: FilledButton.styleFrom(
@@ -436,11 +653,9 @@ class _PartnerConnectionPageState
                     padding: const EdgeInsets.symmetric(vertical: 15),
                   ),
                 ),
-
                 const SizedBox(height: 24),
                 const Divider(color: Colors.white24),
                 const SizedBox(height: 16),
-
                 const Text(
                   'সঙ্গীর Space-এ যুক্ত হও',
                   style: TextStyle(
@@ -449,7 +664,6 @@ class _PartnerConnectionPageState
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 TextField(
                   controller: _codeController,
                   enabled: !_working,
@@ -468,7 +682,6 @@ class _PartnerConnectionPageState
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 FilledButton.icon(
                   onPressed: _working ? null : _joinSpace,
                   icon: const Icon(Icons.people_alt_rounded),
@@ -479,7 +692,6 @@ class _PartnerConnectionPageState
                     padding: const EdgeInsets.symmetric(vertical: 15),
                   ),
                 ),
-
                 if (_working) ...[
                   const SizedBox(height: 18),
                   const Center(
@@ -492,12 +704,10 @@ class _PartnerConnectionPageState
                     style: TextStyle(color: Colors.white60),
                   ),
                 ],
-
                 if (_message != null) _statusCard(),
-
                 const SizedBox(height: 20),
                 const Text(
-                  'মনে রেখো: Space-এ যুক্ত হওয়া আর Chat, Gallery বা Notes সিঙ্ক হওয়া আলাদা কাজ। অন্য ফিচারগুলোও Firebase-এর সঙ্গে যুক্ত করতে হবে।',
+                  'Space-এ যুক্ত হওয়া আর Chat, Gallery বা Notes সিঙ্ক হওয়া আলাদা কাজ।',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white54,
