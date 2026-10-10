@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image_picker/image_picker.dart';
@@ -43,6 +43,26 @@ Future<void> main() async {
   runApp(const EternalSpaceApp());
 }
 
+class FirebaseServices {
+  static final auth = FirebaseAuth.instance;
+  static final firestore = FirebaseFirestore.instance;
+
+  static User? get currentUser => auth.currentUser;
+
+  static Future<void> saveUserProfile({
+    required String name,
+  }) async {
+    final user = auth.currentUser;
+    if (user == null) return;
+
+    await firestore.collection('users').doc(user.uid).set({
+      'name': name,
+      'email': user.email,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+}
+
 class EternalSpaceApp extends StatelessWidget {
   const EternalSpaceApp({super.key});
 
@@ -75,7 +95,6 @@ class EternalSpaceApp extends StatelessWidget {
 
 // ============================================================
 // LOCAL STORAGE
-// এই সংস্করণে ডেটা বর্তমান ফোনে সংরক্ষিত হয়।
 // ============================================================
 
 class SpaceStore {
