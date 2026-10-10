@@ -411,7 +411,43 @@ class HomePage extends StatelessWidget {
         _CoupleCard(first: partnerOne, second: partnerTwo),
         const SizedBox(height: 18),
         const LoveCounterCard(),
-        const SizedBox(height: 26),
+        const SizedBox(height: 18),
+        // Complaints Box Card
+        Card(
+          color: surfaceColor,
+          margin: const EdgeInsets.only(bottom: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0x338B5CF6),
+              child: Icon(Icons.forum_rounded, color: purpleColor),
+            ),
+            title: const Text(
+              'Complaints Box',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              '${SpaceStore.readList('spaceComplaints').length} complaints',
+              style: const TextStyle(color: Colors.white54),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ComplaintsPage(),
+                ),
+              );
+              // Refresh home when returning if needed
+              if (context.mounted) {
+                (context as Element).markNeedsBuild();
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
         const SectionHeading(title: 'Our little universe'),
         const SizedBox(height: 12),
         GridView.count(
@@ -2347,6 +2383,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
+              backgroundColor: surfaceColor,
               title: Text(
                 existing == null ? 'New Complaint' : 'Edit Complaint',
               ),
@@ -2453,6 +2490,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: surfaceColor,
         title: const Text('Delete complaint?'),
         content: const Text(
           'This complaint will be removed from this phone.',
@@ -2482,7 +2520,9 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: backgroundColor,
       appBar: AppBar(
+        backgroundColor: backgroundColor,
         title: const Text('Complaints Box'),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -2514,6 +2554,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                     const Text(
                       'Share what is bothering you and talk it out together.',
                       textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54),
                     ),
                   ],
                 ),
@@ -2526,13 +2567,19 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                 final complaint = complaints[index];
 
                 return Card(
+                  color: surfaceColor,
                   margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
                   child: ListTile(
                     leading: CircleAvatar(
+                      backgroundColor: const Color(0x33FF5FA2),
                       child: Icon(
                         complaint.author == 'You'
                             ? Icons.person
                             : Icons.favorite_outline,
+                        color: pinkColor,
                       ),
                     ),
                     title: Text(
@@ -2544,11 +2591,13 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                       '${complaint.author} • ${complaint.details}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white54),
                     ),
                     onTap: () {
                       showDialog<void>(
                         context: context,
                         builder: (context) => AlertDialog(
+                          backgroundColor: surfaceColor,
                           title: Text(complaint.title),
                           content: SingleChildScrollView(
                             child: Text(
@@ -2573,7 +2622,10 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                                 Navigator.pop(context);
                                 _deleteComplaint(complaint);
                               },
-                              child: const Text('Delete'),
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(color: Colors.redAccent),
+                              ),
                             ),
                           ],
                         ),
