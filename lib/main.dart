@@ -39,10 +39,26 @@ Future<void> main() async {
     android: androidSettings,
   );
 
-  await notifications.initialize(initializationSettings);
+  try {
+    await notifications.initialize(initializationSettings);
+  } catch (e) {
+    debugPrint('Notification initialization failed: $e');
+  }
+
   await SpaceStore.init();
-  await SpaceStore.syncFromFirebase();
-  await SpaceStore.startRealtimeSync();
+
+  // Firebase sync ব্যর্থ হলেও অ্যাপ চালু থাকবে।
+  try {
+    await SpaceStore.syncFromFirebase();
+  } catch (e) {
+    debugPrint('Initial Firebase sync failed: $e');
+  }
+
+  try {
+    await SpaceStore.startRealtimeSync();
+  } catch (e) {
+    debugPrint('Realtime sync initialization failed: $e');
+  }
 
   runApp(const EternalSpaceApp());
 }
@@ -314,7 +330,14 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _start() async {
     await SpaceStore.init();
-    await SpaceStore.startRealtimeSync();
+
+    try {
+      await SpaceStore.syncFromFirebase();
+      await SpaceStore.startRealtimeSync();
+    } catch (e) {
+      debugPrint('Splash sync failed: $e');
+    }
+
     await Future.delayed(const Duration(milliseconds: 900));
 
     if (!mounted) return;
