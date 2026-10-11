@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 import 'dart:io';
 
@@ -196,11 +195,11 @@ class SpaceSyncService {
     final folderId = await getOrCreateMediaFolder();
 
     await api.permissions.create(
-      folderId,
       drive.Permission()
         ..type = 'user'
         ..role = 'writer'
         ..emailAddress = cleanedEmail,
+      folderId,
       sendNotificationEmail: true,
     );
   }
@@ -248,44 +247,40 @@ class SpaceSyncService {
   ) async {
     final api = await _driveApi();
 
-    try {
-      final result = await api.files.list(
-        q: "name = 'EternalSpaceBackup.json' and trashed = false",
-        spaces: 'drive',
-        $fields: 'files(id,name)',
-        pageSize: 10,
+    final result = await api.files.list(
+      q: "name = 'EternalSpaceBackup.json' and trashed = false",
+      spaces: 'drive',
+      $fields: 'files(id,name)',
+      pageSize: 10,
+    );
+
+    final bytes = utf8.encode(jsonEncode({
+      'app': 'Eternal Space',
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      'data': data,
+    }));
+
+    final media = drive.Media(
+      Stream<List<int>>.value(bytes),
+      bytes.length,
+      contentType: 'application/json',
+    );
+
+    final existing = result.files?.firstOrNull;
+
+    if (existing?.id != null) {
+      await api.files.update(
+        drive.File()..name = 'EternalSpaceBackup.json',
+        existing!.id!,
+        uploadMedia: media,
       );
-
-      final bytes = utf8.encode(jsonEncode({
-        'app': 'Eternal Space',
-        'updatedAt': DateTime.now().toUtc().toIso8601String(),
-        'data': data,
-      }));
-
-      final media = drive.Media(
-        Stream<List<int>>.value(bytes),
-        bytes.length,
-        contentType: 'application/json',
+    } else {
+      await api.files.create(
+        drive.File()
+          ..name = 'EternalSpaceBackup.json'
+          ..mimeType = 'application/json',
+        uploadMedia: media,
       );
-
-      final existing = result.files?.firstOrNull;
-
-      if (existing?.id != null) {
-        await api.files.update(
-          drive.File()..name = 'EternalSpaceBackup.json',
-          existing!.id!,
-          uploadMedia: media,
-        );
-      } else {
-        await api.files.create(
-          drive.File()
-            ..name = 'EternalSpaceBackup.json'
-            ..mimeType = 'application/json',
-          uploadMedia: media,
-        );
-      }
-    } finally {
-      api.client.close();
     }
   }
 }
