@@ -1384,9 +1384,10 @@ class _ChatPageState extends State<ChatPage> {
                   const SizedBox(height: 4),
                   Text(
                     _formatTime(message['time']),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white45,
+                    style: TextStyle(
+  fontSize: 10,
+  color: Colors.white.withValues(alpha: 0.45),
+),
                     ),
                   ),
                 ],
