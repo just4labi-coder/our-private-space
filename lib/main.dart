@@ -228,8 +228,6 @@ class SpaceStore {
       'partnerOne': readString('partnerOne', 'Tawsif'),
       'partnerTwo': readString('partnerTwo', 'Nabila'),
       'chatMessages': readList('chatMessages'),
-      'galleryFolders': readList('galleryFolders'),
-      'galleryMedia': readList('galleryMedia'),
       'loveNotes': readList('loveNotes'),
       'specialDates': readList('specialDates'),
       'spaceComplaints': readList('spaceComplaints'),
@@ -280,12 +278,18 @@ class SpaceStore {
 
     try {
       for (final entry in data.entries) {
+        final value = entry.value;
+
+        // স্থানীয় গ্যালারির ফাইল-পাথ অন্য ফোন থেকে ব্যবহারযোগ্য নয়।
+        if (entry.key == 'galleryMedia' ||
+            entry.key == 'galleryFolders') {
+          continue;
+        }
+
         if (entry.key == 'updatedBy' ||
             entry.key == 'updatedAt') {
           continue;
         }
-
-        final value = entry.value;
 
         if (value is List) {
           await _prefs!.setString(entry.key, jsonEncode(value));
@@ -2841,8 +2845,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   'partnerOne': SpaceStore.readString('partnerOne'),
                   'partnerTwo': SpaceStore.readString('partnerTwo'),
                   'chatMessages': SpaceStore.readList('chatMessages'),
-                  'galleryFolders': SpaceStore.readList('galleryFolders'),
-                  'galleryMedia': SpaceStore.readList('galleryMedia'),
                   'loveNotes': SpaceStore.readList('loveNotes'),
                   'specialDates': SpaceStore.readList('specialDates'),
                   'spaceComplaints': SpaceStore.readList('spaceComplaints'),
