@@ -136,7 +136,7 @@ class _AuthScreenState extends State<AuthScreen> {
       labelStyle: const TextStyle(color: Colors.white70),
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: Colors.white.withOpacity(0.055),
+      fillColor: Colors.white.withValues(alpha: 0.055),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 17,
@@ -144,7 +144,7 @@ class _AuthScreenState extends State<AuthScreen> {
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(15),
         borderSide: BorderSide(
-          color: Colors.white.withOpacity(0.13),
+          color: Colors.white.withValues(alpha: 0.13),
         ),
       ),
       focusedBorder: OutlineInputBorder(
@@ -210,7 +210,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: _pink.withOpacity(0.22),
+                                color: _pink.withValues(alpha: 0.22),
                                 blurRadius: 30,
                                 spreadRadius: 2,
                               ),
@@ -343,8 +343,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed:
-                                _isLoading ? null : _forgotPassword,
+                            onPressed: _isLoading ? null : _forgotPassword,
                             child: const Text(
                               'Forgot Password?',
                               style: TextStyle(
@@ -395,7 +394,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         children: [
                           Expanded(
                             child: Divider(
-                              color: Colors.white.withOpacity(0.18),
+                              color: Colors.white.withValues(alpha: 0.18),
                             ),
                           ),
                           const Padding(
@@ -410,7 +409,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           Expanded(
                             child: Divider(
-                              color: Colors.white.withOpacity(0.18),
+                              color: Colors.white.withValues(alpha: 0.18),
                             ),
                           ),
                         ],
@@ -422,7 +421,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
                           side: BorderSide(
-                            color: Colors.white.withOpacity(0.18),
+                            color: Colors.white.withValues(alpha: 0.18),
                           ),
                           minimumSize: const Size.fromHeight(51),
                           shape: RoundedRectangleBorder(
