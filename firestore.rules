@@ -52,14 +52,15 @@ service cloud.firestore {
     }
 
     function validDisconnectionUpdate() {
+      let members = resource.data.memberUids;
+      let uid = request.auth.uid;
+      let otherUid = members[0] == uid ? members[1] : members[0];
+
       let oldApprovals =
         resource.data.get('disconnectionApprovals', {});
       let newApprovals =
         request.resource.data.get('disconnectionApprovals', {});
-      let members = resource.data.memberUids;
-      let otherUid = members[0] == request.auth.uid
-        ? members[1]
-        : members[0];
+
       let oldStatus =
         resource.data.get('connectionStatus', 'connected');
       let newStatus =
@@ -68,7 +69,7 @@ service cloud.firestore {
       return signedIn()
         && members is list
         && members.size() == 2
-        && request.auth.uid in members
+        && uid in members
         && request.resource.data.memberUids == members
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.inviteCode == resource.data.inviteCode
@@ -78,15 +79,17 @@ service cloud.firestore {
             'disconnectionApprovals',
             'disconnectionRequestedAt',
             'connectionStatus',
-            'disconnectedAt'
+            'disconnectedAt',
+            'reconnectionApprovals'
           ])
+        && oldApprovals is map
         && newApprovals is map
         && newApprovals.keys().hasOnly(members)
-        && newApprovals.get(request.auth.uid, false) == true
+        && newApprovals.get(uid, false) == true
         && newApprovals.get(otherUid, false)
           == oldApprovals.get(otherUid, false)
         && newApprovals.diff(oldApprovals)
-          .affectedKeys().hasOnly([request.auth.uid])
+          .affectedKeys().hasOnly([uid])
         && oldStatus == 'connected'
         && (
           (
@@ -97,13 +100,15 @@ service cloud.firestore {
           (
             newStatus == 'disconnected'
             && newApprovals.get(otherUid, false) == true
-            && newApprovals.get(request.auth.uid, false) == true
+            && request.resource.data.get('reconnectionApprovals', {})
+              is map
+            && request.resource.data.get('reconnectionApprovals', {})
+              .size() == 0
           )
         );
     }
 
     match /privateSpaces/{spaceId} {
-
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.memberUids == [request.auth.uid]
@@ -117,10 +122,8 @@ service cloud.firestore {
         );
 
       allow list: if false;
-
       allow update: if validJoin(spaceId)
         || validDisconnectionUpdate();
-
       allow delete: if false;
 
       match /{subcollection}/{documentId} {
@@ -129,9 +132,7 @@ service cloud.firestore {
     }
 
     match /spaceInvites/{code} {
-
       allow get: if signedIn();
-
       allow list: if false;
 
       allow create: if signedIn()
@@ -150,7 +151,6 @@ service cloud.firestore {
     match /users/{uid} {
       allow get, create, update: if signedIn()
         && request.auth.uid == uid;
-
       allow list, delete: if false;
     }
   }
