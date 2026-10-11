@@ -39,26 +39,9 @@ Future<void> main() async {
     android: androidSettings,
   );
 
-  try {
-    await notifications.initialize(initializationSettings);
-  } catch (e) {
-    debugPrint('Notification initialization failed: $e');
-  }
-
+  await notifications.initialize(initializationSettings);
   await SpaceStore.init();
-
-  // Firebase sync ব্যর্থ হলেও অ্যাপ চালু থাকবে।
-  try {
-    await SpaceStore.syncFromFirebase();
-  } catch (e) {
-    debugPrint('Initial Firebase sync failed: $e');
-  }
-
-  try {
-    await SpaceStore.startRealtimeSync();
-  } catch (e) {
-    debugPrint('Realtime sync initialization failed: $e');
-  }
+  await SpaceStore.syncFromFirebase();
 
   runApp(const EternalSpaceApp());
 }
@@ -119,10 +102,6 @@ class EternalSpaceApp extends StatelessWidget {
 
 class SpaceStore {
   static SharedPreferences? _prefs;
-  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
-      _syncSubscription;
-  static bool _applyingRemoteData = false;
-  static final ValueNotifier<int> syncVersion = ValueNotifier<int>(0);
 
   static Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -142,45 +121,36 @@ class SpaceStore {
     }
   }
 
-  static String readString(String key, [String fallback = '']) {
-    return _prefs?.getString(key) ?? fallback;
-  }
-
   static Future<void> saveList(
     String key,
     List<Map<String, dynamic>> value,
   ) async {
     await init();
     await _prefs!.setString(key, jsonEncode(value));
+    await _syncKey(key, value);
+  }
 
-    if (!_applyingRemoteData) {
-      await _syncKey(key, value);
-    }
+  static String readString(String key, [String fallback = '']) {
+    return _prefs?.getString(key) ?? fallback;
   }
 
   static Future<void> saveString(String key, String value) async {
     await init();
     await _prefs!.setString(key, value);
-
-    if (!_applyingRemoteData) {
-      await _syncKey(key, value);
-    }
+    await _syncKey(key, value);
   }
 
-  static Future<String?> _getSpaceId() async {
-    await init();
-    return _prefs!.getString('eternal_space_id');
-  }
-
-  static Future<void> _syncKey(String key, dynamic value) async {
-    final user = FirebaseAuth.instance.currentUser;
-    final spaceId = await _getSpaceId();
-
-    if (user == null || spaceId == null || spaceId.isEmpty) {
-      return;
-    }
-
+  static Future<void> _syncKey(
+    String key,
+    dynamic value,
+  ) async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final spaceId = await _getSpaceId();
+      if (spaceId == null || spaceId.isEmpty) return;
+
       await FirebaseFirestore.instance
           .collection('privateSpaces')
           .doc(spaceId)
@@ -192,9 +162,13 @@ class SpaceStore {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('Firebase upload failed: $e');
-      rethrow;
+      debugPrint('Firebase sync error: $e');
     }
+  }
+
+  static Future<String?> _getSpaceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('eternal_space_id');
   }
 
   static Future<void> syncAllToFirebase() async {
@@ -217,73 +191,27 @@ class SpaceStore {
   }
 
   static Future<void> syncFromFirebase() async {
-    await init();
-
-    final user = FirebaseAuth.instance.currentUser;
-    final spaceId = await _getSpaceId();
-
-    if (user == null || spaceId == null || spaceId.isEmpty) {
-      return;
-    }
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('privateSpaces')
-        .doc(spaceId)
-        .collection('syncData')
-        .doc('appState')
-        .get();
-
-    if (snapshot.exists && snapshot.data() != null) {
-      await _applyRemoteData(snapshot.data()!);
-    }
-  }
-
-  static Future<void> startRealtimeSync() async {
-    await init();
-
-    final user = FirebaseAuth.instance.currentUser;
-    final spaceId = await _getSpaceId();
-
-    if (user == null || spaceId == null || spaceId.isEmpty) {
-      debugPrint('Realtime sync skipped: no connected Space.');
-      return;
-    }
-
-    await _syncSubscription?.cancel();
-
-    final ref = FirebaseFirestore.instance
-        .collection('privateSpaces')
-        .doc(spaceId)
-        .collection('syncData')
-        .doc('appState');
-
-    _syncSubscription = ref.snapshots().listen(
-      (snapshot) async {
-        if (!snapshot.exists || snapshot.data() == null) return;
-
-        final data = snapshot.data()!;
-        if (data['updatedBy'] == user.uid) return;
-
-        try {
-          await _applyRemoteData(data);
-          debugPrint('Realtime data received from partner.');
-        } catch (e) {
-          debugPrint('Realtime sync failed: $e');
-        }
-      },
-      onError: (Object error) {
-        debugPrint('Realtime listener error: $error');
-      },
-    );
-  }
-
-  static Future<void> _applyRemoteData(
-    Map<String, dynamic> data,
-  ) async {
-    await init();
-    _applyingRemoteData = true;
-
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final spaceId = await _getSpaceId();
+      if (spaceId == null || spaceId.isEmpty) return;
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('privateSpaces')
+          .doc(spaceId)
+          .collection('syncData')
+          .doc('appState')
+          .get();
+
+      if (!snapshot.exists) return;
+
+      final data = snapshot.data();
+      if (data == null) return;
+
+      await init();
+
       for (final entry in data.entries) {
         if (entry.key == 'updatedBy' ||
             entry.key == 'updatedAt') {
@@ -293,20 +221,17 @@ class SpaceStore {
         final value = entry.value;
 
         if (value is List) {
-          await _prefs!.setString(entry.key, jsonEncode(value));
+          await _prefs!.setString(
+            entry.key,
+            jsonEncode(value),
+          );
         } else if (value is String) {
           await _prefs!.setString(entry.key, value);
         }
       }
-    } finally {
-      _applyingRemoteData = false;
-      syncVersion.value++;
+    } catch (e) {
+      debugPrint('Firebase download error: $e');
     }
-  }
-
-  static Future<void> stopRealtimeSync() async {
-    await _syncSubscription?.cancel();
-    _syncSubscription = null;
   }
 }
 
@@ -330,14 +255,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _start() async {
     await SpaceStore.init();
-
-    try {
-      await SpaceStore.syncFromFirebase();
-      await SpaceStore.startRealtimeSync();
-    } catch (e) {
-      debugPrint('Splash sync failed: $e');
-    }
-
     await Future.delayed(const Duration(milliseconds: 900));
 
     if (!mounted) return;
@@ -1003,54 +920,44 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController controller = TextEditingController();
   final ScrollController scrollController = ScrollController();
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  List<Map<String, dynamic>> messages = [];
 
-  Future<void> _save(List<Map<String, dynamic>> messages) async {
-    await SpaceStore.saveList('chatMessages', messages);
+  @override
+  void initState() {
+    super.initState();
+    messages = SpaceStore.readList('chatMessages');
   }
 
-  String _myName() {
-    return SpaceStore.readString('partnerOne', 'Tawsif');
+  @override
+  void dispose() {
+    controller.dispose();
+    scrollController.dispose();
+    super.dispose();
   }
 
-  String _partnerName() {
-    return SpaceStore.readString('partnerTwo', 'Nabila');
-  }
-
-  String _senderName(Map<String, dynamic> message, bool mine) {
-    final saved = '${message['senderName'] ?? ''}'.trim();
-    if (saved.isNotEmpty) return saved;
-    return mine ? _myName() : _partnerName();
+  Future<void> _save() {
+    return SpaceStore.saveList('chatMessages', messages);
   }
 
   Future<void> _sendText() async {
     final text = controller.text.trim();
     if (text.isEmpty) return;
 
-    final uid = _uid;
-    if (uid.isEmpty) {
-      _showError('অ্যাকাউন্ট সংযোগ পাওয়া যায়নি।');
-      return;
-    }
-    final messages = SpaceStore.readList('chatMessages');
-    final now = DateTime.now();
-    messages.add({
-      'id': now.microsecondsSinceEpoch.toString(),
-      'text': text,
-      'type': 'text',
-      'senderUid': uid,
-      'senderName': _myName(),
-      'mine': true,
-      'unsent': false,
-      'time': now.toIso8601String(),
+    setState(() {
+      messages.add({
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'text': text,
+        'type': 'text',
+        'mine': true,
+        'unsent': false,
+        'time': DateTime.now().toIso8601String(),
+      });
+
+      controller.clear();
     });
-    controller.clear();
-    try {
-      await _save(messages);
-      _scrollToBottom();
-    } catch (e) {
-      _showError('মেসেজ পাঠানো যায়নি। ইন্টারনেট পরীক্ষা করো।');
-    }
+
+    await _save();
+    _scrollToBottom();
   }
 
   Future<void> _sendMedia(bool video) async {
@@ -1059,34 +966,22 @@ class _ChatPageState extends State<ChatPage> {
     final file = video
         ? await picker.pickVideo(source: ImageSource.gallery)
         : await picker.pickImage(source: ImageSource.gallery);
+
     if (file == null || !mounted) return;
 
-    final messages = SpaceStore.readList('chatMessages');
-    final now = DateTime.now();
-    messages.add({
-      'id': now.microsecondsSinceEpoch.toString(),
-      'text': file.path,
-      'type': video ? 'video' : 'image',
-      'senderUid': _uid,
-      'senderName': _myName(),
-      'mine': true,
-      'unsent': false,
-      'time': now.toIso8601String(),
+    setState(() {
+      messages.add({
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'text': file.path,
+        'type': video ? 'video' : 'image',
+        'mine': true,
+        'unsent': false,
+        'time': DateTime.now().toIso8601String(),
+      });
     });
-    try {
-      await _save(messages);
-      _scrollToBottom();
-    } catch (e) {
-      _showError('মিডিয়া সেভ করা যায়নি।');
-    }
-  }
 
-  void _showError(String message) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    await _save();
+    _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -1101,19 +996,9 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  bool _isMine(Map<String, dynamic> message) {
-    final senderUid = '${message['senderUid'] ?? ''}';
-
-    if (senderUid.isNotEmpty && _uid.isNotEmpty) {
-      return senderUid == _uid;
-    }
-    return message['mine'] == true;
-  }
-
-  Future<void> _showMessageOptions(
-    Map<String, dynamic> message,
-  ) async {
-    final mine = _isMine(message);
+  Future<void> _showMessageOptions(int index) async {
+    final message = messages[index];
+    final mine = message['mine'] == true;
     final unsent = message['unsent'] == true;
 
     await showModalBottomSheet<void>(
@@ -1132,22 +1017,19 @@ class _ChatPageState extends State<ChatPage> {
             ),
             if (mine && !unsent)
               ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Unsend for everyone'),
+                leading: const Icon(
+                  Icons.remove_circle_outline,
+                ),
+                title: const Text('Unsend'),
                 onTap: () async {
                   Navigator.pop(sheetContext);
-                  final latest = SpaceStore.readList('chatMessages');
-                  final index = latest.indexWhere(
-                    (item) => item['id'] == message['id'],
-                  );
-                  if (index == -1) return;
-                  latest[index]['unsent'] = true;
-                  latest[index]['text'] = '';
-                  try {
-                    await _save(latest);
-                  } catch (e) {
-                    _showError('মেসেজ মুছতে সমস্যা হয়েছে।');
-                  }
+
+                  setState(() {
+                    messages[index]['unsent'] = true;
+                    messages[index]['text'] = '';
+                  });
+
+                  await _save();
                 },
               ),
           ],
@@ -1158,7 +1040,6 @@ class _ChatPageState extends State<ChatPage> {
 
   void _showDetails(Map<String, dynamic> message) {
     final date = DateTime.tryParse('${message['time'] ?? ''}');
-    final mine = _isMine(message);
 
     showDialog<void>(
       context: context,
@@ -1166,243 +1047,122 @@ class _ChatPageState extends State<ChatPage> {
         backgroundColor: surfaceColor,
         title: const Text('Message details'),
         content: Text(
-          'প্রেরক: ${_senderName(message, mine)}\n'
-          'ধরন: ${message['type'] ?? 'text'}\n'
-          'সময়: ${date?.toLocal().toString() ?? 'অজানা'}',
+          'Type: ${message['type'] ?? 'text'}\n'
+          'Sender: ${message['mine'] == true ? 'You' : 'Partner'}\n'
+          'Time: ${date?.toLocal().toString() ?? 'Unknown'}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('বন্ধ করো'),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
   }
 
-  String _formatTime(dynamic value) {
-    final date = DateTime.tryParse('$value')?.toLocal();
-    if (date == null) return '';
-
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final period = date.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
-  }
-
-  Widget _avatar(String name, {double radius = 15}) {
-    final initial = name.trim().isNotEmpty
-        ? name.trim().characters.first.toUpperCase()
-        : '?';
-
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: purpleColor,
-      child: Text(
-        initial,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    scrollController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: BoxDecoration(
-            color: surfaceColor,
-            border: Border(
-              bottom: BorderSide(
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
-            ),
-          ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
           child: Row(
             children: [
-              _avatar(_partnerName(), radius: 23),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _partnerName(),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+              Icon(Icons.favorite_rounded, color: pinkColor, size: 25),
+              SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Private Chat',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const Text(
-                      'Private space',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white60,
-                      ),
+                  ),
+                  Text(
+                    'A little space just for us',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.white54,
                     ),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Chat information',
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: surfaceColor,
-                      title: const Text('Private Chat'),
-                      content: Text(
-                        'তুমি: ${_myName()}\n'
-                        'সঙ্গী: ${_partnerName()}',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('বন্ধ করো'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                icon: const Icon(
-                  Icons.info_outline,
-                  color: purpleColor,
-                ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
         Expanded(
-          child: ValueListenableBuilder<int>(
-            valueListenable: SpaceStore.syncVersion,
-            builder: (context, version, child) {
-              final messages = SpaceStore.readList('chatMessages');
-              if (messages.isEmpty) {
-                return const Center(
-                  child: Text(
-                    'একটি মেসেজ দিয়ে গল্প শুরু করো ❤️',
-                    style: TextStyle(color: Colors.white60),
-                  ),
-                );
-              }
-              return ListView.builder(
-                key: const PageStorageKey('private-chat-messages'),
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
-                itemCount: messages.length,
-                itemBuilder: (context, index) {
-                  final message = messages[index];
-                  final mine = _isMine(message);
-                  final sender = _senderName(message, mine);
-                  final unsent = message['unsent'] == true;
-                  return GestureDetector(
-                    onLongPress: () => _showMessageOptions(message),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 5),
-                      child: Row(
-                        mainAxisAlignment: mine
-                            ? MainAxisAlignment.end
-                            : MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (!mine) ...[
-                            _avatar(sender),
-                            const SizedBox(width: 7),
-                          ],
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: mine
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  constraints: BoxConstraints(
-                                    maxWidth:
-                                        MediaQuery.sizeOf(context).width * 0.72,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: unsent
-                                        ? surfaceColor.withValues(alpha: 0.7)
-                                        : mine
-                                            ? purpleColor
-                                            : const Color(0xFF29263B),
-                                    borderRadius: BorderRadius.only(
-                                      topLeft: const Radius.circular(19),
-                                      topRight: const Radius.circular(19),
-                                      bottomLeft:
-                                          Radius.circular(mine ? 19 : 5),
-                                      bottomRight:
-                                          Radius.circular(mine ? 5 : 19),
-                                    ),
-                                  ),
-                                  child: unsent
-                                      ? const Text(
-                                          'You unsent a message',
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        )
-                                      : _messageContent(message),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _formatTime(message['time']),
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.white54,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (mine) ...[
-                            const SizedBox(width: 7),
-                            _avatar(_myName()),
-                          ],
-                        ],
+          child: messages.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.forum_outlined,
+                        size: 44,
+                        color: Colors.white30,
                       ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
+                      SizedBox(height: 12),
+                      Text(
+                        'Your story starts with a message',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message = messages[index];
+                    final mine = message['mine'] == true;
+
+                    return GestureDetector(
+                      onLongPress: () => _showMessageOptions(index),
+                      child: Align(
+                        alignment: mine
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: Container(
+                          constraints: BoxConstraints(
+                            maxWidth:
+                                MediaQuery.sizeOf(context).width * 0.76,
+                          ),
+                          margin: const EdgeInsets.symmetric(vertical: 5),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: mine
+                                ? blueColor.withValues(alpha: 0.25)
+                                : surfaceColor,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: _messageContent(message),
+                        ),
+                      ),
+                    );
+                  },
+                ),
         ),
         SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'ছবি',
                   onPressed: () => _sendMedia(false),
                   icon: const Icon(
                     Icons.image_outlined,
-                    color: purpleColor,
+                    color: pinkColor,
                   ),
                 ),
                 IconButton(
-                  tooltip: 'ভিডিও',
                   onPressed: () => _sendMedia(true),
                   icon: const Icon(
-                    Icons.video_library_outlined,
+                    Icons.videocam_outlined,
                     color: purpleColor,
                   ),
                 ),
@@ -1410,27 +1170,18 @@ class _ChatPageState extends State<ChatPage> {
                   child: TextField(
                     controller: controller,
                     textCapitalization: TextCapitalization.sentences,
-                    minLines: 1,
-                    maxLines: 5,
                     onSubmitted: (_) => _sendText(),
-                    decoration: InputDecoration(
-                      hintText: 'মেসেজ লেখো...',
-                      contentPadding: const EdgeInsets.symmetric(
+                    decoration: const InputDecoration(
+                      hintText: 'Write a message...',
+                      contentPadding: EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
-                      ),
-                      filled: true,
-                      fillColor: Colors.black.withValues(alpha: 0.3),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 5),
+                const SizedBox(width: 6),
                 IconButton.filled(
-                  tooltip: 'পাঠাও',
                   onPressed: _sendText,
                   icon: const Icon(Icons.send_rounded),
                 ),
@@ -1443,6 +1194,16 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _messageContent(Map<String, dynamic> message) {
+    if (message['unsent'] == true) {
+      return const Text(
+        'Unsent',
+        style: TextStyle(
+          color: Colors.white54,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
+
     final type = '${message['type'] ?? 'text'}';
     final path = '${message['text'] ?? ''}';
 
@@ -1461,13 +1222,13 @@ class _ChatPageState extends State<ChatPage> {
           width: 210,
           height: 210,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Text(
-            'এই ফোনে ছবিটি পাওয়া যায়নি',
-            style: TextStyle(color: Colors.white70),
-          ),
+          errorBuilder: (_, __, ___) {
+            return const Text('Image is no longer available');
+          },
         ),
       );
     }
+
     if (type == 'video') {
       return GestureDetector(
         onTap: () {
@@ -1480,23 +1241,24 @@ class _ChatPageState extends State<ChatPage> {
         },
         child: Container(
           width: 210,
-          height: 120,
-          alignment: Alignment.center,
+          height: 130,
           decoration: BoxDecoration(
             color: Colors.black26,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
-            Icons.play_circle_fill_rounded,
-            size: 46,
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.play_circle_fill_rounded, size: 45),
+              SizedBox(height: 6),
+              Text('Play video'),
+            ],
           ),
         ),
       );
     }
-    return Text(
-      path,
-      style: const TextStyle(fontSize: 15, color: Colors.white),
-    );
+
+    return Text(path, style: const TextStyle(fontSize: 15));
   }
 }
 
@@ -1515,15 +1277,6 @@ class _GalleryPageState extends State<GalleryPage> {
   List<Map<String, dynamic>> folders = [];
   List<Map<String, dynamic>> media = [];
 
-  void _onRemoteSync() {
-    if (!mounted) return;
-
-    setState(() {
-      folders = SpaceStore.readList('galleryFolders');
-      media = SpaceStore.readList('galleryMedia');
-    });
-  }
-
   @override
   void initState() {
     super.initState();
@@ -1536,16 +1289,9 @@ class _GalleryPageState extends State<GalleryPage> {
         {'id': 'all', 'name': 'All Memories'},
         {'id': 'favorites', 'name': 'Favorites'},
       ];
+
       SpaceStore.saveList('galleryFolders', folders);
     }
-
-    SpaceStore.syncVersion.addListener(_onRemoteSync);
-  }
-
-  @override
-  void dispose() {
-    SpaceStore.syncVersion.removeListener(_onRemoteSync);
-    super.dispose();
   }
 
   Future<void> _save() async {
@@ -1613,32 +1359,13 @@ class _GalleryPageState extends State<GalleryPage> {
       'type': video ? 'video' : 'image',
       'folderId': folderId,
       'createdAt': DateTime.now().toIso8601String(),
-      'uploadStatus': 'uploading',
     };
 
-    setState(() => media.add(item));
+    setState(() {
+      media.add(item);
+    });
+
     await _save();
-
-    try {
-      final driveData =
-          await SpaceSyncService.uploadMedia(File(picked.path));
-
-      item.addAll(driveData);
-      item['uploadStatus'] = 'uploaded';
-      await _save();
-    } catch (e) {
-      item['uploadStatus'] = 'failed';
-      item['uploadError'] = e.toString();
-      await _save();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('আপলোড ব্যর্থ: $e')),
-        );
-      }
-    }
-
-    if (mounted) setState(() {});
     return item;
   }
 
@@ -1772,98 +1499,86 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        await SpaceStore.syncFromFirebase();
-        if (mounted) {
-          setState(() {
-            folders = SpaceStore.readList('galleryFolders');
-            media = SpaceStore.readList('galleryMedia');
-          });
-        }
-      },
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Our Memories',
-                  style: TextStyle(
-                    fontSize: 25,
-                    fontWeight: FontWeight.bold,
-                  ),
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Our Memories',
+                style: TextStyle(
+                  fontSize: 25,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              IconButton.filled(
-                onPressed: _createFolder,
-                icon: const Icon(Icons.create_new_folder_outlined),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Keep the little moments that mean everything.',
-            style: TextStyle(color: Colors.white54),
-          ),
-          const SizedBox(height: 22),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: folders.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.15,
             ),
-            itemBuilder: (context, index) {
-              final folder = folders[index];
-              final count = _itemsForFolder('${folder['id']}').length;
+            IconButton.filled(
+              onPressed: _createFolder,
+              icon: const Icon(Icons.create_new_folder_outlined),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Keep the little moments that mean everything.',
+          style: TextStyle(color: Colors.white54),
+        ),
+        const SizedBox(height: 22),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: folders.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.15,
+          ),
+          itemBuilder: (context, index) {
+            final folder = folders[index];
+            final count = _itemsForFolder('${folder['id']}').length;
 
-              return Material(
-                color: surfaceColor,
+            return Material(
+              color: surfaceColor,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
                 borderRadius: BorderRadius.circular(20),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () => _openFolder(folder),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.folder_rounded,
-                          size: 42,
-                          color: purpleColor,
+                onTap: () => _openFolder(folder),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.folder_rounded,
+                        size: 42,
+                        color: purpleColor,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '${folder['name']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '$count items',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '${folder['name']}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          '$count items',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              );
-            },
-          ),
-        ],
-      ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -1899,31 +1614,6 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
     items = List<Map<String, dynamic>>.from(widget.initialItems);
   }
 
-  Future<String?> _resolveMediaPath(Map<String, dynamic> item) async {
-    final path = item['path']?.toString();
-
-    if (path != null && path.isNotEmpty && await File(path).exists()) {
-      return path;
-    }
-
-    final driveFileId = item['driveFileId']?.toString();
-    if (driveFileId == null || driveFileId.isEmpty) {
-      return null;
-    }
-
-    try {
-      final downloadedPath = await SpaceSyncService.downloadMedia(
-        driveFileId,
-        saveAs: item['driveFileName']?.toString(),
-      );
-
-      item['path'] = downloadedPath;
-      return downloadedPath;
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1955,73 +1645,56 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
               ),
               itemBuilder: (context, index) {
                 final item = items[index];
+                final path = '${item['path']}';
+                final video = item['type'] == 'video';
 
-                return FutureBuilder<String?>(
-                  future: _resolveMediaPath(item),
-                  builder: (context, snapshot) {
-                    final path = snapshot.data;
-                    final video = item['type'] == 'video';
-
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    if (path == null) {
-                      return const ColoredBox(
-                        color: surfaceColor,
-                        child: Center(
-                          child: Icon(Icons.cloud_off_rounded, size: 40),
-                        ),
-                      );
-                    }
-
-                    return GestureDetector(
-                      onLongPress: () => widget.onLongPress(item),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => video
-                                ? VideoViewerPage(path: path)
-                                : ImageViewerPage(path: path),
-                          ),
-                        );
-                      },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (video)
-                              Container(
-                                color: surfaceColor,
-                                child: const Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  size: 50,
-                                ),
-                              )
-                            else
-                              Image.file(
-                                File(path),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const ColoredBox(
-                                  color: surfaceColor,
-                                  child: Icon(Icons.broken_image_outlined),
-                                ),
-                              ),
-                            if (video)
-                              const Align(
-                                alignment: Alignment.bottomRight,
-                                child: Padding(
-                                  padding: EdgeInsets.all(8),
-                                  child: Icon(Icons.videocam_rounded),
-                                ),
-                              ),
-                          ],
-                        ),
+                return GestureDetector(
+                  onLongPress: () => widget.onLongPress(item),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => video
+                            ? VideoViewerPage(path: path)
+                            : ImageViewerPage(path: path),
                       ),
                     );
                   },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (video)
+                          Container(
+                            color: surfaceColor,
+                            child: const Icon(
+                              Icons.play_circle_fill_rounded,
+                              size: 50,
+                            ),
+                          )
+                        else
+                          Image.file(
+                            File(path),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) {
+                              return const ColoredBox(
+                                color: surfaceColor,
+                                child: Icon(Icons.broken_image_outlined),
+                              );
+                            },
+                          ),
+                        if (video)
+                          const Align(
+                            alignment: Alignment.bottomRight,
+                            child: Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.videocam_rounded),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),
@@ -3171,8 +2844,14 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                               child: const Text('Edit'),
                             ),
                             TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Delete'),
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _deleteComplaint(complaint);
+                              },
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(color: Colors.redAccent),
+                              ),
                             ),
                           ],
                         ),
