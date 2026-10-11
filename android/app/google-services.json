@@ -12,7 +12,12 @@
           "package_name": "com.privatespace.ourspace"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "257215969796-jm5uh95ggisajtfrfacv42lcpgtr279h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyA4TdriDJFH1KkWWhPNnD9n742bdzAB8KE"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "257215969796-jm5uh95ggisajtfrfacv42lcpgtr279h.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
