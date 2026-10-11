@@ -171,6 +171,25 @@ class SpaceStore {
     return prefs.getString('eternal_space_id');
   }
 
+  static Future<void> syncAllToFirebase() async {
+    await init();
+
+    final data = <String, dynamic>{
+      'partnerOne': readString('partnerOne', 'Tawsif'),
+      'partnerTwo': readString('partnerTwo', 'Nabila'),
+      'chatMessages': readList('chatMessages'),
+      'galleryFolders': readList('galleryFolders'),
+      'galleryMedia': readList('galleryMedia'),
+      'loveNotes': readList('loveNotes'),
+      'specialDates': readList('specialDates'),
+      'spaceComplaints': readList('spaceComplaints'),
+    };
+
+    for (final entry in data.entries) {
+      await _syncKey(entry.key, entry.value);
+    }
+  }
+
   static Future<void> syncFromFirebase() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -2368,6 +2387,34 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 28),
         const SectionHeading(title: 'Cloud Sync'),
         const SizedBox(height: 10),
+        Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: const Icon(
+              Icons.cloud_upload_rounded,
+              color: pinkColor,
+            ),
+            title: const Text('Upload local data'),
+            subtitle: const Text('Send this phone’s data to Firebase'),
+            onTap: () async {
+              try {
+                await SpaceStore.syncAllToFirebase();
+
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Local data uploaded to Firebase'),
+                  ),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Upload failed: $e')),
+                );
+              }
+            },
+          ),
+        ),
         Card(
           color: surfaceColor,
           child: ListTile(
