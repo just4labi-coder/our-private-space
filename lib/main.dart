@@ -1041,10 +1041,6 @@ class _ChatPageState extends State<ChatPage> {
     return message['mine'] == true;
   }
 
-  Future<void> _save() async {
-    // চ্যাটের মেসেজ এখন ChatSyncService দিয়ে
-    // সরাসরি Firebase-এ সেভ হবে।
-  }
 
   Future<void> _sendText() async {
     final text = controller.text.trim();
@@ -1392,7 +1388,7 @@ class _ChatPageState extends State<ChatPage> {
                     _formatTime(message['time']),
                     style: const TextStyle(
                       fontSize: 10,
-                      color: Colors.white45,
+                      color: Colors.white54,
                     ),
                   ),
                 ],
