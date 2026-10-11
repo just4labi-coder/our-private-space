@@ -321,10 +321,53 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const MainScreen()),
-    );
+    final isTrial = await AuthService.isTrialMode();
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (!mounted) return;
+
+    if (isTrial || user != null) {
+      if (!isTrial) {
+        await SpaceStore.syncFromFirebase();
+        await SpaceStore.startRealtimeSync();
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainScreen()),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AuthScreen(
+            onSuccess: () async {
+              await SpaceStore.syncFromFirebase();
+              await SpaceStore.startRealtimeSync();
+
+              if (!mounted) return;
+
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const MainScreen()),
+              );
+            },
+            onTrial: () async {
+              await AuthService.startTrial();
+
+              if (!mounted) return;
+
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const MainScreen()),
+              );
+            },
+          ),
+        ),
+      );
+    }
   }
 
   @override
