@@ -982,37 +982,93 @@ class _ChatPageState extends State<ChatPage> {
 
   List<Map<String, dynamic>> messages = [];
 
+  String get _currentUid =>
+      FirebaseAuth.instance.currentUser?.uid ?? '';
+
   @override
   void initState() {
     super.initState();
+
     messages = SpaceStore.readList('chatMessages');
+    SpaceStore.syncVersion.addListener(_handleSyncChange);
+    _startChatSync();
+  }
+
+  Future<void> _startChatSync() async {
+    await SpaceStore.init();
+    await SpaceStore.syncFromFirebase();
+
+    if (!mounted) return;
+
+    await SpaceStore.startRealtimeSync();
+    _handleSyncChange();
+  }
+
+  void _handleSyncChange() {
+    if (!mounted) return;
+
+    final latestMessages = SpaceStore.readList('chatMessages');
+
+    setState(() {
+      messages = latestMessages;
+    });
   }
 
   @override
   void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleSyncChange);
     controller.dispose();
     scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _save() {
-    return SpaceStore.saveList('chatMessages', messages);
+  bool _isMine(Map<String, dynamic> message) {
+    final senderUid = '${message['senderUid'] ?? ''}';
+
+    if (senderUid.isNotEmpty && _currentUid.isNotEmpty) {
+      return senderUid == _currentUid;
+    }
+
+    // পুরোনো মেসেজের জন্য সাময়িক সামঞ্জস্য।
+    return message['mine'] == true;
+  }
+
+  Future<void> _save() async {
+    await SpaceStore.saveList(
+      'chatMessages',
+      List<Map<String, dynamic>>.from(messages),
+    );
   }
 
   Future<void> _sendText() async {
     final text = controller.text.trim();
     if (text.isEmpty) return;
 
-    setState(() {
-      messages.add({
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        'text': text,
-        'type': 'text',
-        'mine': true,
-        'unsent': false,
-        'time': DateTime.now().toIso8601String(),
-      });
+    final user = FirebaseAuth.instance.currentUser;
 
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'আগে Partner Space-এ যুক্ত হয়ে নাও।',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final message = <String, dynamic>{
+      'id': DateTime.now().microsecondsSinceEpoch.toString(),
+      'senderUid': user.uid,
+      'text': text,
+      'type': 'text',
+      'mine': true,
+      'unsent': false,
+      'time': DateTime.now().toIso8601String(),
+    };
+
+    setState(() {
+      messages.add(message);
       controller.clear();
     });
 
@@ -1021,6 +1077,17 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _sendMedia(bool video) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('আগে Partner Space-এ যুক্ত হও।'),
+        ),
+      );
+      return;
+    }
+
     final picker = ImagePicker();
 
     final file = video
@@ -1029,15 +1096,18 @@ class _ChatPageState extends State<ChatPage> {
 
     if (file == null || !mounted) return;
 
+    final message = <String, dynamic>{
+      'id': DateTime.now().microsecondsSinceEpoch.toString(),
+      'senderUid': user.uid,
+      'text': file.path,
+      'type': video ? 'video' : 'image',
+      'mine': true,
+      'unsent': false,
+      'time': DateTime.now().toIso8601String(),
+    };
+
     setState(() {
-      messages.add({
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        'text': file.path,
-        'type': video ? 'video' : 'image',
-        'mine': true,
-        'unsent': false,
-        'time': DateTime.now().toIso8601String(),
-      });
+      messages.add(message);
     });
 
     await _save();
@@ -1046,221 +1116,135 @@ class _ChatPageState extends State<ChatPage> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (scrollController.hasClients) {
-        scrollController.animateTo(
-          scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!mounted || !scrollController.hasClients) return;
+
+      scrollController.animateTo(
+        scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     });
   }
 
+  String _formatTime(dynamic value) {
+    final date = DateTime.tryParse('${value ?? ''}');
+    if (date == null) return '';
+
+    final local = date.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+
+    return '$hour:$minute $period';
+  }
+
   Future<void> _showMessageOptions(int index) async {
-    final message = messages[index];
-    final mine = message['mine'] == true;
+    if (index < 0 || index >= messages.length) return;
+
+    final message = Map<String, dynamic>.from(messages[index]);
+    final messageId = '${message['id'] ?? ''}';
+    final mine = _isMine(message);
     final unsent = message['unsent'] == true;
 
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: surfaceColor,
-      builder: (sheetContext) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Details'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _showDetails(message);
-              },
-            ),
-            if (mine && !unsent)
-              ListTile(
-                leading: const Icon(
-                  Icons.remove_circle_outline,
-                ),
-                title: const Text('Unsend'),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-
-                  setState(() {
-                    messages[index]['unsent'] = true;
-                    messages[index]['text'] = '';
-                  });
-
-                  await _save();
-                },
-              ),
-          ],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(22),
         ),
       ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.info_outline,
+                  color: pinkColor,
+                ),
+                title: const Text('মেসেজের বিবরণ'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showDetails(message);
+                },
+              ),
+              if (mine && !unsent)
+                ListTile(
+                  leading: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.redAccent,
+                  ),
+                  title: const Text('সবার জন্য Unsend'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+
+                    final currentIndex = messages.indexWhere(
+                      (item) =>
+                          '${item['id'] ?? ''}' == messageId,
+                    );
+
+                    if (currentIndex == -1 || !mounted) return;
+
+                    setState(() {
+                      messages[currentIndex]['unsent'] = true;
+                      messages[currentIndex]['text'] = '';
+                    });
+
+                    await _save();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   void _showDetails(Map<String, dynamic> message) {
-    final date = DateTime.tryParse('${message['time'] ?? ''}');
-
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: surfaceColor,
-        title: const Text('Message details'),
+        title: const Text('মেসেজের বিবরণ'),
         content: Text(
-          'Type: ${message['type'] ?? 'text'}\n'
-          'Sender: ${message['mine'] == true ? 'You' : 'Partner'}\n'
-          'Time: ${date?.toLocal().toString() ?? 'Unknown'}',
+          'প্রেরক: ${_isMine(message) ? 'তুমি' : 'সঙ্গী'}\n'
+          'ধরন: ${message['type'] ?? 'text'}\n'
+          'সময়: ${_formatTime(message['time'])}\n'
+          'অবস্থা: ${message['unsent'] == true ? 'Unsent' : 'পাঠানো হয়েছে'}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
+            child: const Text('বন্ধ করো'),
           ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
-          child: Row(
-            children: [
-              Icon(Icons.favorite_rounded, color: pinkColor, size: 25),
-              SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Private Chat',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    'A little space just for us',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.white54,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: messages.isEmpty
-              ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.forum_outlined,
-                        size: 44,
-                        color: Colors.white30,
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        'Your story starts with a message',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  controller: scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final mine = message['mine'] == true;
-
-                    return GestureDetector(
-                      onLongPress: () => _showMessageOptions(index),
-                      child: Align(
-                        alignment: mine
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          constraints: BoxConstraints(
-                            maxWidth:
-                                MediaQuery.sizeOf(context).width * 0.76,
-                          ),
-                          margin: const EdgeInsets.symmetric(vertical: 5),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: mine
-                                ? blueColor.withValues(alpha: 0.25)
-                                : surfaceColor,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: _messageContent(message),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () => _sendMedia(false),
-                  icon: const Icon(
-                    Icons.image_outlined,
-                    color: pinkColor,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => _sendMedia(true),
-                  icon: const Icon(
-                    Icons.videocam_outlined,
-                    color: purpleColor,
-                  ),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    textCapitalization: TextCapitalization.sentences,
-                    onSubmitted: (_) => _sendText(),
-                    decoration: const InputDecoration(
-                      hintText: 'Write a message...',
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                IconButton.filled(
-                  onPressed: _sendText,
-                  icon: const Icon(Icons.send_rounded),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _messageContent(Map<String, dynamic> message) {
     if (message['unsent'] == true) {
-      return const Text(
-        'Unsent',
-        style: TextStyle(
-          color: Colors.white54,
-          fontStyle: FontStyle.italic,
-        ),
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.block_rounded,
+            size: 15,
+            color: Colors.white54,
+          ),
+          SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'এই মেসেজটি সরানো হয়েছে',
+              style: TextStyle(
+                color: Colors.white60,
+                fontStyle: FontStyle.italic,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -1277,14 +1261,27 @@ class _ChatPageState extends State<ChatPage> {
             ),
           );
         },
-        child: Image.file(
-          File(path),
-          width: 210,
-          height: 210,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) {
-            return const Text('Image is no longer available');
-          },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.file(
+            File(path),
+            width: 210,
+            height: 210,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) {
+              return const SizedBox(
+                width: 210,
+                height: 100,
+                child: Center(
+                  child: Text(
+                    'ছবিটি এই ফোনে পাওয়া যায়নি',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       );
     }
@@ -1309,16 +1306,249 @@ class _ChatPageState extends State<ChatPage> {
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.play_circle_fill_rounded, size: 45),
+              Icon(
+                Icons.play_circle_fill_rounded,
+                size: 45,
+                color: pinkColor,
+              ),
               SizedBox(height: 6),
-              Text('Play video'),
+              Text('ভিডিও চালাও'),
             ],
           ),
         ),
       );
     }
 
-    return Text(path, style: const TextStyle(fontSize: 15));
+    return Text(
+      path,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 15,
+        height: 1.45,
+      ),
+    );
+  }
+
+  Widget _buildMessage(Map<String, dynamic> message, int index) {
+    final mine = _isMine(message);
+
+    return GestureDetector(
+      onLongPress: () => _showMessageOptions(index),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          mainAxisAlignment:
+              mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!mine) ...[
+              const CircleAvatar(
+                radius: 16,
+                backgroundColor: purpleColor,
+                child: Icon(
+                  Icons.person_rounded,
+                  size: 19,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 7),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment:
+                    mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: mine
+                          ? const Color(0xFF453078)
+                          : surfaceColor,
+                      border: Border.all(
+                        color: mine
+                            ? pinkColor.withValues(alpha: 0.25)
+                            : Colors.white10,
+                      ),
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(mine ? 18 : 5),
+                        bottomRight: Radius.circular(mine ? 5 : 18),
+                      ),
+                    ),
+                    child: _messageContent(message),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatTime(message['time']),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.white45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (mine) const SizedBox(width: 3),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [pinkColor, purpleColor],
+                  ),
+                ),
+                child: const Icon(
+                  Icons.favorite_rounded,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Private Chat',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'তোমাদের দুজনের ব্যক্তিগত জায়গা',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.lock_outline_rounded,
+                color: pinkColor,
+                size: 21,
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Colors.white10),
+        Expanded(
+          child: messages.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.forum_outlined,
+                        size: 48,
+                        color: Colors.white30,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'একটি সুন্দর কথোপকথন শুরু করো ❤️',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    return _buildMessage(messages[index], index);
+                  },
+                ),
+        ),
+        SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(7, 8, 7, 8),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              border: Border(
+                top: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'ছবি পাঠাও',
+                  onPressed: () => _sendMedia(false),
+                  icon: const Icon(
+                    Icons.image_outlined,
+                    color: pinkColor,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'ভিডিও পাঠাও',
+                  onPressed: () => _sendMedia(true),
+                  icon: const Icon(
+                    Icons.videocam_outlined,
+                    color: purpleColor,
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    minLines: 1,
+                    maxLines: 4,
+                    textCapitalization: TextCapitalization.sentences,
+                    onSubmitted: (_) => _sendText(),
+                    decoration: InputDecoration(
+                      hintText: 'মেসেজ লেখো...',
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 15,
+                        vertical: 11,
+                      ),
+                      filled: true,
+                      fillColor: surfaceColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                IconButton.filled(
+                  tooltip: 'পাঠাও',
+                  onPressed: _sendText,
+                  style: IconButton.styleFrom(
+                    backgroundColor: pinkColor,
+                  ),
+                  icon: const Icon(Icons.send_rounded),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
