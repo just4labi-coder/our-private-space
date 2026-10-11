@@ -314,6 +314,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _start() async {
     await SpaceStore.init();
+    await SpaceStore.startRealtimeSync();
     await Future.delayed(const Duration(milliseconds: 900));
 
     if (!mounted) return;
