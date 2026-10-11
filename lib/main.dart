@@ -16,6 +16,8 @@ import 'package:video_player/video_player.dart';
 import 'screens/partner_connection_page.dart';
 import 'services/space_sync_service.dart';
 import 'services/chat_sync_service.dart';
+import 'screens/auth_screen.dart';
+import 'services/auth_service.dart';
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -42,9 +44,8 @@ Future<void> main() async {
 
   await notifications.initialize(initializationSettings);
   await SpaceStore.init();
-  await SpaceStore.syncFromFirebase();
-  await SpaceStore.startRealtimeSync();
 
+  // লগইন যাচাই করার আগে Firebase Sync চালু হবে না।
   runApp(const EternalSpaceApp());
 }
 
