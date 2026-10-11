@@ -1,163 +1,157 @@
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+rules_version = '2';
 
-class DisconnectionService {
-  DisconnectionService._();
+service cloud.firestore {
+  match /databases/{database}/documents {
 
-  static final FirebaseFirestore _db =
-      FirebaseFirestore.instance;
-
-  static final FirebaseAuth _auth =
-      FirebaseAuth.instance;
-
-  static String get _uid {
-    final user = _auth.currentUser;
-
-    if (user == null) {
-      throw Exception('আগে Firebase-এ সাইন ইন করতে হবে।');
+    function signedIn() {
+      return request.auth != null;
     }
 
-    return user.uid;
-  }
+    function spaceData(spaceId) {
+      return get(
+        /databases/$(database)/documents/privateSpaces/$(spaceId)
+      ).data;
+    }
 
-  static DocumentReference<Map<String, dynamic>> _space(
-    String spaceId,
-  ) {
-    return _db.collection('privateSpaces').doc(spaceId);
-  }
+    function isMember(spaceId) {
+      return signedIn()
+        && request.auth.uid in spaceData(spaceId).memberUids
+        && spaceData(spaceId).get('connectionStatus', 'connected')
+          != 'disconnected';
+    }
 
-  static Future<void> requestDisconnection(
-    String spaceId,
-  ) async {
-    await _saveApproval(
-      spaceId: spaceId,
-      approvalField: 'disconnectionApprovals',
-      requestedAtField: 'disconnectionRequestedAt',
-      requiredStatus: 'connected',
-      completedStatus: 'disconnected',
-      completedAtField: 'disconnectedAt',
-    );
-  }
+    function validInviteForSpace(spaceId, code) {
+      return exists(
+        /databases/$(database)/documents/spaceInvites/$(code)
+      )
+        && get(
+          /databases/$(database)/documents/spaceInvites/$(code)
+        ).data.spaceId == spaceId;
+    }
 
-  static Future<void> approveDisconnection(
-    String spaceId,
-  ) async {
-    await _saveApproval(
-      spaceId: spaceId,
-      approvalField: 'disconnectionApprovals',
-      requestedAtField: 'disconnectionRequestedAt',
-      requiredStatus: 'connected',
-      completedStatus: 'disconnected',
-      completedAtField: 'disconnectedAt',
-      requireOtherApproval: true,
-    );
-  }
+    function validJoin(spaceId) {
+      return signedIn()
+        && resource.data.memberUids is list
+        && resource.data.memberUids.size() == 1
+        && request.resource.data.memberUids is list
+        && request.resource.data.memberUids.size() == 2
+        && request.auth.uid in request.resource.data.memberUids
+        && request.resource.data.memberUids.hasAll(
+          resource.data.memberUids
+        )
+        && request.resource.data.memberUids.hasOnly(
+          resource.data.memberUids.concat([request.auth.uid])
+        )
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validInviteForSpace(spaceId, resource.data.inviteCode)
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['memberUids']);
+    }
 
-  static Future<void> requestReconnection(
-    String spaceId,
-  ) async {
-    await _saveApproval(
-      spaceId: spaceId,
-      approvalField: 'reconnectionApprovals',
-      requestedAtField: 'reconnectionRequestedAt',
-      requiredStatus: 'disconnected',
-      completedStatus: 'connected',
-      completedAtField: 'reconnectedAt',
-    );
-  }
+    function validDisconnectionUpdate() {
+      let members = resource.data.memberUids;
+      let uid = request.auth.uid;
+      let otherUid = members[0] == uid ? members[1] : members[0];
 
-  static Future<void> approveReconnection(
-    String spaceId,
-  ) async {
-    await _saveApproval(
-      spaceId: spaceId,
-      approvalField: 'reconnectionApprovals',
-      requestedAtField: 'reconnectionRequestedAt',
-      requiredStatus: 'disconnected',
-      completedStatus: 'connected',
-      completedAtField: 'reconnectedAt',
-      requireOtherApproval: true,
-    );
-  }
+      let oldApprovals =
+        resource.data.get('disconnectionApprovals', {});
+      let newApprovals =
+        request.resource.data.get('disconnectionApprovals', {});
 
-  static Future<void> _saveApproval({
-    required String spaceId,
-    required String approvalField,
-    required String requestedAtField,
-    required String requiredStatus,
-    required String completedStatus,
-    required String completedAtField,
-    bool requireOtherApproval = false,
-  }) async {
-    final uid = _uid;
-    final ref = _space(spaceId);
+      let oldStatus =
+        resource.data.get('connectionStatus', 'connected');
+      let newStatus =
+        request.resource.data.get('connectionStatus', 'connected');
 
-    await _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(ref);
-
-      if (!snapshot.exists) {
-        throw Exception('Private Space পাওয়া যায়নি।');
-      }
-
-      final data = snapshot.data()!;
-      final members = List<String>.from(
-        data['memberUids'] ?? [],
-      );
-
-      if (members.length != 2 || !members.contains(uid)) {
-        throw Exception('দুজনের সদস্যপদ নিশ্চিত করা যায়নি।');
-      }
-
-      final status = data['connectionStatus'] ?? 'connected';
-
-      if (status != requiredStatus) {
-        throw Exception(
-          requiredStatus == 'connected'
-              ? 'Space ইতিমধ্যে বিচ্ছিন্ন বা পরিবর্তিত হয়েছে।'
-              : 'Space এখন বিচ্ছিন্ন অবস্থায় নেই।',
+      return signedIn()
+        && members is list
+        && members.size() == 2
+        && uid in members
+        && request.resource.data.memberUids == members
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'disconnectionApprovals',
+            'disconnectionRequestedAt',
+            'connectionStatus',
+            'disconnectedAt',
+            'reconnectionApprovals'
+          ])
+        && oldApprovals is map
+        && newApprovals is map
+        && newApprovals.keys().hasOnly(members)
+        && newApprovals.get(uid, false) == true
+        && newApprovals.get(otherUid, false)
+          == oldApprovals.get(otherUid, false)
+        && newApprovals.diff(oldApprovals)
+          .affectedKeys().hasOnly([uid])
+        && oldStatus == 'connected'
+        && (
+          (
+            newStatus == 'connected'
+            && newApprovals.get(otherUid, false) != true
+          )
+          ||
+          (
+            newStatus == 'disconnected'
+            && newApprovals.get(otherUid, false) == true
+            && request.resource.data.get('reconnectionApprovals', {})
+              is map
+            && request.resource.data.get('reconnectionApprovals', {})
+              .size() == 0
+          )
         );
-      }
+    }
 
-      final otherUid = members.firstWhere(
-        (member) => member != uid,
-      );
+    match /privateSpaces/{spaceId} {
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid]
+        && request.resource.data.inviteCode is string
+        && request.resource.data.inviteCode.size() == 6;
 
-      final raw = data[approvalField];
-      final approvals = raw is Map
-          ? Map<String, dynamic>.from(raw)
-          : <String, dynamic>{};
-
-      if (requireOtherApproval && approvals[otherUid] != true) {
-        throw Exception(
-          'আগে অন্য সদস্যের সম্মতি প্রয়োজন।',
+      allow get: if signedIn()
+        && (
+          request.auth.uid in resource.data.memberUids
+          || validInviteForSpace(spaceId, resource.data.inviteCode)
         );
+
+      allow list: if false;
+      allow update: if validJoin(spaceId)
+        || validDisconnectionUpdate();
+      allow delete: if false;
+
+      match /{subcollection}/{documentId} {
+        allow read, write: if isMember(spaceId);
       }
+    }
 
-      approvals[uid] = true;
+    match /spaceInvites/{code} {
+      allow get: if signedIn();
+      allow list: if false;
 
-      final bothApproved =
-          approvals[uid] == true &&
-          approvals[otherUid] == true;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.spaceId is string
+        && getAfter(
+          /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
+        ).data.createdBy == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/privateSpaces/$(request.resource.data.spaceId)
+        ).data.inviteCode == code;
 
-      final updates = <String, dynamic>{
-        approvalField: approvals,
-        requestedAtField: FieldValue.serverTimestamp(),
-      };
+      allow update, delete: if false;
+    }
 
-      if (bothApproved) {
-        updates['connectionStatus'] = completedStatus;
-        updates[completedAtField] = FieldValue.serverTimestamp();
-
-        // পরবর্তী চক্রের সম্মতি যেন পুরোনো সম্মতি থেকে না আসে।
-        if (completedStatus == 'disconnected') {
-          updates['reconnectionApprovals'] = <String, bool>{};
-        } else {
-          updates['disconnectionApprovals'] = <String, bool>{};
-        }
-      }
-
-      transaction.update(ref, updates);
-    });
+    match /users/{uid} {
+      allow get, create, update: if signedIn()
+        && request.auth.uid == uid;
+      allow list, delete: if false;
+    }
   }
 }
