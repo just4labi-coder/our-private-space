@@ -106,6 +106,7 @@ class SpaceStore {
   static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _syncSubscription;
   static bool _applyingRemoteData = false;
+  static final ValueNotifier<int> syncVersion = ValueNotifier<int>(0);
 
   static Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -283,6 +284,7 @@ class SpaceStore {
       }
     } finally {
       _applyingRemoteData = false;
+      syncVersion.value++;
     }
   }
 
@@ -1334,6 +1336,15 @@ class _GalleryPageState extends State<GalleryPage> {
   List<Map<String, dynamic>> folders = [];
   List<Map<String, dynamic>> media = [];
 
+  void _onRemoteSync() {
+    if (!mounted) return;
+
+    setState(() {
+      folders = SpaceStore.readList('galleryFolders');
+      media = SpaceStore.readList('galleryMedia');
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1346,9 +1357,16 @@ class _GalleryPageState extends State<GalleryPage> {
         {'id': 'all', 'name': 'All Memories'},
         {'id': 'favorites', 'name': 'Favorites'},
       ];
-
       SpaceStore.saveList('galleryFolders', folders);
     }
+
+    SpaceStore.syncVersion.addListener(_onRemoteSync);
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_onRemoteSync);
+    super.dispose();
   }
 
   Future<void> _save() async {
