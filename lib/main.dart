@@ -42,6 +42,7 @@ Future<void> main() async {
   await notifications.initialize(initializationSettings);
   await SpaceStore.init();
   await SpaceStore.syncFromFirebase();
+  await SpaceStore.startRealtimeSync();
 
   runApp(const EternalSpaceApp());
 }
@@ -102,6 +103,9 @@ class EternalSpaceApp extends StatelessWidget {
 
 class SpaceStore {
   static SharedPreferences? _prefs;
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _syncSubscription;
+  static bool _applyingRemoteData = false;
 
   static Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -121,36 +125,45 @@ class SpaceStore {
     }
   }
 
+  static String readString(String key, [String fallback = '']) {
+    return _prefs?.getString(key) ?? fallback;
+  }
+
   static Future<void> saveList(
     String key,
     List<Map<String, dynamic>> value,
   ) async {
     await init();
     await _prefs!.setString(key, jsonEncode(value));
-    await _syncKey(key, value);
-  }
 
-  static String readString(String key, [String fallback = '']) {
-    return _prefs?.getString(key) ?? fallback;
+    if (!_applyingRemoteData) {
+      await _syncKey(key, value);
+    }
   }
 
   static Future<void> saveString(String key, String value) async {
     await init();
     await _prefs!.setString(key, value);
-    await _syncKey(key, value);
+
+    if (!_applyingRemoteData) {
+      await _syncKey(key, value);
+    }
   }
 
-  static Future<void> _syncKey(
-    String key,
-    dynamic value,
-  ) async {
+  static Future<String?> _getSpaceId() async {
+    await init();
+    return _prefs!.getString('eternal_space_id');
+  }
+
+  static Future<void> _syncKey(String key, dynamic value) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final spaceId = await _getSpaceId();
+
+    if (user == null || spaceId == null || spaceId.isEmpty) {
+      return;
+    }
+
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final spaceId = await _getSpaceId();
-      if (spaceId == null || spaceId.isEmpty) return;
-
       await FirebaseFirestore.instance
           .collection('privateSpaces')
           .doc(spaceId)
@@ -162,13 +175,9 @@ class SpaceStore {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('Firebase sync error: $e');
+      debugPrint('Firebase upload failed: $e');
+      rethrow;
     }
-  }
-
-  static Future<String?> _getSpaceId() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('eternal_space_id');
   }
 
   static Future<void> syncAllToFirebase() async {
@@ -191,27 +200,73 @@ class SpaceStore {
   }
 
   static Future<void> syncFromFirebase() async {
+    await init();
+
+    final user = FirebaseAuth.instance.currentUser;
+    final spaceId = await _getSpaceId();
+
+    if (user == null || spaceId == null || spaceId.isEmpty) {
+      return;
+    }
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('privateSpaces')
+        .doc(spaceId)
+        .collection('syncData')
+        .doc('appState')
+        .get();
+
+    if (snapshot.exists && snapshot.data() != null) {
+      await _applyRemoteData(snapshot.data()!);
+    }
+  }
+
+  static Future<void> startRealtimeSync() async {
+    await init();
+
+    final user = FirebaseAuth.instance.currentUser;
+    final spaceId = await _getSpaceId();
+
+    if (user == null || spaceId == null || spaceId.isEmpty) {
+      debugPrint('Realtime sync skipped: no connected Space.');
+      return;
+    }
+
+    await _syncSubscription?.cancel();
+
+    final ref = FirebaseFirestore.instance
+        .collection('privateSpaces')
+        .doc(spaceId)
+        .collection('syncData')
+        .doc('appState');
+
+    _syncSubscription = ref.snapshots().listen(
+      (snapshot) async {
+        if (!snapshot.exists || snapshot.data() == null) return;
+
+        final data = snapshot.data()!;
+        if (data['updatedBy'] == user.uid) return;
+
+        try {
+          await _applyRemoteData(data);
+          debugPrint('Realtime data received from partner.');
+        } catch (e) {
+          debugPrint('Realtime sync failed: $e');
+        }
+      },
+      onError: (Object error) {
+        debugPrint('Realtime listener error: $error');
+      },
+    );
+  }
+
+  static Future<void> _applyRemoteData(
+    Map<String, dynamic> data,
+  ) async {
+    await init();
+    _applyingRemoteData = true;
+
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final spaceId = await _getSpaceId();
-      if (spaceId == null || spaceId.isEmpty) return;
-
-      final snapshot = await FirebaseFirestore.instance
-          .collection('privateSpaces')
-          .doc(spaceId)
-          .collection('syncData')
-          .doc('appState')
-          .get();
-
-      if (!snapshot.exists) return;
-
-      final data = snapshot.data();
-      if (data == null) return;
-
-      await init();
-
       for (final entry in data.entries) {
         if (entry.key == 'updatedBy' ||
             entry.key == 'updatedAt') {
@@ -221,17 +276,19 @@ class SpaceStore {
         final value = entry.value;
 
         if (value is List) {
-          await _prefs!.setString(
-            entry.key,
-            jsonEncode(value),
-          );
+          await _prefs!.setString(entry.key, jsonEncode(value));
         } else if (value is String) {
           await _prefs!.setString(entry.key, value);
         }
       }
-    } catch (e) {
-      debugPrint('Firebase download error: $e');
+    } finally {
+      _applyingRemoteData = false;
     }
+  }
+
+  static Future<void> stopRealtimeSync() async {
+    await _syncSubscription?.cancel();
+    _syncSubscription = null;
   }
 }
 
