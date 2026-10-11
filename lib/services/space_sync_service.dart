@@ -1,5 +1,7 @@
 
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -13,17 +15,47 @@ class SpaceSyncService {
 
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  static Future<DocumentReference<Map<String, dynamic>>>
-      _syncDocument() async {
+  static const String _folderName = 'Eternal Space Media';
+
+  static GoogleSignIn _googleSignIn() {
+    return GoogleSignIn(
+      scopes: [
+        drive.DriveApi.driveFileScope,
+      ],
+    );
+  }
+
+  static Future<drive.DriveApi> _driveApi() async {
+    final signIn = _googleSignIn();
+
+    var account = await signIn.signInSilently();
+    account ??= await signIn.signIn();
+
+    if (account == null) {
+      throw Exception('Google Drive সাইন-ইন বাতিল করা হয়েছে।');
+    }
+
+    final headers = await account.authHeaders;
+    return drive.DriveApi(_GoogleAuthClient(headers));
+  }
+
+  static Future<String> _getSpaceId() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      throw Exception('আগে Firebase-এ সংযুক্ত হতে হবে।');
+      throw Exception('আগে Partner Connection তৈরি করো।');
     }
 
     final spaceId = await PrivateSpaceService.getSavedSpaceId();
     if (spaceId == null || spaceId.isEmpty) {
-      throw Exception('আগে Partner Connection তৈরি বা Join করো।');
+      throw Exception('Partner Connection পাওয়া যায়নি।');
     }
+
+    return spaceId;
+  }
+
+  static Future<DocumentReference<Map<String, dynamic>>>
+      _syncDocument() async {
+    final spaceId = await _getSpaceId();
 
     return _db
         .collection('privateSpaces')
@@ -32,20 +64,160 @@ class SpaceSyncService {
         .doc('appState');
   }
 
-  /// অ্যাপের JSON ডেটা Firebase-এ সংরক্ষণ
+  /// Google Drive-এ Eternal Space Media ফোল্ডার খোঁজা বা তৈরি করা
+  static Future<String> getOrCreateMediaFolder() async {
+    final api = await _driveApi();
+
+    final result = await api.files.list(
+      q: "name = '$_folderName' and mimeType = "
+          "'application/vnd.google-apps.folder' and trashed = false",
+      spaces: 'drive',
+      $fields: 'files(id,name)',
+      pageSize: 100,
+    );
+
+    final existing = result.files?.firstOrNull;
+    if (existing?.id != null) {
+      return existing!.id!;
+    }
+
+    final folder = await api.files.create(
+      drive.File()
+        ..name = _folderName
+        ..mimeType = 'application/vnd.google-apps.folder',
+      $fields: 'id,name',
+    );
+
+    final id = folder.id;
+    if (id == null) {
+      throw Exception('Drive ফোল্ডার তৈরি করা যায়নি।');
+    }
+
+    return id;
+  }
+
+  /// লোকাল ছবি বা ভিডিও Drive-এ আপলোড
+  /// ফলাফল হিসেবে Drive file ID ও নাম পাওয়া যাবে
+  static Future<Map<String, String>> uploadMedia(File file) async {
+    if (!await file.exists()) {
+      throw Exception('ফাইলটি এই ফোনে পাওয়া যায়নি।');
+    }
+
+    final api = await _driveApi();
+    final folderId = await getOrCreateMediaFolder();
+    final name = file.uri.pathSegments.isEmpty
+        ? 'media_${DateTime.now().millisecondsSinceEpoch}'
+        : file.uri.pathSegments.last;
+
+    final extension = name.toLowerCase();
+    final contentType = extension.endsWith('.mp4') ||
+            extension.endsWith('.mov') ||
+            extension.endsWith('.3gp')
+        ? 'video/mp4'
+        : extension.endsWith('.png')
+            ? 'image/png'
+            : extension.endsWith('.webp')
+                ? 'image/webp'
+                : 'image/jpeg';
+
+    final length = await file.length();
+
+    final uploaded = await api.files.create(
+      drive.File()
+        ..name = name
+        ..parents = [folderId],
+      uploadMedia: drive.Media(
+        file.openRead(),
+        length,
+        contentType: contentType,
+      ),
+      $fields: 'id,name,mimeType',
+    );
+
+    if (uploaded.id == null) {
+      throw Exception('Drive-এ ফাইল আপলোড ব্যর্থ হয়েছে।');
+    }
+
+    return {
+      'driveFileId': uploaded.id!,
+      'driveFileName': uploaded.name ?? name,
+      'driveFolderId': folderId,
+    };
+  }
+
+  /// Drive থেকে ফাইল নামিয়ে লোকাল ফাইলের পথ ফেরত দেয়
+  static Future<String> downloadMedia(
+    String fileId, {
+    String? saveAs,
+  }) async {
+    final api = await _driveApi();
+
+    final response = await api.files.get(
+      fileId,
+      downloadOptions: drive.DownloadOptions.fullMedia,
+    );
+
+    if (response is! drive.Media) {
+      throw Exception('Drive ফাইল ডাউনলোড করা যায়নি।');
+    }
+
+    final safeName = (saveAs ?? 'eternal_media_$fileId')
+        .replaceAll(RegExp(r'[/\\]'), '_');
+
+    final directory = Directory(
+      '${Directory.systemTemp.path}/eternal_space_media',
+    );
+
+    await directory.create(recursive: true);
+
+    final file = File('${directory.path}/$safeName');
+    final sink = file.openWrite();
+
+    try {
+      await response.stream.pipe(sink);
+    } catch (_) {
+      await sink.close();
+      rethrow;
+    }
+
+    return file.path;
+  }
+
+  /// Drive ফোল্ডারটি পার্টনারের Google অ্যাকাউন্টের সঙ্গে শেয়ার
+  static Future<void> shareMediaFolder(String email) async {
+    final cleanedEmail = email.trim();
+
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        .hasMatch(cleanedEmail)) {
+      throw Exception('সঠিক Google ইমেইল দাও।');
+    }
+
+    final api = await _driveApi();
+    final folderId = await getOrCreateMediaFolder();
+
+    await api.permissions.create(
+      folderId,
+      drive.Permission()
+        ..type = 'user'
+        ..role = 'writer'
+        ..emailAddress = cleanedEmail,
+      sendNotificationEmail: true,
+    );
+  }
+
   static Future<void> uploadToFirebase(
     Map<String, dynamic> data,
   ) async {
     final ref = await _syncDocument();
+    final user = FirebaseAuth.instance.currentUser!;
 
     await ref.set({
       'data': data,
-      'updatedBy': FirebaseAuth.instance.currentUser!.uid,
+      'updatedBy': user.uid,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
-  /// Firebase থেকে সর্বশেষ JSON ডেটা পড়া
   static Future<Map<String, dynamic>?> downloadFromFirebase() async {
     final ref = await _syncDocument();
     final snapshot = await ref.get();
@@ -58,7 +230,6 @@ class SpaceSyncService {
     return Map<String, dynamic>.from(data);
   }
 
-  /// দুই ফোনে Firebase ডেটার পরিবর্তন সরাসরি শোনা
   static Future<Stream<Map<String, dynamic>?>>
       watchFirebaseData() async {
     final ref = await _syncDocument();
@@ -71,22 +242,11 @@ class SpaceSyncService {
     });
   }
 
-  /// Google Drive-এ JSON ব্যাকআপ ফাইল তৈরি বা আপডেট
+  /// Google Drive-এ JSON ব্যাকআপ
   static Future<void> backupToGoogleDrive(
     Map<String, dynamic> data,
   ) async {
-    final signIn = GoogleSignIn(
-      scopes: [drive.DriveApi.driveFileScope],
-    );
-
-    final account = await signIn.signIn();
-    if (account == null) {
-      throw Exception('Google Drive অনুমতি দেওয়া হয়নি।');
-    }
-
-    final headers = await account.authHeaders;
-    final client = _GoogleAuthClient(headers);
-    final api = drive.DriveApi(client);
+    final api = await _driveApi();
 
     try {
       final result = await api.files.list(
@@ -125,7 +285,7 @@ class SpaceSyncService {
         );
       }
     } finally {
-      client.close();
+      api.client.close();
     }
   }
 }
@@ -145,7 +305,5 @@ class _GoogleAuthClient extends http.BaseClient {
   }
 
   @override
-  void close() {
-    _client.close();
-  }
+  void close() => _client.close();
 }
