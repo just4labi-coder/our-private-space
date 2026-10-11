@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -203,7 +202,7 @@ class _PartnerConnectionPageState
         content: const Text(
           'দুজন সম্মতি দিলে Space-এর শেয়ার করা তথ্য অ্যাপ থেকে '
           'অ্যাক্সেস করা যাবে না। ডেটা মুছে ফেলা হবে না। '
-          'পুনঃসংযোগের সুবিধা এখনো তৈরি হয়নি।',
+          'পুনঃসংযোগের সুবিধা চালু করা হয়েছে।',
           style: TextStyle(
             color: Colors.white70,
             height: 1.5,
@@ -266,6 +265,69 @@ class _PartnerConnectionPageState
     }
   }
 
+  Future<void> _runReconnectionAction({
+    required String spaceId,
+    required bool approve,
+  }) async {
+    if (_working) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text(
+          approve ? 'পুনঃসংযোগে সম্মতি দেবে?' : 'পুনঃসংযোগের অনুরোধ পাঠাবে?',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'দুজন সম্মতি দিলে Private Space আবার যুক্ত হবে।',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('এখন নয়'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('আমি নিশ্চিত'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _working = true;
+      _message = null;
+    });
+
+    try {
+      if (approve) {
+        await DisconnectionService.approveReconnection(spaceId);
+        _showMessage(
+          'পুনঃসংযোগের সম্মতি পাঠানো হয়েছে।',
+          isError: false,
+        );
+      } else {
+        await DisconnectionService.requestReconnection(spaceId);
+        _showMessage(
+          'পুনঃসংযোগের সম্মতি সংরক্ষিত হয়েছে। '
+          'এখন অন্য সদস্যের সম্মতির অপেক্ষা করো।',
+          isError: false,
+        );
+      }
+    } catch (e) {
+      _showMessage(
+        'পুনঃসংযোগ সম্পন্ন হয়নি।\n$e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
   Widget _disconnectionPanel(
     String spaceId,
     Map<String, dynamic> data,
@@ -285,35 +347,85 @@ class _PartnerConnectionPageState
     final status = data['connectionStatus'] ?? 'connected';
 
     if (status == 'disconnected') {
+      final rawReconnect = data['reconnectionApprovals'];
+      final reconnectApprovals = rawReconnect is Map
+          ? Map<String, dynamic>.from(rawReconnect)
+          : <String, dynamic>{};
+
+      if (members.length != 2) {
+        return _panelContainer(
+          color: const Color(0xFF35131F),
+          borderColor: const Color(0xFFFF7185),
+          child: const Text(
+            'পুনঃসংযোগের জন্য দুই সদস্যের তথ্য প্রয়োজন।',
+            style: TextStyle(color: Colors.white),
+          ),
+        );
+      }
+
+      final otherUid = members.firstWhere(
+        (member) => member != uid,
+      );
+
+      final ownApproved = reconnectApprovals[uid] == true;
+      final otherApproved = reconnectApprovals[otherUid] == true;
+      final canApprove = otherApproved && !ownApproved;
+      final waiting = ownApproved && !otherApproved;
+
       return _panelContainer(
         color: const Color(0xFF35131F),
         borderColor: const Color(0xFFFF7185),
-        child: const Column(
+        child: Column(
           children: [
-            Icon(
+            const Icon(
               Icons.link_off_rounded,
               color: Color(0xFFFF7185),
               size: 30,
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 8),
+            const Text(
               'Private Space বিচ্ছিন্ন',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
-              'শেয়ার করা ডেটা মুছে ফেলা হয়নি। '
-              'অ্যাক্সেস বন্ধ রয়েছে। পুনঃসংযোগের সুবিধা '
-              'এখনো তৈরি হয়নি।',
+              waiting
+                  ? 'তোমার সম্মতি দেওয়া হয়েছে। অন্য সদস্যের অপেক্ষায় আছ।'
+                  : canApprove
+                      ? 'অন্য সদস্য পুনঃসংযোগ চেয়েছে। সম্মতি দাও।'
+                      : 'Space আবার যুক্ত করতে দুজনের সম্মতি প্রয়োজন।',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.white70,
                 height: 1.5,
               ),
             ),
+            if (!waiting) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _working
+                      ? null
+                      : () => _runReconnectionAction(
+                            spaceId: spaceId,
+                            approve: canApprove,
+                          ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _pink,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(
+                    canApprove
+                        ? 'পুনঃসংযোগে সম্মতি দাও'
+                        : 'পুনঃসংযোগের অনুরোধ',
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       );
