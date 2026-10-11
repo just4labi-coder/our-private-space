@@ -1435,13 +1435,32 @@ class _GalleryPageState extends State<GalleryPage> {
       'type': video ? 'video' : 'image',
       'folderId': folderId,
       'createdAt': DateTime.now().toIso8601String(),
+      'uploadStatus': 'uploading',
     };
 
-    setState(() {
-      media.add(item);
-    });
-
+    setState(() => media.add(item));
     await _save();
+
+    try {
+      final driveData =
+          await SpaceSyncService.uploadMedia(File(picked.path));
+
+      item.addAll(driveData);
+      item['uploadStatus'] = 'uploaded';
+      await _save();
+    } catch (e) {
+      item['uploadStatus'] = 'failed';
+      item['uploadError'] = e.toString();
+      await _save();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('আপলোড ব্যর্থ: $e')),
+        );
+      }
+    }
+
+    if (mounted) setState(() {});
     return item;
   }
 
@@ -1575,86 +1594,98 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Our Memories',
-                style: TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            IconButton.filled(
-              onPressed: _createFolder,
-              icon: const Icon(Icons.create_new_folder_outlined),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Keep the little moments that mean everything.',
-          style: TextStyle(color: Colors.white54),
-        ),
-        const SizedBox(height: 22),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: folders.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.15,
-          ),
-          itemBuilder: (context, index) {
-            final folder = folders[index];
-            final count = _itemsForFolder('${folder['id']}').length;
-
-            return Material(
-              color: surfaceColor,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () => _openFolder(folder),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.folder_rounded,
-                        size: 42,
-                        color: purpleColor,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '${folder['name']}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '$count items',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
+    return RefreshIndicator(
+      onRefresh: () async {
+        await SpaceStore.syncFromFirebase();
+        if (mounted) {
+          setState(() {
+            folders = SpaceStore.readList('galleryFolders');
+            media = SpaceStore.readList('galleryMedia');
+          });
+        }
+      },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Our Memories',
+                  style: TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-            );
-          },
-        ),
-      ],
+              IconButton.filled(
+                onPressed: _createFolder,
+                icon: const Icon(Icons.create_new_folder_outlined),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Keep the little moments that mean everything.',
+            style: TextStyle(color: Colors.white54),
+          ),
+          const SizedBox(height: 22),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: folders.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.15,
+            ),
+            itemBuilder: (context, index) {
+              final folder = folders[index];
+              final count = _itemsForFolder('${folder['id']}').length;
+
+              return Material(
+                color: surfaceColor,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => _openFolder(folder),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.folder_rounded,
+                          size: 42,
+                          color: purpleColor,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${folder['name']}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          '$count items',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }
