@@ -161,6 +161,35 @@ class SpaceStore {
     return prefs.getString('eternal_space_id');
   }
 
+  // Space যুক্ত এবং connected না থাকলে কোনো Firebase sync নয়।
+  static Future<String?> _getConnectedSpaceId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    final spaceId = await _getSpaceId();
+    if (spaceId == null || spaceId.isEmpty) return null;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('privateSpaces')
+        .doc(spaceId)
+        .get();
+
+    if (!snapshot.exists) return null;
+
+    final data = snapshot.data();
+    if (data == null) return null;
+
+    final members = data['memberUids'];
+    if (members is! List || !members.contains(user.uid)) {
+      return null;
+    }
+
+    final status = data['connectionStatus'] ?? 'connected';
+    if (status != 'connected') return null;
+
+    return spaceId;
+  }
+
   static Future<void> _syncKey(String key, dynamic value) async {
     if (_applyingRemoteData) return;
 
@@ -168,8 +197,8 @@ class SpaceStore {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      final spaceId = await _getSpaceId();
-      if (spaceId == null || spaceId.isEmpty) return;
+      final spaceId = await _getConnectedSpaceId();
+      if (spaceId == null) return;
 
       await FirebaseFirestore.instance
           .collection('privateSpaces')
@@ -187,6 +216,12 @@ class SpaceStore {
   }
 
   static Future<void> syncAllToFirebase() async {
+    final spaceId = await _getConnectedSpaceId();
+    if (spaceId == null) {
+      debugPrint('Sync বন্ধ: Space connected নয়।');
+      return;
+    }
+
     await init();
 
     final data = <String, dynamic>{
@@ -201,6 +236,8 @@ class SpaceStore {
     };
 
     for (final entry in data.entries) {
+      // আপলোডের সময়ও connected অবস্থা পুনরায় যাচাই হবে।
+      if (await _getConnectedSpaceId() != spaceId) return;
       await _syncKey(entry.key, entry.value);
     }
   }
@@ -210,8 +247,11 @@ class SpaceStore {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      final spaceId = await _getSpaceId();
-      if (spaceId == null || spaceId.isEmpty) return;
+      final spaceId = await _getConnectedSpaceId();
+      if (spaceId == null) {
+        debugPrint('Download বন্ধ: Space connected নয়।');
+        return;
+      }
 
       final snapshot = await FirebaseFirestore.instance
           .collection('privateSpaces')
@@ -220,8 +260,10 @@ class SpaceStore {
           .doc('appState')
           .get();
 
-      if (!snapshot.exists) return;
+      // ডাউনলোড চলাকালে সংযোগ বিচ্ছিন্ন হলে স্থানীয় ডেটা বদলাবে না।
+      if (await _getConnectedSpaceId() != spaceId) return;
 
+      if (!snapshot.exists) return;
       await _applyRemoteData(snapshot.data());
     } catch (e) {
       debugPrint('Firebase download error: $e');
@@ -264,8 +306,8 @@ class SpaceStore {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final spaceId = await _getSpaceId();
-    if (spaceId == null || spaceId.isEmpty) return;
+    final spaceId = await _getConnectedSpaceId();
+    if (spaceId == null) return;
 
     final reference = FirebaseFirestore.instance
         .collection('privateSpaces')
@@ -275,6 +317,12 @@ class SpaceStore {
 
     _syncSubscription = reference.snapshots().listen(
       (snapshot) async {
+        final activeSpaceId = await _getConnectedSpaceId();
+        if (activeSpaceId != spaceId) {
+          await stopRealtimeSync();
+          return;
+        }
+
         if (!snapshot.exists) return;
 
         final data = snapshot.data();
