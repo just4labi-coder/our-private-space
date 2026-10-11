@@ -1671,6 +1671,31 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
     items = List<Map<String, dynamic>>.from(widget.initialItems);
   }
 
+  Future<String?> _resolveMediaPath(Map<String, dynamic> item) async {
+    final path = item['path']?.toString();
+
+    if (path != null && path.isNotEmpty && await File(path).exists()) {
+      return path;
+    }
+
+    final driveFileId = item['driveFileId']?.toString();
+    if (driveFileId == null || driveFileId.isEmpty) {
+      return null;
+    }
+
+    try {
+      final downloadedPath = await SpaceSyncService.downloadMedia(
+        driveFileId,
+        saveAs: item['driveFileName']?.toString(),
+      );
+
+      item['path'] = downloadedPath;
+      return downloadedPath;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1702,56 +1727,73 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
               ),
               itemBuilder: (context, index) {
                 final item = items[index];
-                final path = '${item['path']}';
-                final video = item['type'] == 'video';
 
-                return GestureDetector(
-                  onLongPress: () => widget.onLongPress(item),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => video
-                            ? VideoViewerPage(path: path)
-                            : ImageViewerPage(path: path),
+                return FutureBuilder<String?>(
+                  future: _resolveMediaPath(item),
+                  builder: (context, snapshot) {
+                    final path = snapshot.data;
+                    final video = item['type'] == 'video';
+
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (path == null) {
+                      return const ColoredBox(
+                        color: surfaceColor,
+                        child: Center(
+                          child: Icon(Icons.cloud_off_rounded, size: 40),
+                        ),
+                      );
+                    }
+
+                    return GestureDetector(
+                      onLongPress: () => widget.onLongPress(item),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => video
+                                ? VideoViewerPage(path: path)
+                                : ImageViewerPage(path: path),
+                          ),
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (video)
+                              Container(
+                                color: surfaceColor,
+                                child: const Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  size: 50,
+                                ),
+                              )
+                            else
+                              Image.file(
+                                File(path),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const ColoredBox(
+                                  color: surfaceColor,
+                                  child: Icon(Icons.broken_image_outlined),
+                                ),
+                              ),
+                            if (video)
+                              const Align(
+                                alignment: Alignment.bottomRight,
+                                child: Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.videocam_rounded),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     );
                   },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (video)
-                          Container(
-                            color: surfaceColor,
-                            child: const Icon(
-                              Icons.play_circle_fill_rounded,
-                              size: 50,
-                            ),
-                          )
-                        else
-                          Image.file(
-                            File(path),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) {
-                              return const ColoredBox(
-                                color: surfaceColor,
-                                child: Icon(Icons.broken_image_outlined),
-                              );
-                            },
-                          ),
-                        if (video)
-                          const Align(
-                            alignment: Alignment.bottomRight,
-                            child: Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(Icons.videocam_rounded),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
                 );
               },
             ),
