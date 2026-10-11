@@ -42,6 +42,7 @@ Future<void> main() async {
   await notifications.initialize(initializationSettings);
   await SpaceStore.init();
   await SpaceStore.syncFromFirebase();
+  await SpaceStore.startRealtimeSync();
 
   runApp(const EternalSpaceApp());
 }
