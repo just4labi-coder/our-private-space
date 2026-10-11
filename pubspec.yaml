@@ -1,4 +1,5 @@
-Name: our_private_space
+
+name: our_private_space
 description: Eternal Space - a private space for two.
 publish_to: 'none'
 version: 1.0.0+2
