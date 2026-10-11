@@ -1003,44 +1003,54 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController controller = TextEditingController();
   final ScrollController scrollController = ScrollController();
 
-  List<Map<String, dynamic>> messages = [];
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  @override
-  void initState() {
-    super.initState();
-    messages = SpaceStore.readList('chatMessages');
+  Future<void> _save(List<Map<String, dynamic>> messages) async {
+    await SpaceStore.saveList('chatMessages', messages);
   }
 
-  @override
-  void dispose() {
-    controller.dispose();
-    scrollController.dispose();
-    super.dispose();
+  String _myName() {
+    return SpaceStore.readString('partnerOne', 'Tawsif');
   }
 
-  Future<void> _save() {
-    return SpaceStore.saveList('chatMessages', messages);
+  String _partnerName() {
+    return SpaceStore.readString('partnerTwo', 'Nabila');
+  }
+
+  String _senderName(Map<String, dynamic> message, bool mine) {
+    final saved = '${message['senderName'] ?? ''}'.trim();
+    if (saved.isNotEmpty) return saved;
+    return mine ? _myName() : _partnerName();
   }
 
   Future<void> _sendText() async {
     final text = controller.text.trim();
     if (text.isEmpty) return;
 
-    setState(() {
-      messages.add({
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        'text': text,
-        'type': 'text',
-        'mine': true,
-        'unsent': false,
-        'time': DateTime.now().toIso8601String(),
-      });
-
-      controller.clear();
+    final uid = _uid;
+    if (uid.isEmpty) {
+      _showError('অ্যাকাউন্ট সংযোগ পাওয়া যায়নি।');
+      return;
+    }
+    final messages = SpaceStore.readList('chatMessages');
+    final now = DateTime.now();
+    messages.add({
+      'id': now.microsecondsSinceEpoch.toString(),
+      'text': text,
+      'type': 'text',
+      'senderUid': uid,
+      'senderName': _myName(),
+      'mine': true,
+      'unsent': false,
+      'time': now.toIso8601String(),
     });
-
-    await _save();
-    _scrollToBottom();
+    controller.clear();
+    try {
+      await _save(messages);
+      _scrollToBottom();
+    } catch (e) {
+      _showError('মেসেজ পাঠানো যায়নি। ইন্টারনেট পরীক্ষা করো।');
+    }
   }
 
   Future<void> _sendMedia(bool video) async {
@@ -1049,22 +1059,34 @@ class _ChatPageState extends State<ChatPage> {
     final file = video
         ? await picker.pickVideo(source: ImageSource.gallery)
         : await picker.pickImage(source: ImageSource.gallery);
-
     if (file == null || !mounted) return;
 
-    setState(() {
-      messages.add({
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        'text': file.path,
-        'type': video ? 'video' : 'image',
-        'mine': true,
-        'unsent': false,
-        'time': DateTime.now().toIso8601String(),
-      });
+    final messages = SpaceStore.readList('chatMessages');
+    final now = DateTime.now();
+    messages.add({
+      'id': now.microsecondsSinceEpoch.toString(),
+      'text': file.path,
+      'type': video ? 'video' : 'image',
+      'senderUid': _uid,
+      'senderName': _myName(),
+      'mine': true,
+      'unsent': false,
+      'time': now.toIso8601String(),
     });
+    try {
+      await _save(messages);
+      _scrollToBottom();
+    } catch (e) {
+      _showError('মিডিয়া সেভ করা যায়নি।');
+    }
+  }
 
-    await _save();
-    _scrollToBottom();
+  void _showError(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void _scrollToBottom() {
@@ -1079,9 +1101,19 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Future<void> _showMessageOptions(int index) async {
-    final message = messages[index];
-    final mine = message['mine'] == true;
+  bool _isMine(Map<String, dynamic> message) {
+    final senderUid = '${message['senderUid'] ?? ''}';
+
+    if (senderUid.isNotEmpty && _uid.isNotEmpty) {
+      return senderUid == _uid;
+    }
+    return message['mine'] == true;
+  }
+
+  Future<void> _showMessageOptions(
+    Map<String, dynamic> message,
+  ) async {
+    final mine = _isMine(message);
     final unsent = message['unsent'] == true;
 
     await showModalBottomSheet<void>(
@@ -1100,19 +1132,22 @@ class _ChatPageState extends State<ChatPage> {
             ),
             if (mine && !unsent)
               ListTile(
-                leading: const Icon(
-                  Icons.remove_circle_outline,
-                ),
-                title: const Text('Unsend'),
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Unsend for everyone'),
                 onTap: () async {
                   Navigator.pop(sheetContext);
-
-                  setState(() {
-                    messages[index]['unsent'] = true;
-                    messages[index]['text'] = '';
-                  });
-
-                  await _save();
+                  final latest = SpaceStore.readList('chatMessages');
+                  final index = latest.indexWhere(
+                    (item) => item['id'] == message['id'],
+                  );
+                  if (index == -1) return;
+                  latest[index]['unsent'] = true;
+                  latest[index]['text'] = '';
+                  try {
+                    await _save(latest);
+                  } catch (e) {
+                    _showError('মেসেজ মুছতে সমস্যা হয়েছে।');
+                  }
                 },
               ),
           ],
@@ -1123,6 +1158,7 @@ class _ChatPageState extends State<ChatPage> {
 
   void _showDetails(Map<String, dynamic> message) {
     final date = DateTime.tryParse('${message['time'] ?? ''}');
+    final mine = _isMine(message);
 
     showDialog<void>(
       context: context,
@@ -1130,122 +1166,243 @@ class _ChatPageState extends State<ChatPage> {
         backgroundColor: surfaceColor,
         title: const Text('Message details'),
         content: Text(
-          'Type: ${message['type'] ?? 'text'}\n'
-          'Sender: ${message['mine'] == true ? 'You' : 'Partner'}\n'
-          'Time: ${date?.toLocal().toString() ?? 'Unknown'}',
+          'প্রেরক: ${_senderName(message, mine)}\n'
+          'ধরন: ${message['type'] ?? 'text'}\n'
+          'সময়: ${date?.toLocal().toString() ?? 'অজানা'}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
+            child: const Text('বন্ধ করো'),
           ),
         ],
       ),
     );
   }
 
+  String _formatTime(dynamic value) {
+    final date = DateTime.tryParse('$value')?.toLocal();
+    if (date == null) return '';
+
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
+  Widget _avatar(String name, {double radius = 15}) {
+    final initial = name.trim().isNotEmpty
+        ? name.trim().characters.first.toUpperCase()
+        : '?';
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: purpleColor,
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            color: surfaceColor,
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.white.withValues(alpha: 0.08),
+              ),
+            ),
+          ),
           child: Row(
             children: [
-              Icon(Icons.favorite_rounded, color: pinkColor, size: 25),
-              SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Private Chat',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+              _avatar(_partnerName(), radius: 23),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _partnerName(),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  Text(
-                    'A little space just for us',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.white54,
+                    const Text(
+                      'Private space',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white60,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Chat information',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: surfaceColor,
+                      title: const Text('Private Chat'),
+                      content: Text(
+                        'তুমি: ${_myName()}\n'
+                        'সঙ্গী: ${_partnerName()}',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('বন্ধ করো'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                icon: const Icon(
+                  Icons.info_outline,
+                  color: purpleColor,
+                ),
               ),
             ],
           ),
         ),
         Expanded(
-          child: messages.isEmpty
-              ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.forum_outlined,
-                        size: 44,
-                        color: Colors.white30,
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        'Your story starts with a message',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    ],
+          child: ValueListenableBuilder<int>(
+            valueListenable: SpaceStore.syncVersion,
+            builder: (context, version, child) {
+              final messages = SpaceStore.readList('chatMessages');
+              if (messages.isEmpty) {
+                return const Center(
+                  child: Text(
+                    'একটি মেসেজ দিয়ে গল্প শুরু করো ❤️',
+                    style: TextStyle(color: Colors.white60),
                   ),
-                )
-              : ListView.builder(
-                  controller: scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final mine = message['mine'] == true;
-
-                    return GestureDetector(
-                      onLongPress: () => _showMessageOptions(index),
-                      child: Align(
-                        alignment: mine
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          constraints: BoxConstraints(
-                            maxWidth:
-                                MediaQuery.sizeOf(context).width * 0.76,
+                );
+              }
+              return ListView.builder(
+                key: const PageStorageKey('private-chat-messages'),
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
+                itemCount: messages.length,
+                itemBuilder: (context, index) {
+                  final message = messages[index];
+                  final mine = _isMine(message);
+                  final sender = _senderName(message, mine);
+                  final unsent = message['unsent'] == true;
+                  return GestureDetector(
+                    onLongPress: () => _showMessageOptions(message),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Row(
+                        mainAxisAlignment: mine
+                            ? MainAxisAlignment.end
+                            : MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (!mine) ...[
+                            _avatar(sender),
+                            const SizedBox(width: 7),
+                          ],
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: mine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.sizeOf(context).width * 0.72,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: unsent
+                                        ? surfaceColor.withValues(alpha: 0.7)
+                                        : mine
+                                            ? purpleColor
+                                            : const Color(0xFF29263B),
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: const Radius.circular(19),
+                                      topRight: const Radius.circular(19),
+                                      bottomLeft:
+                                          Radius.circular(mine ? 19 : 5),
+                                      bottomRight:
+                                          Radius.circular(mine ? 5 : 19),
+                                    ),
+                                  ),
+                                  child: unsent
+                                      ? const Text(
+                                          'You unsent a message',
+                                          style: TextStyle(
+                                            color: Colors.white70,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        )
+                                      : _messageContent(message),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _formatTime(message['time']),
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.white54,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          margin: const EdgeInsets.symmetric(vertical: 5),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: mine
-                                ? blueColor.withValues(alpha: 0.25)
-                                : surfaceColor,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: _messageContent(message),
-                        ),
+                          if (mine) ...[
+                            const SizedBox(width: 7),
+                            _avatar(_myName()),
+                          ],
+                        ],
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
         SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
             child: Row(
               children: [
                 IconButton(
+                  tooltip: 'ছবি',
                   onPressed: () => _sendMedia(false),
                   icon: const Icon(
                     Icons.image_outlined,
-                    color: pinkColor,
+                    color: purpleColor,
                   ),
                 ),
                 IconButton(
+                  tooltip: 'ভিডিও',
                   onPressed: () => _sendMedia(true),
                   icon: const Icon(
-                    Icons.videocam_outlined,
+                    Icons.video_library_outlined,
                     color: purpleColor,
                   ),
                 ),
@@ -1253,18 +1410,27 @@ class _ChatPageState extends State<ChatPage> {
                   child: TextField(
                     controller: controller,
                     textCapitalization: TextCapitalization.sentences,
+                    minLines: 1,
+                    maxLines: 5,
                     onSubmitted: (_) => _sendText(),
-                    decoration: const InputDecoration(
-                      hintText: 'Write a message...',
-                      contentPadding: EdgeInsets.symmetric(
+                    decoration: InputDecoration(
+                      hintText: 'মেসেজ লেখো...',
+                      contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
+                      ),
+                      filled: true,
+                      fillColor: Colors.black.withValues(alpha: 0.3),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 IconButton.filled(
+                  tooltip: 'পাঠাও',
                   onPressed: _sendText,
                   icon: const Icon(Icons.send_rounded),
                 ),
@@ -1277,16 +1443,6 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _messageContent(Map<String, dynamic> message) {
-    if (message['unsent'] == true) {
-      return const Text(
-        'Unsent',
-        style: TextStyle(
-          color: Colors.white54,
-          fontStyle: FontStyle.italic,
-        ),
-      );
-    }
-
     final type = '${message['type'] ?? 'text'}';
     final path = '${message['text'] ?? ''}';
 
@@ -1305,13 +1461,13 @@ class _ChatPageState extends State<ChatPage> {
           width: 210,
           height: 210,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) {
-            return const Text('Image is no longer available');
-          },
+          errorBuilder: (_, __, ___) => const Text(
+            'এই ফোনে ছবিটি পাওয়া যায়নি',
+            style: TextStyle(color: Colors.white70),
+          ),
         ),
       );
     }
-
     if (type == 'video') {
       return GestureDetector(
         onTap: () {
@@ -1324,24 +1480,23 @@ class _ChatPageState extends State<ChatPage> {
         },
         child: Container(
           width: 210,
-          height: 130,
+          height: 120,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: Colors.black26,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.play_circle_fill_rounded, size: 45),
-              SizedBox(height: 6),
-              Text('Play video'),
-            ],
+          child: const Icon(
+            Icons.play_circle_fill_rounded,
+            size: 46,
           ),
         ),
       );
     }
-
-    return Text(path, style: const TextStyle(fontSize: 15));
+    return Text(
+      path,
+      style: const TextStyle(fontSize: 15, color: Colors.white),
+    );
   }
 }
 
@@ -3016,14 +3171,8 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                               child: const Text('Edit'),
                             ),
                             TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _deleteComplaint(complaint);
-                              },
-                              child: const Text(
-                                'Delete',
-                                style: TextStyle(color: Colors.redAccent),
-                              ),
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Delete'),
                             ),
                           ],
                         ),
