@@ -1382,14 +1382,15 @@ class _ChatPageState extends State<ChatPage> {
                     child: _messageContent(message),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    _formatTime(message['time']),
-                    style: TextStyle(
-  fontSize: 10,
-  color: Colors.white.withValues(alpha: 0.45),
+                  
+Text(
+  _formatTime(message['time']),
+  style: TextStyle(
+    fontSize: 10,
+    color: Colors.white.withValues(alpha: 0.45),
+  ),
 ),
-                    ),
-                  ),
+
                 ],
               ),
             ),
