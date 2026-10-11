@@ -15,6 +15,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:video_player/video_player.dart';
 import 'screens/partner_connection_page.dart';
 import 'services/space_sync_service.dart';
+import 'services/chat_sync_service.dart';
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -981,6 +982,7 @@ class _ChatPageState extends State<ChatPage> {
   final ScrollController scrollController = ScrollController();
 
   List<Map<String, dynamic>> messages = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _chatSubscription;
 
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -988,35 +990,41 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
-
-    messages = SpaceStore.readList('chatMessages');
-    SpaceStore.syncVersion.addListener(_handleSyncChange);
     _startChatSync();
   }
 
   Future<void> _startChatSync() async {
-    await SpaceStore.init();
-    await SpaceStore.syncFromFirebase();
+    try {
+      final stream = ChatSyncService.watchMessages();
 
-    if (!mounted) return;
+      _chatSubscription = stream.listen(
+        (latestMessages) {
+          if (!mounted) return;
 
-    await SpaceStore.startRealtimeSync();
-    _handleSyncChange();
-  }
+          setState(() {
+            messages = latestMessages;
+          });
 
-  void _handleSyncChange() {
-    if (!mounted) return;
-
-    final latestMessages = SpaceStore.readList('chatMessages');
-
-    setState(() {
-      messages = latestMessages;
-    });
+          _scrollToBottom();
+        },
+        onError: (Object error) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('চ্যাট সিঙ্ক সমস্যা: $error')),
+          );
+        },
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('চ্যাট চালু হয়নি: $error')),
+      );
+    }
   }
 
   @override
   void dispose() {
-    SpaceStore.syncVersion.removeListener(_handleSyncChange);
+    _chatSubscription?.cancel();
     controller.dispose();
     scrollController.dispose();
     super.dispose();
@@ -1034,10 +1042,8 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _save() async {
-    await SpaceStore.saveList(
-      'chatMessages',
-      List<Map<String, dynamic>>.from(messages),
-    );
+    // চ্যাটের মেসেজ এখন ChatSyncService দিয়ে
+    // সরাসরি Firebase-এ সেভ হবে।
   }
 
   Future<void> _sendText() async {
@@ -1049,9 +1055,7 @@ class _ChatPageState extends State<ChatPage> {
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'আগে Partner Space-এ যুক্ত হয়ে নাও।',
-          ),
+          content: Text('আগে Partner Space-এ যুক্ত হয়ে নাও।'),
         ),
       );
       return;
@@ -1067,13 +1071,17 @@ class _ChatPageState extends State<ChatPage> {
       'time': DateTime.now().toIso8601String(),
     };
 
-    setState(() {
-      messages.add(message);
-      controller.clear();
-    });
+    controller.clear();
 
-    await _save();
-    _scrollToBottom();
+    try {
+      await ChatSyncService.sendMessage(message);
+      _scrollToBottom();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('মেসেজ পাঠানো যায়নি: $error')),
+      );
+    }
   }
 
   Future<void> _sendMedia(bool video) async {
@@ -1106,12 +1114,15 @@ class _ChatPageState extends State<ChatPage> {
       'time': DateTime.now().toIso8601String(),
     };
 
-    setState(() {
-      messages.add(message);
-    });
-
-    await _save();
-    _scrollToBottom();
+    try {
+      await ChatSyncService.sendMessage(message);
+      _scrollToBottom();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('মিডিয়া পাঠানো যায়নি: $error')),
+      );
+    }
   }
 
   void _scrollToBottom() {
@@ -1179,19 +1190,14 @@ class _ChatPageState extends State<ChatPage> {
                   onTap: () async {
                     Navigator.pop(sheetContext);
 
-                    final currentIndex = messages.indexWhere(
-                      (item) =>
-                          '${item['id'] ?? ''}' == messageId,
-                    );
-
-                    if (currentIndex == -1 || !mounted) return;
-
-                    setState(() {
-                      messages[currentIndex]['unsent'] = true;
-                      messages[currentIndex]['text'] = '';
-                    });
-
-                    await _save();
+                    try {
+                      await ChatSyncService.unsendMessage(messageId);
+                    } catch (error) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('আনসেন্ড করা যায়নি: $error')),
+                      );
+                    }
                   },
                 ),
             ],
@@ -1382,15 +1388,13 @@ class _ChatPageState extends State<ChatPage> {
                     child: _messageContent(message),
                   ),
                   const SizedBox(height: 4),
-                  
-Text(
-  _formatTime(message['time']),
-  style: TextStyle(
-    fontSize: 10,
-    color: Colors.white.withValues(alpha: 0.45),
-  ),
-),
-
+                  Text(
+                    _formatTime(message['time']),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.white45,
+                    ),
+                  ),
                 ],
               ),
             ),
