@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -66,12 +65,18 @@ class ChatSyncService {
   /// নিজের পাঠানো মেসেজ সবার জন্য Unsend করে।
   static Future<void> unsendMessage(String messageId) async {
     final ref = await _messagesRef();
-    final user = FirebaseAuth.instance.currentUser!;
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw Exception('আগে Partner Space-এ যুক্ত হও।');
+    }
 
     final docRef = ref.doc(messageId);
     final snapshot = await docRef.get();
 
-    if (!snapshot.exists) return;
+    if (!snapshot.exists) {
+      throw Exception('মেসেজটি পাওয়া যায়নি।');
+    }
 
     final data = snapshot.data()!;
 
