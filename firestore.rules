@@ -51,7 +51,6 @@ service cloud.firestore {
           .affectedKeys().hasOnly(['memberUids']);
     }
 
-    function validDisconnectionUpdate() {
     
 function validDisconnectionUpdate() {
   let members = resource.data.memberUids;
