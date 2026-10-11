@@ -102,6 +102,11 @@ class EternalSpaceApp extends StatelessWidget {
 
 class SpaceStore {
   static SharedPreferences? _prefs;
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _syncSubscription;
+
+  static final ValueNotifier<int> syncVersion = ValueNotifier<int>(0);
+  static bool _applyingRemoteData = false;
 
   static Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -127,7 +132,11 @@ class SpaceStore {
   ) async {
     await init();
     await _prefs!.setString(key, jsonEncode(value));
-    await _syncKey(key, value);
+    syncVersion.value++;
+
+    if (!_applyingRemoteData) {
+      await _syncKey(key, value);
+    }
   }
 
   static String readString(String key, [String fallback = '']) {
@@ -137,13 +146,21 @@ class SpaceStore {
   static Future<void> saveString(String key, String value) async {
     await init();
     await _prefs!.setString(key, value);
-    await _syncKey(key, value);
+    syncVersion.value++;
+
+    if (!_applyingRemoteData) {
+      await _syncKey(key, value);
+    }
   }
 
-  static Future<void> _syncKey(
-    String key,
-    dynamic value,
-  ) async {
+  static Future<String?> _getSpaceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('eternal_space_id');
+  }
+
+  static Future<void> _syncKey(String key, dynamic value) async {
+    if (_applyingRemoteData) return;
+
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -164,11 +181,6 @@ class SpaceStore {
     } catch (e) {
       debugPrint('Firebase sync error: $e');
     }
-  }
-
-  static Future<String?> _getSpaceId() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('eternal_space_id');
   }
 
   static Future<void> syncAllToFirebase() async {
@@ -207,11 +219,21 @@ class SpaceStore {
 
       if (!snapshot.exists) return;
 
-      final data = snapshot.data();
-      if (data == null) return;
+      await _applyRemoteData(snapshot.data());
+    } catch (e) {
+      debugPrint('Firebase download error: $e');
+    }
+  }
 
-      await init();
+  static Future<void> _applyRemoteData(
+    Map<String, dynamic>? data,
+  ) async {
+    if (data == null) return;
 
+    await init();
+    _applyingRemoteData = true;
+
+    try {
       for (final entry in data.entries) {
         if (entry.key == 'updatedBy' ||
             entry.key == 'updatedAt') {
@@ -221,17 +243,54 @@ class SpaceStore {
         final value = entry.value;
 
         if (value is List) {
-          await _prefs!.setString(
-            entry.key,
-            jsonEncode(value),
-          );
+          await _prefs!.setString(entry.key, jsonEncode(value));
         } else if (value is String) {
           await _prefs!.setString(entry.key, value);
         }
       }
-    } catch (e) {
-      debugPrint('Firebase download error: $e');
+
+      syncVersion.value++;
+    } finally {
+      _applyingRemoteData = false;
     }
+  }
+
+  static Future<void> startRealtimeSync() async {
+    await stopRealtimeSync();
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final spaceId = await _getSpaceId();
+    if (spaceId == null || spaceId.isEmpty) return;
+
+    final reference = FirebaseFirestore.instance
+        .collection('privateSpaces')
+        .doc(spaceId)
+        .collection('syncData')
+        .doc('appState');
+
+    _syncSubscription = reference.snapshots().listen(
+      (snapshot) async {
+        if (!snapshot.exists) return;
+
+        final data = snapshot.data();
+        if (data == null) return;
+
+        // নিজের পরিবর্তন আবার ডাউনলোড করার দরকার নেই।
+        if (data['updatedBy'] == user.uid) return;
+
+        await _applyRemoteData(data);
+      },
+      onError: (Object error) {
+        debugPrint('Realtime sync error: $error');
+      },
+    );
+  }
+
+  static Future<void> stopRealtimeSync() async {
+    await _syncSubscription?.cancel();
+    _syncSubscription = null;
   }
 }
 
@@ -2712,37 +2771,6 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
     await _saveComplaints();
   }
 
-  Future<void> _deleteComplaint(SpaceComplaint complaint) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Delete complaint?'),
-        content: const Text(
-          'This complaint will be removed from this phone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() {
-      complaints.removeWhere((item) => item.id == complaint.id);
-    });
-
-    await _saveComplaints();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2842,16 +2870,6 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                                 _editComplaint(existing: complaint);
                               },
                               child: const Text('Edit'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _deleteComplaint(complaint);
-                              },
-                              child: const Text(
-                                'Delete',
-                                style: TextStyle(color: Colors.redAccent),
-                              ),
                             ),
                           ],
                         ),
