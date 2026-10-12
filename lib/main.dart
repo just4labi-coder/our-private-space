@@ -1729,6 +1729,168 @@ class _GalleryPageState extends State<GalleryPage> {
     await _save();
   }
 
+  Future<void> _showFolderMenu(Map<String, dynamic> folder) async {
+    final id = '${folder['id']}';
+    final isDefault = id == 'all' || id == 'favorites';
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Details'),
+              onTap: () => Navigator.pop(sheetContext, 'details'),
+            ),
+            if (!isDefault)
+              ListTile(
+                leading: const Icon(Icons.drive_file_rename_outline),
+                title: const Text('Rename'),
+                onTap: () => Navigator.pop(sheetContext, 'rename'),
+              ),
+            if (!isDefault)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: Colors.redAccent,
+                ),
+                title: const Text('Delete'),
+                onTap: () => Navigator.pop(sheetContext, 'delete'),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == 'details') {
+      final count = _itemsForFolder(id).length;
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: surfaceColor,
+          title: const Text('Folder details'),
+          content: Text(
+            'Name: ${folder['name']}\n'
+            'Items: $count\n'
+            'Folder ID: $id',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } else if (action == 'rename') {
+      await _renameFolder(folder);
+    } else if (action == 'delete') {
+      await _deleteFolder(folder);
+    }
+  }
+
+  Future<void> _renameFolder(Map<String, dynamic> folder) async {
+    final id = '${folder['id']}';
+
+    if (id == 'all' || id == 'favorites') return;
+
+    final controller = TextEditingController(
+      text: '${folder['name'] ?? ''}',
+    );
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Rename folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 40,
+          decoration: const InputDecoration(
+            labelText: 'Folder name',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, controller.text.trim());
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (name == null || name.isEmpty || !mounted) return;
+
+    setState(() {
+      final index = folders.indexWhere((item) => '${item['id']}' == id);
+
+      if (index != -1) {
+        folders[index]['name'] = name;
+      }
+    });
+
+    await _save();
+  }
+
+  Future<void> _deleteFolder(Map<String, dynamic> folder) async {
+    final id = '${folder['id']}';
+
+    if (id == 'all' || id == 'favorites') return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Delete folder?'),
+        content: Text(
+          '“${folder['name']}” ফোল্ডারটি মুছে যাবে। '
+          'এর ছবি ও ভিডিও All Memories-এ থাকবে।',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      for (final item in media) {
+        if ('${item['folderId']}' == id) {
+          item['folderId'] = 'all';
+        }
+      }
+
+      folders.removeWhere((item) => '${item['id']}' == id);
+    });
+
+    await _save();
+  }
+
   Future<Map<String, dynamic>?> _addMedia(
     String folderId,
     bool video,
@@ -1933,34 +2095,54 @@ class _GalleryPageState extends State<GalleryPage> {
               child: InkWell(
                 borderRadius: BorderRadius.circular(20),
                 onTap: () => _openFolder(folder),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.folder_rounded,
-                        size: 42,
-                        color: purpleColor,
+                onLongPress: () => _showFolderMenu(folder),
+                child: Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.folder_rounded,
+                            size: 42,
+                            color: purpleColor,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '${folder['name']}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            '$count items',
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '${folder['name']}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '$count items',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 11,
+                    ),
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: IconButton(
+                        tooltip: 'Folder options',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _showFolderMenu(folder),
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.white70,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             );
