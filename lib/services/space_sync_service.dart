@@ -15,7 +15,7 @@ class SpaceSyncService {
   static const String _apiUrl =
       'https://script.google.com/macros/s/AKfycbw5JDObuu19_VQQ1ytXsA2Bav2M_szPSoiARCrc5KvNZYKm-RoDr1lwUiy14s3nsnzSoQ/exec';
 
-  static const int _maxUploadBytes = 6 * 1024 * 1024;
+  static const int _maxUploadBytes = 30 * 1024 * 1024;
 
   // --------------------------------------------------
   // AUTHENTICATION AND SPACE
@@ -145,7 +145,7 @@ class SpaceSyncService {
       case 'FILE_DATA_REQUIRED':
         return 'আপলোড করার ফাইল পাওয়া যায়নি।';
       case 'FILE_TOO_LARGE':
-        return 'ফাইলটি ৬ MB-এর চেয়ে বড়। ছোট ফাইল ব্যবহার করো।';
+        return 'ফাইলটি সার্ভারের আপলোড সীমা অতিক্রম করেছে। ছোট ফাইল দিয়ে চেষ্টা করো।';
       case 'DOWNLOAD_TOO_LARGE':
         return 'ফাইলটি ডাউনলোডের নির্ধারিত সীমার চেয়ে বড়।';
       case 'INVALID_FILE_ID':
@@ -219,7 +219,7 @@ class SpaceSyncService {
     }
 
     if (length > _maxUploadBytes) {
-      throw Exception('ফাইলটি ৬ MB-এর চেয়ে বড়।');
+      throw Exception('ফাইলটি সার্ভারের আপলোড সীমা অতিক্রম করেছে।');
     }
 
     final name = file.uri.pathSegments.isNotEmpty
@@ -463,7 +463,7 @@ class SpaceSyncService {
     }));
 
     if (bytes.length > _maxUploadBytes) {
-      throw Exception('ব্যাকআপটি ৬ MB-এর চেয়ে বড়।');
+      throw Exception('ব্যাকআপটি অ্যাপের নির্ধারিত সীমা অতিক্রম করেছে।');
     }
 
     final tempDir = await Directory.systemTemp.createTemp(
