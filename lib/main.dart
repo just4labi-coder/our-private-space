@@ -169,25 +169,35 @@ class SpaceStore {
     final spaceId = await _getSpaceId();
     if (spaceId == null || spaceId.isEmpty) return null;
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('privateSpaces')
-        .doc(spaceId)
-        .get();
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('privateSpaces')
+          .doc(spaceId)
+          .get();
 
-    if (!snapshot.exists) return null;
+      if (!snapshot.exists) return null;
 
-    final data = snapshot.data();
-    if (data == null) return null;
+      final data = snapshot.data();
+      if (data == null) return null;
 
-    final members = data['memberUids'];
-    if (members is! List || !members.contains(user.uid)) {
+      final members = data['memberUids'];
+
+      // দুজন সদস্য যুক্ত না হলে সংযোগ সম্পূর্ণ নয়।
+      if (members is! List ||
+          members.length != 2 ||
+          !members.contains(user.uid)) {
+        return null;
+      }
+
+      // বিচ্ছিন্ন অবস্থায় কোনো শেয়ার করা ডেটা সিঙ্ক হবে না।
+      final status = data['connectionStatus'] ?? 'connected';
+      if (status != 'connected') return null;
+
+      return spaceId;
+    } catch (e) {
+      debugPrint('Connection check error: $e');
       return null;
     }
-
-    final status = data['connectionStatus'] ?? 'connected';
-    if (status != 'connected') return null;
-
-    return spaceId;
   }
 
   static Future<void> _syncKey(String key, dynamic value) async {
