@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -146,6 +145,7 @@ class DisconnectionService {
         updates[completedAtField] = FieldValue.serverTimestamp();
 
         if (completedStatus == 'disconnected') {
+          updates['relationshipStartAt'] = FieldValue.delete();
           updates['reconnectionApprovals'] = <String, bool>{};
         } else {
           updates['disconnectionApprovals'] = <String, bool>{};
