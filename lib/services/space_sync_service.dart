@@ -1,11 +1,8 @@
-
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
 
 import 'private_space_service.dart';
@@ -14,184 +11,412 @@ class SpaceSyncService {
   SpaceSyncService._();
 
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
-  static const String _folderName = 'Eternal Space Media';
 
-  static GoogleSignIn _googleSignIn() => GoogleSignIn(
-        scopes: [drive.DriveApi.driveFileScope],
-      );
+  static const String _apiUrl =
+      'https://script.google.com/macros/s/AKfycbw5JDObuu19_VQQ1ytXsA2Bav2M_szPSoiARCrc5KvNZYKm-RoDr1lwUiy14s3nsnzSoQ/exec';
 
-  static Future<drive.DriveApi> _driveApi() async {
-    final signIn = _googleSignIn();
-    var account = await signIn.signInSilently();
-    account ??= await signIn.signIn();
+  static const int _maxUploadBytes = 6 * 1024 * 1024;
 
-    if (account == null) {
-      throw Exception('Google Drive সাইন-ইন বাতিল হয়েছে।');
+  // --------------------------------------------------
+  // AUTHENTICATION AND SPACE
+  // --------------------------------------------------
+
+  static Future<User> _requireUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw Exception('আগে অ্যাকাউন্টে সাইন ইন করো।');
     }
 
-    return drive.DriveApi(_GoogleAuthClient(await account.authHeaders));
+    return user;
   }
 
   static Future<String> _getSpaceId() async {
-    if (FirebaseAuth.instance.currentUser == null) {
+    await _requireUser();
+
+    final id = await PrivateSpaceService.getSavedSpaceId();
+
+    if (id == null || id.isEmpty) {
       throw Exception('আগে Partner Connection তৈরি করো।');
     }
 
-    final id = await PrivateSpaceService.getSavedSpaceId();
-    if (id == null || id.isEmpty) {
-      throw Exception('Partner Connection পাওয়া যায়নি।');
-    }
     return id;
   }
 
-  static Future<DocumentReference<Map<String, dynamic>>>
-      _syncDocument() async {
-    final id = await _getSpaceId();
-    return _db.collection('privateSpaces').doc(id)
-        .collection('syncData').doc('appState');
-  }
+  static Future<String> _getIdToken() async {
+    final user = await _requireUser();
+    final token = await user.getIdToken();
 
-  static Future<String> getOrCreateMediaFolder() async {
-    final api = await _driveApi();
-    final result = await api.files.list(
-      q: "name = '$_folderName' and mimeType = "
-          "'application/vnd.google-apps.folder' and trashed = false",
-      spaces: 'drive',
-      $fields: 'files(id,name)',
-      pageSize: 100,
-    );
-
-    final existing = result.files?.where((f) => f.id != null).firstOrNull;
-    if (existing?.id != null) return existing!.id!;
-
-    final folder = await api.files.create(
-      drive.File()
-        ..name = _folderName
-        ..mimeType = 'application/vnd.google-apps.folder',
-      $fields: 'id,name',
-    );
-
-    if (folder.id == null) {
-      throw Exception('Drive ফোল্ডার তৈরি করা যায়নি।');
+    if (token == null || token.isEmpty) {
+      throw Exception('Firebase পরিচয় যাচাই করা যায়নি। আবার চেষ্টা করো।');
     }
-    return folder.id!;
+
+    return token;
   }
+
+  // --------------------------------------------------
+  // APPS SCRIPT API
+  // --------------------------------------------------
+
+  static Future<Map<String, dynamic>> _request(
+    String action, {
+    Map<String, dynamic> data = const {},
+    bool needsSpace = false,
+  }) async {
+    final token = await _getIdToken();
+
+    final payload = <String, dynamic>{
+      'action': action,
+      'idToken': token,
+      ...data,
+    };
+
+    if (needsSpace && !payload.containsKey('spaceId')) {
+      payload['spaceId'] = await _getSpaceId();
+    }
+
+    http.Response response;
+
+    try {
+      response = await http
+          .post(
+            Uri.parse(_apiUrl),
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 90));
+    } catch (e) {
+      throw Exception(
+        'সার্ভারের সঙ্গে যোগাযোগ করা যায়নি। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'সার্ভার অনুরোধ গ্রহণ করেনি (${response.statusCode})।',
+      );
+    }
+
+    dynamic decoded;
+
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception(
+        'সার্ভারের উত্তর বোঝা যায়নি। Apps Script Web App deployment পরীক্ষা করো।',
+      );
+    }
+
+    if (decoded is! Map) {
+      throw Exception('সার্ভারের উত্তর সঠিক নয়।');
+    }
+
+    final result = Map<String, dynamic>.from(decoded);
+
+    if (result['ok'] != true) {
+      final error = result['error']?.toString() ?? 'REQUEST_FAILED';
+      throw Exception(_errorMessage(error));
+    }
+
+    final responseData = result['data'];
+
+    if (responseData is Map) {
+      return Map<String, dynamic>.from(responseData);
+    }
+
+    return <String, dynamic>{};
+  }
+
+  static String _errorMessage(String error) {
+    switch (error) {
+      case 'AUTH_REQUIRED':
+        return 'সাইন-ইন প্রয়োজন।';
+      case 'AUTH_INVALID':
+        return 'সাইন-ইন মেয়াদ শেষ বা পরিচয় যাচাই ব্যর্থ হয়েছে।';
+      case 'SPACE_ACCESS_DENIED':
+        return 'এই Private Space ব্যবহারের অনুমতি নেই।';
+      case 'SPACE_DISCONNECTED':
+        return 'Partner Connection বিচ্ছিন্ন। পুনরায় সংযোগ করো।';
+      case 'INVALID_SPACE_ID':
+        return 'Private Space ID সঠিক নয়।';
+      case 'FILE_DATA_REQUIRED':
+        return 'আপলোড করার ফাইল পাওয়া যায়নি।';
+      case 'FILE_TOO_LARGE':
+        return 'ফাইলটি ৬ MB-এর চেয়ে বড়। ছোট ফাইল ব্যবহার করো।';
+      case 'DOWNLOAD_TOO_LARGE':
+        return 'ফাইলটি ডাউনলোডের নির্ধারিত সীমার চেয়ে বড়।';
+      case 'INVALID_FILE_ID':
+        return 'ফাইলের পরিচয় সঠিক নয়।';
+      case 'FILE_NOT_FOUND':
+        return 'ফাইলটি পাওয়া যায়নি।';
+      case 'INVALID_ACTION':
+        return 'API অনুরোধ সঠিক নয়।';
+      case 'REQUEST_FAILED':
+        return 'অনুরোধ সম্পন্ন হয়নি। আবার চেষ্টা করো।';
+      default:
+        return 'অনুরোধ সম্পন্ন হয়নি ($error)।';
+    }
+  }
+
+  // --------------------------------------------------
+  // INITIALIZE
+  // --------------------------------------------------
+
+  static Future<Map<String, dynamic>> initialize() async {
+    return _request('initialize');
+  }
+
+  // পুরোনো কোডের সঙ্গে সামঞ্জস্য রাখার জন্য।
+  // Apps Script-এর initialize ব্যক্তিগত ফোল্ডার তৈরি করে।
+  static Future<String> getOrCreateMediaFolder() async {
+    final result = await initialize();
+    final folderId = result['personalFolderId']?.toString();
+
+    if (folderId == null || folderId.isEmpty) {
+      throw Exception('ব্যক্তিগত Drive ফোল্ডার তৈরি হয়নি।');
+    }
+
+    return folderId;
+  }
+
+  // --------------------------------------------------
+  // FILE HELPERS
+  // --------------------------------------------------
 
   static String _mimeType(String name) {
     final n = name.toLowerCase();
+
     if (n.endsWith('.mp4')) return 'video/mp4';
     if (n.endsWith('.mov')) return 'video/quicktime';
     if (n.endsWith('.3gp')) return 'video/3gpp';
     if (n.endsWith('.webm')) return 'video/webm';
+    if (n.endsWith('.m4v')) return 'video/x-m4v';
     if (n.endsWith('.png')) return 'image/png';
     if (n.endsWith('.webp')) return 'image/webp';
     if (n.endsWith('.gif')) return 'image/gif';
+    if (n.endsWith('.heic')) return 'image/heic';
+    if (n.endsWith('.pdf')) return 'application/pdf';
+    if (n.endsWith('.json')) return 'application/json';
+
     return 'image/jpeg';
   }
 
-  static Future<Map<String, String>> uploadMedia(File file) async {
+  static Future<Map<String, String>> _upload(
+    File file, {
+    required bool shared,
+  }) async {
     if (!await file.exists()) {
       throw Exception('ফাইলটি এই ফোনে পাওয়া যায়নি।');
     }
 
-    final api = await _driveApi();
-    final folderId = await getOrCreateMediaFolder();
+    final length = await file.length();
+
+    if (length <= 0) {
+      throw Exception('ফাইলটি খালি।');
+    }
+
+    if (length > _maxUploadBytes) {
+      throw Exception('ফাইলটি ৬ MB-এর চেয়ে বড়।');
+    }
+
     final name = file.uri.pathSegments.isNotEmpty
         ? file.uri.pathSegments.last
         : 'media_${DateTime.now().millisecondsSinceEpoch}';
 
-    final uploaded = await api.files.create(
-      drive.File()
-        ..name = name
-        ..parents = [folderId]
-        ..mimeType = _mimeType(name),
-      uploadMedia: drive.Media(
-        file.openRead(),
-        await file.length(),
-        contentType: _mimeType(name),
-      ),
-      $fields: 'id,name,mimeType,parents',
+    final bytes = await file.readAsBytes();
+
+    final data = <String, dynamic>{
+      'name': name,
+      'mimeType': _mimeType(name),
+      'base64': base64Encode(bytes),
+    };
+
+    final result = await _request(
+      shared ? 'uploadShared' : 'uploadPersonal',
+      data: data,
+      needsSpace: shared,
     );
 
-    if (uploaded.id == null) {
-      throw Exception('Drive-এ আপলোড ব্যর্থ হয়েছে।');
+    final fileId = result['fileId']?.toString();
+
+    if (fileId == null || fileId.isEmpty) {
+      throw Exception('আপলোড হয়েছে কি না নিশ্চিত করা যায়নি।');
     }
 
+    // পুরোনো Chat/Gallery কোডের সঙ্গে সামঞ্জস্য রাখে।
     return {
-      'driveFileId': uploaded.id!,
-      'driveFileName': uploaded.name ?? name,
-      'driveFolderId': folderId,
-      'mimeType': uploaded.mimeType ?? _mimeType(name),
+      'fileId': fileId,
+      'driveFileId': fileId,
+      'driveFileName': result['name']?.toString() ?? name,
+      'driveFolderId': '',
+      'mimeType': result['mimeType']?.toString() ?? _mimeType(name),
+      'size': result['size']?.toString() ?? '$length',
+      'createdAt': result['createdAt']?.toString() ?? '',
+      'storage': shared ? 'shared' : 'personal',
     };
+  }
+
+  /// Chat ও Gallery-তে ব্যবহারের জন্য shared upload।
+  static Future<Map<String, String>> uploadMedia(File file) {
+    return _upload(file, shared: true);
+  }
+
+  static Future<Map<String, String>> uploadSharedMedia(File file) {
+    return _upload(file, shared: true);
+  }
+
+  static Future<Map<String, String>> uploadPersonalMedia(File file) {
+    return _upload(file, shared: false);
+  }
+
+  // --------------------------------------------------
+  // LIST FILES
+  // --------------------------------------------------
+
+  static Future<List<Map<String, dynamic>>> listSharedMedia() async {
+    final result = await _request(
+      'listShared',
+      needsSpace: true,
+    );
+
+    final items = result['items'];
+
+    if (items is! List) return [];
+
+    return items
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> listPersonalMedia() async {
+    final result = await _request('listPersonal');
+
+    final items = result['items'];
+
+    if (items is! List) return [];
+
+    return items
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  // --------------------------------------------------
+  // DOWNLOAD
+  // --------------------------------------------------
+
+  static Future<String> _download({
+    required String fileId,
+    required bool shared,
+    String? saveAs,
+  }) async {
+    if (fileId.trim().isEmpty) {
+      throw Exception('ফাইলের ID পাওয়া যায়নি।');
+    }
+
+    final result = await _request(
+      shared ? 'downloadShared' : 'downloadPersonal',
+      data: {'fileId': fileId},
+      needsSpace: shared,
+    );
+
+    final encoded = result['base64']?.toString() ?? '';
+
+    if (encoded.isEmpty) {
+      throw Exception('ডাউনলোড করার ফাইল পাওয়া যায়নি।');
+    }
+
+    final bytes = base64Decode(encoded);
+
+    final directory = Directory(
+      '${Directory.systemTemp.path}/eternal_space_media',
+    );
+
+    await directory.create(recursive: true);
+
+    var safeName = (saveAs?.trim().isNotEmpty == true)
+        ? saveAs!.trim()
+        : (result['name']?.toString() ?? 'media_$fileId');
+
+    safeName = safeName.replaceAll(RegExp(r'[/\\\x00-\x1F]'), '_');
+
+    final file = File('${directory.path}/$safeName');
+
+    await file.writeAsBytes(bytes, flush: true);
+
+    if (!await file.exists() || await file.length() == 0) {
+      throw Exception('ডাউনলোড করা ফাইল খালি।');
+    }
+
+    return file.path;
   }
 
   static Future<String> downloadMedia(
     String fileId, {
     String? saveAs,
-  }) async {
-    final api = await _driveApi();
-    final response = await api.files.get(
-      fileId,
-      downloadOptions: drive.DownloadOptions.fullMedia,
+  }) {
+    return _download(
+      fileId: fileId,
+      shared: true,
+      saveAs: saveAs,
     );
-
-    if (response is! drive.Media) {
-      throw Exception('Drive ফাইল ডাউনলোড করা যায়নি।');
-    }
-
-    final safeName = (saveAs?.trim().isNotEmpty == true)
-        ? saveAs!.replaceAll(RegExp(r'[/\\]'), '_')
-        : 'media_$fileId';
-
-    final directory = Directory(
-      '${Directory.systemTemp.path}/eternal_space_media',
-    );
-    await directory.create(recursive: true);
-
-    final file = File('${directory.path}/$safeName');
-    final sink = file.openWrite();
-
-    try {
-      await response.stream.pipe(sink);
-      await sink.flush();
-      await sink.close();
-    } catch (_) {
-      await sink.close();
-      if (await file.exists()) await file.delete();
-      rethrow;
-    }
-
-    if (!await file.exists() || await file.length() == 0) {
-      throw Exception('ডাউনলোড করা ফাইল খালি। আবার চেষ্টা করো।');
-    }
-    return file.path;
   }
 
-  static Future<void> shareMediaFolder(String email) async {
-    final cleanedEmail = email.trim();
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-        .hasMatch(cleanedEmail)) {
-      throw Exception('সঠিক Google ইমেইল দাও।');
-    }
-
-    final api = await _driveApi();
-    final folderId = await getOrCreateMediaFolder();
-
-    await api.permissions.create(
-      drive.Permission()
-        ..type = 'user'
-        ..role = 'writer'
-        ..emailAddress = cleanedEmail,
-      folderId,
-      sendNotificationEmail: true,
+  static Future<String> downloadPersonalMedia(
+    String fileId, {
+    String? saveAs,
+  }) {
+    return _download(
+      fileId: fileId,
+      shared: false,
+      saveAs: saveAs,
     );
+  }
+
+  // --------------------------------------------------
+  // DELETE
+  // --------------------------------------------------
+
+  static Future<void> deleteSharedMedia(String fileId) async {
+    await _request(
+      'deleteShared',
+      data: {'fileId': fileId},
+      needsSpace: true,
+    );
+  }
+
+  static Future<void> deletePersonalMedia(String fileId) async {
+    await _request(
+      'deletePersonal',
+      data: {'fileId': fileId},
+    );
+  }
+
+  // --------------------------------------------------
+  // FIRESTORE APP-STATE SYNC
+  // --------------------------------------------------
+
+  static Future<DocumentReference<Map<String, dynamic>>>
+      _syncDocument() async {
+    final id = await _getSpaceId();
+
+    return _db
+        .collection('privateSpaces')
+        .doc(id)
+        .collection('syncData')
+        .doc('appState');
   }
 
   static Future<void> uploadToFirebase(
     Map<String, dynamic> data,
   ) async {
     final ref = await _syncDocument();
-    final user = FirebaseAuth.instance.currentUser!;
+    final user = await _requireUser();
+
     await ref.set({
       'data': data,
       'updatedBy': user.uid,
@@ -201,76 +426,67 @@ class SpaceSyncService {
 
   static Future<Map<String, dynamic>?> downloadFromFirebase() async {
     final snapshot = await (await _syncDocument()).get();
+
     if (!snapshot.exists) return null;
 
     final data = snapshot.data()?['data'];
+
     if (data is! Map) return null;
+
     return Map<String, dynamic>.from(data);
   }
 
   static Future<Stream<Map<String, dynamic>?>>
       watchFirebaseData() async {
     final ref = await _syncDocument();
+
     return ref.snapshots().map((snapshot) {
       final data = snapshot.data()?['data'];
+
       if (data is! Map) return null;
+
       return Map<String, dynamic>.from(data);
     });
   }
 
+  // --------------------------------------------------
+  // BACKUP
+  // --------------------------------------------------
+
   static Future<void> backupToGoogleDrive(
     Map<String, dynamic> data,
   ) async {
-    final api = await _driveApi();
-    final result = await api.files.list(
-      q: "name = 'EternalSpaceBackup.json' and trashed = false",
-      spaces: 'drive',
-      $fields: 'files(id,name)',
-      pageSize: 10,
-    );
-
     final bytes = utf8.encode(jsonEncode({
       'app': 'Eternal Space',
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
       'data': data,
     }));
 
-    final media = drive.Media(
-      Stream<List<int>>.value(bytes),
-      bytes.length,
-      contentType: 'application/json',
+    if (bytes.length > _maxUploadBytes) {
+      throw Exception('ব্যাকআপটি ৬ MB-এর চেয়ে বড়।');
+    }
+
+    final tempDir = await Directory.systemTemp.createTemp(
+      'eternal_space_backup_',
     );
 
-    final existing = result.files?.where((f) => f.id != null).firstOrNull;
-    if (existing?.id != null) {
-      await api.files.update(
-        drive.File()..name = 'EternalSpaceBackup.json',
-        existing!.id!,
-        uploadMedia: media,
-      );
-    } else {
-      await api.files.create(
-        drive.File()
-          ..name = 'EternalSpaceBackup.json'
-          ..mimeType = 'application/json',
-        uploadMedia: media,
-      );
+    try {
+      final file = File('${tempDir.path}/EternalSpaceBackup.json');
+      await file.writeAsBytes(bytes, flush: true);
+      await uploadPersonalMedia(file);
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
     }
   }
-}
 
-class _GoogleAuthClient extends http.BaseClient {
-  _GoogleAuthClient(this._headers);
-
-  final Map<String, String> _headers;
-  final http.Client _client = http.Client();
-
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) {
-    request.headers.addAll(_headers);
-    return _client.send(request);
+  // Apps Script API Google Drive-এর ফোল্ডার ইমেইলে শেয়ার করে না।
+  // আগের method-এর নাম রেখে স্পষ্ট error দেওয়া হলো।
+  static Future<void> shareMediaFolder(String email) async {
+    throw UnsupportedError(
+      'ইমেইল দিয়ে Drive ফোল্ডার শেয়ার বন্ধ। '
+      'Eternal Space-এর shared folder ব্যবহার করো।',
+    );
   }
-
-  @override
-  void close() => _client.close();
 }
