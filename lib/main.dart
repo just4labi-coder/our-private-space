@@ -871,7 +871,7 @@ class _RelationshipHomeHeaderState
             var partnerName = 'No one';
             DateTime? startAt;
 
-            if (connected && user != null) {
+            if (connected) {
               final rawNames = data['memberNames'];
               final names = rawNames is Map
                   ? Map<String, dynamic>.from(rawNames)
