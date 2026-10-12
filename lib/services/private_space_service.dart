@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +18,23 @@ class PrivateSpaceService {
 
   static Future<SharedPreferences> get _prefs async =>
       SharedPreferences.getInstance();
+
+  /// এই ফোনে সংরক্ষিত নিজের নাম ফেরত দেয়।
+  static Future<String> _getOwnName() async {
+    final prefs = await _prefs;
+
+    final savedName = prefs.getString('myDisplayName')?.trim();
+    if (savedName != null && savedName.isNotEmpty) {
+      return savedName;
+    }
+
+    final previousName = prefs.getString('partnerOne')?.trim();
+    if (previousName != null && previousName.isNotEmpty) {
+      return previousName;
+    }
+
+    return 'Your name';
+  }
 
   /// আগে থেকে সংরক্ষিত Space ID
   static Future<String?> getSavedSpaceId() async {
@@ -61,6 +77,7 @@ class PrivateSpaceService {
   /// নতুন Private Space তৈরি করে Invite Code ফেরত দেয়
   static Future<String> createSpace() async {
     final user = await ensureSignedIn();
+    final ownName = await _getOwnName();
 
     // আগে থেকেই Space যুক্ত থাকলে নতুন Space তৈরি করবে না।
     final savedSpaceId = await getSavedSpaceId();
@@ -100,6 +117,9 @@ class PrivateSpaceService {
 
       batch.set(spaceRef, {
         'memberUids': [user.uid],
+        'memberNames': {
+          user.uid: ownName,
+        },
         'createdBy': user.uid,
         'inviteCode': code,
         'createdAt': FieldValue.serverTimestamp(),
@@ -124,6 +144,7 @@ class PrivateSpaceService {
   /// Invite Code দিয়ে অন্য ফোনকে একই Space-এ যুক্ত করে
   static Future<void> joinSpace(String inviteCode) async {
     final user = await ensureSignedIn();
+    final ownName = await _getOwnName();
     final code = inviteCode.trim().toUpperCase();
 
     if (code.isEmpty) {
@@ -142,6 +163,7 @@ class PrivateSpaceService {
 
         final inviteData = invite.data()!;
         final id = inviteData['spaceId'] as String?;
+
         if (id == null || id.isEmpty) {
           throw Exception('Space ID পাওয়া যায়নি।');
         }
@@ -163,7 +185,22 @@ class PrivateSpaceService {
           spaceData['memberUids'] ?? [],
         );
 
+        final rawNames = spaceData['memberNames'];
+        final names = rawNames is Map
+            ? Map<String, dynamic>.from(rawNames)
+            : <String, dynamic>{};
+
+        // একই Space-এ আগে থেকেই যুক্ত থাকলে
+        // নিজের নাম অনুপস্থিত থাকলে সেটিও সংরক্ষণ করবে।
         if (members.contains(user.uid)) {
+          if (names[user.uid] == null ||
+              '${names[user.uid]}'.trim().isEmpty) {
+            names[user.uid] = ownName;
+            transaction.update(spaceRef, {
+              'memberNames': names,
+            });
+          }
+
           return id;
         }
 
@@ -173,8 +210,11 @@ class PrivateSpaceService {
           );
         }
 
+        names[user.uid] = ownName;
+
         transaction.update(spaceRef, {
           'memberUids': FieldValue.arrayUnion([user.uid]),
+          'memberNames': names,
         });
 
         return id;
