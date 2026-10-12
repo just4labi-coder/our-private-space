@@ -18,6 +18,7 @@ import 'services/space_sync_service.dart';
 import 'services/chat_sync_service.dart';
 import 'screens/auth_screen.dart';
 import 'services/auth_service.dart';
+import 'services/relationship_service.dart';
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -684,9 +685,9 @@ class HomePage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 26),
-        _CoupleCard(first: partnerOne, second: partnerTwo),
-        const SizedBox(height: 18),
-        const LoveCounterCard(),
+        _RelationshipHomeHeader(
+          fallbackName: partnerOne,
+        ),
         const SizedBox(height: 18),
         Card(
           color: surfaceColor,
@@ -801,6 +802,112 @@ class HomePage extends StatelessWidget {
   }
 }
 
+class _RelationshipHomeHeader extends StatefulWidget {
+  final String fallbackName;
+
+  const _RelationshipHomeHeader({
+    required this.fallbackName,
+  });
+
+  @override
+  State<_RelationshipHomeHeader> createState() =>
+      _RelationshipHomeHeaderState();
+}
+
+class _RelationshipHomeHeaderState
+    extends State<_RelationshipHomeHeader> {
+  Future<String?>? _spaceIdFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _spaceIdFuture = _getSpaceId();
+  }
+
+  Future<String?> _getSpaceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('eternal_space_id');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: _spaceIdFuture,
+      builder: (context, idSnapshot) {
+        final spaceId = idSnapshot.data;
+        if (spaceId == null || spaceId.isEmpty) {
+          return Column(
+            children: [
+              _CoupleCard(
+                first: widget.fallbackName,
+                second: 'No one',
+              ),
+              const SizedBox(height: 18),
+              const LoveCounterCard(),
+            ],
+          );
+        }
+
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('privateSpaces')
+              .doc(spaceId)
+              .snapshots(),
+          builder: (context, snapshot) {
+            final data = snapshot.data?.data();
+            final user = FirebaseAuth.instance.currentUser;
+            final members = List<String>.from(
+              data?['memberUids'] ?? [],
+            );
+
+            final connected = data != null &&
+                user != null &&
+                members.length == 2 &&
+                members.contains(user.uid) &&
+                (data['connectionStatus'] ?? 'connected') ==
+                    'connected';
+
+            var ownName = widget.fallbackName;
+            var partnerName = 'No one';
+            DateTime? startAt;
+
+            if (connected && user != null) {
+              final rawNames = data['memberNames'];
+              final names = rawNames is Map
+                  ? Map<String, dynamic>.from(rawNames)
+                  : <String, dynamic>{};
+
+              ownName = '${names[user.uid] ?? widget.fallbackName}';
+              final otherUid =
+                  members.firstWhere((uid) => uid != user.uid);
+              partnerName = '${names[otherUid] ?? 'Partner'}';
+
+              final rawStart = data['relationshipStartAt'];
+              if (rawStart is Timestamp) {
+                startAt = rawStart.toDate();
+              }
+            }
+
+            return Column(
+              children: [
+                _CoupleCard(
+                  first: ownName,
+                  second: partnerName,
+                ),
+                const SizedBox(height: 18),
+                LoveCounterCard(
+                  connected: connected,
+                  startDate: startAt,
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _CoupleCard extends StatelessWidget {
   final String first;
   final String second;
@@ -897,7 +1004,14 @@ class _AvatarLetter extends StatelessWidget {
 // ============================================================
 
 class LoveCounterCard extends StatefulWidget {
-  const LoveCounterCard({super.key});
+  final bool connected;
+  final DateTime? startDate;
+
+  const LoveCounterCard({
+    super.key,
+    this.connected = false,
+    this.startDate,
+  });
 
   @override
   State<LoveCounterCard> createState() => _LoveCounterCardState();
@@ -906,13 +1020,11 @@ class LoveCounterCard extends StatefulWidget {
 class _LoveCounterCardState extends State<LoveCounterCard> {
   Timer? timer;
   DateTime now = DateTime.now();
-
-  final DateTime startDate = DateTime(2025, 8, 7);
+  bool saving = false;
 
   @override
   void initState() {
     super.initState();
-
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => now = DateTime.now());
     });
@@ -924,10 +1036,118 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
     super.dispose();
   }
 
+  Future<void> _selectDateTime() async {
+    if (!widget.connected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('আগে Partner Connection চালু করো।'),
+        ),
+      );
+      return;
+    }
+
+    final initial = widget.startDate ?? DateTime.now();
+
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(DateTime.now())
+          ? DateTime.now()
+          : initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      helpText: 'একসঙ্গে থাকার শুরুর তারিখ',
+    );
+
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+      helpText: 'শুরুর সময় বেছে নাও',
+    );
+
+    if (time == null || !mounted) return;
+
+    final selected = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+
+    if (selected.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ভবিষ্যতের তারিখ ও সময় নির্বাচন করা যাবে না।'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      await RelationshipService.saveRelationshipStart(selected);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('তারিখ ও সময় সংরক্ষণ হয়েছে।')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('সংরক্ষণ করা যায়নি: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> _clearDateTime() async {
+    if (!widget.connected || widget.startDate == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('তারিখ মুছে ফেলবে?'),
+        content: const Text(
+          'দুই ফোন থেকেই Together for-এর তারিখ মুছে যাবে।',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('না'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('মুছে ফেলো'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() => saving = true);
+    try {
+      await RelationshipService.clearRelationshipStart();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('মুছতে পারিনি: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  String _two(int value) => value.toString().padLeft(2, '0');
+
   @override
   Widget build(BuildContext context) {
-    final difference = now.difference(startDate);
-    final totalSeconds = max(0, difference.inSeconds);
+    final start = widget.startDate;
+    final totalSeconds = start == null
+        ? 0
+        : max(0, now.difference(start).inSeconds);
     final days = totalSeconds ~/ 86400;
     final hours = (totalSeconds % 86400) ~/ 3600;
     final minutes = (totalSeconds % 3600) ~/ 60;
@@ -951,25 +1171,78 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
             style: TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 16),
-          Row(
+          if (!widget.connected)
+            const Text(
+              'Partner-এর সঙ্গে যুক্ত হও',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54),
+            )
+          else if (start == null)
+            const Text(
+              'Time select',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: pinkColor,
+              ),
+            )
+          else
+            Row(
+              children: [
+                _TimePart(value: '$days', label: 'DAYS'),
+                _TimePart(value: _two(hours), label: 'HOURS'),
+                _TimePart(value: _two(minutes), label: 'MINUTES'),
+                _TimePart(value: _two(seconds), label: 'SECONDS'),
+              ],
+            ),
+          if (widget.connected && start != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Since ${start.day}/${start.month}/${start.year} '
+              '${_two(start.hour)}:${_two(start.minute)}',
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
             children: [
-              _TimePart(value: '$days', label: 'DAYS'),
-              _TimePart(value: _two(hours), label: 'HOURS'),
-              _TimePart(value: _two(minutes), label: 'MINUTES'),
-              _TimePart(value: _two(seconds), label: 'SECONDS'),
+              OutlinedButton.icon(
+                onPressed: saving ? null : _selectDateTime,
+                icon: Icon(
+                  start == null
+                      ? Icons.calendar_month
+                      : Icons.edit_calendar,
+                ),
+                label: Text(
+                  start == null ? 'Time select' : 'Edit',
+                ),
+              ),
+              if (widget.connected && start != null)
+                TextButton.icon(
+                  onPressed: saving ? null : _clearDateTime,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Clear'),
+                ),
             ],
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Since August 7, 2025',
-            style: TextStyle(color: Colors.white54, fontSize: 11),
-          ),
+          if (saving)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
         ],
       ),
     );
   }
-
-  String _two(int value) => value.toString().padLeft(2, '0');
 }
 
 class _TimePart extends StatelessWidget {
@@ -3032,14 +3305,11 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late TextEditingController firstController;
-  late TextEditingController secondController;
 
   @override
   void initState() {
     super.initState();
-
     firstController = TextEditingController(text: widget.partnerOne);
-    secondController = TextEditingController(text: widget.partnerTwo);
   }
 
   @override
@@ -3049,40 +3319,40 @@ class _SettingsPageState extends State<SettingsPage> {
     if (oldWidget.partnerOne != widget.partnerOne) {
       firstController.text = widget.partnerOne;
     }
-
-    if (oldWidget.partnerTwo != widget.partnerTwo) {
-      secondController.text = widget.partnerTwo;
-    }
   }
 
   @override
   void dispose() {
     firstController.dispose();
-    secondController.dispose();
     super.dispose();
   }
 
   Future<void> _saveProfile() async {
-    final first = firstController.text.trim();
-    final second = secondController.text.trim();
+    final ownName = firstController.text.trim();
 
-    if (first.isEmpty || second.isEmpty) {
+    if (ownName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter both names.')),
+        const SnackBar(content: Text('নিজের নাম লিখতে হবে।')),
       );
       return;
     }
 
-    await SpaceStore.saveString('partnerOne', first);
-    await SpaceStore.saveString('partnerTwo', second);
+    try {
+      await RelationshipService.saveOwnName(ownName);
+      await SpaceStore.saveString('partnerOne', ownName);
 
-    widget.onSave(first, second);
+      widget.onSave(ownName, 'No one');
 
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile names saved')),
-    );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('নিজের নাম সংরক্ষণ হয়েছে।')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('নাম সংরক্ষণ করা যায়নি: $e')),
+      );
+    }
   }
 
   @override
@@ -3107,14 +3377,6 @@ class _SettingsPageState extends State<SettingsPage> {
           decoration: const InputDecoration(
             labelText: 'Your name',
             prefixIcon: Icon(Icons.person_outline),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: secondController,
-          decoration: const InputDecoration(
-            labelText: 'Partner name',
-            prefixIcon: Icon(Icons.favorite_outline),
           ),
         ),
         const SizedBox(height: 14),
