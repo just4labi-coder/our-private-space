@@ -1971,6 +1971,43 @@ class _GalleryPageState extends State<GalleryPage> {
     return item;
   }
 
+  Future<void> _deleteMediaItem(Map<String, dynamic> item) async {
+    final driveId =
+        '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+
+    // Drive-এ ফাইল থাকলে আগে সেটি মুছে ফেলবে।
+    if (driveId.isNotEmpty) {
+      try {
+        await SpaceSyncService.deleteSharedMedia(driveId);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Drive থেকে মুছতে সমস্যা হয়েছে: $e'),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      media.removeWhere((m) => m['id'] == item['id']);
+    });
+
+    await _save();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ছবি/ভিডিও মুছে ফেলা হয়েছে।'),
+        ),
+      );
+    }
+  }
+
   Future<void> _showMediaMenu(Map<String, dynamic> item) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -2021,11 +2058,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 );
 
                 if (confirmed == true) {
-                  setState(() {
-                    media.removeWhere((m) => m['id'] == item['id']);
-                  });
-
-                  await _save();
+                  await _deleteMediaItem(item);
                 }
               },
             ),
@@ -2074,11 +2107,7 @@ class _GalleryPageState extends State<GalleryPage> {
           initialItems: _itemsForFolder(id),
           onAdd: (video) => _addMedia(id, video),
           onDelete: (item) async {
-            setState(() {
-              media.removeWhere((m) => m['id'] == item['id']);
-            });
-
-            await _save();
+            await _deleteMediaItem(item);
           },
           onDetails: _showMediaDetails,
           onLongPress: _showMediaMenu,
