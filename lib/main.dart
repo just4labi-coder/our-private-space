@@ -700,13 +700,27 @@ class HomePage extends StatelessWidget {
               style: TextStyle(color: Colors.white54),
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
+            onTap: () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => const PartnerConnectionPage(),
                 ),
               );
+
+              // সংযোগের অবস্থা যাচাই করে আগে পুরোনো শেয়ার করা ডেটা নামাও।
+              await SpaceStore.syncFromFirebase();
+
+              // তারপর দুই ফোনের রিয়েল-টাইম সিঙ্ক চালু করো।
+              await SpaceStore.startRealtimeSync();
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Partner Connection-এর সিঙ্ক যাচাই করা হয়েছে।'),
+                  ),
+                );
+              }
             },
           ),
         ),
