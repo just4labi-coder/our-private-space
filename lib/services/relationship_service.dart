@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -93,16 +92,17 @@ class RelationshipService {
       throw Exception('নাম খালি রাখা যাবে না।');
     }
 
-    final user = _auth.currentUser;
-    final ref = await _connectedSpace();
-
-    if (user == null) {
-      throw Exception('Firebase-এ সাইন ইন করা নেই।');
-    }
-
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('myDisplayName', cleaned);
 
+    final user = _auth.currentUser;
+
+    // লগইন না থাকলেও নিজের ফোনে নাম সংরক্ষণ হবে।
+    if (user == null) return;
+
+    final ref = await _connectedSpace();
+
+    // Partner-এর সঙ্গে যুক্ত না থাকলেও নিজের নাম রাখা যাবে।
     if (ref == null) return;
 
     await _db.runTransaction((transaction) async {
@@ -127,7 +127,10 @@ class RelationshipService {
           : <String, dynamic>{};
 
       names[user.uid] = cleaned;
-      transaction.update(ref, {'memberNames': names});
+
+      transaction.update(ref, {
+        'memberNames': names,
+      });
     });
   }
 
