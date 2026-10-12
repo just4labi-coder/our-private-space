@@ -290,9 +290,19 @@ class SpaceStore {
       for (final entry in data.entries) {
         final value = entry.value;
 
-        // স্থানীয় গ্যালারির ফাইল-পাথ অন্য ফোন থেকে ব্যবহারযোগ্য নয়।
-        if (entry.key == 'galleryMedia' ||
-            entry.key == 'galleryFolders') {
+        // অন্য ফোনের local path বাদ দিয়ে Drive metadata সংরক্ষণ।
+        if (entry.key == 'galleryMedia' && value is List) {
+          final safeMedia = value.whereType<Map>().map((rawItem) {
+            final item = Map<String, dynamic>.from(rawItem);
+            item.remove('path');
+            return item;
+          }).toList();
+
+          await _prefs!.setString(entry.key, jsonEncode(safeMedia));
+          continue;
+        }
+
+        if (entry.key == 'galleryFolders') {
           continue;
         }
 
@@ -1927,12 +1937,30 @@ class _GalleryPageState extends State<GalleryPage> {
 
     if (picked == null) return null;
 
+    if (!mounted) return null;
+
+    Map<String, String> uploaded;
+
+    try {
+      uploaded = await SpaceSyncService.uploadSharedMedia(
+        File(picked.path),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Drive-এ আপলোড হয়নি: $e')),
+        );
+      }
+      return null;
+    }
+
     final item = <String, dynamic>{
       'id': DateTime.now().microsecondsSinceEpoch.toString(),
       'path': picked.path,
       'type': video ? 'video' : 'image',
       'folderId': folderId,
       'createdAt': DateTime.now().toIso8601String(),
+      ...uploaded,
     };
 
     setState(() {
