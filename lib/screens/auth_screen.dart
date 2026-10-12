@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 
@@ -38,9 +37,14 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  Future<void> _runAuth(Future<void> Function() action) async {
+  Future<void> _runAuth(
+    Future<void> Function() action, {
+    bool validateForm = true,
+  }) async {
     if (_isLoading) return;
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (validateForm && !(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -53,13 +57,23 @@ class _AuthScreenState extends State<AuthScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AuthService.friendlyError(error)),
-          backgroundColor: const Color(0xFF342044),
+          content: Text(
+            AuthService.friendlyError(error),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          backgroundColor: const Color(0xFF241536),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
         ),
       );
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -81,9 +95,12 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _googleAction() async {
-    await _runAuth(() async {
-      await AuthService.signInWithGoogle();
-    });
+    await _runAuth(
+      () async {
+        await AuthService.signInWithGoogle();
+      },
+      validateForm: false,
+    );
   }
 
   Future<void> _forgotPassword() async {
