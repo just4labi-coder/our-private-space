@@ -2230,10 +2230,57 @@ class GalleryFolderPage extends StatefulWidget {
 class _GalleryFolderPageState extends State<GalleryFolderPage> {
   late List<Map<String, dynamic>> items;
 
+  // একই ফাইল বারবার ডাউনলোড করা ঠেকায়।
+  final Map<String, Future<String?>> _pathFutures = {};
+
   @override
   void initState() {
     super.initState();
     items = List<Map<String, dynamic>>.from(widget.initialItems);
+  }
+
+  Future<String?> _resolveLocalPath(
+    Map<String, dynamic> item,
+  ) {
+    final fileId =
+        (item['fileId'] ?? item['driveFileId'] ?? '').toString();
+
+    final key = fileId.isNotEmpty
+        ? fileId
+        : (item['path'] ?? item['id'] ?? '').toString();
+
+    return _pathFutures.putIfAbsent(key, () async {
+      // প্রথমে এই ফোনের ফাইল আছে কি না দেখি।
+      final localPath = (item['path'] ?? '').toString();
+
+      if (localPath.isNotEmpty) {
+        try {
+          if (await File(localPath).exists()) {
+            return localPath;
+          }
+        } catch (_) {}
+      }
+
+      // লোকাল ফাইল না থাকলে Drive থেকে ডাউনলোড।
+      if (fileId.isEmpty) return null;
+
+      try {
+        final originalName =
+            (item['driveFileName'] ?? item['name'] ?? 'memory')
+                .toString();
+
+        final safeName =
+            '${item['id'] ?? fileId}_$originalName';
+
+        return await SpaceSyncService.downloadMedia(
+          fileId,
+          saveAs: safeName,
+        );
+      } catch (e) {
+        debugPrint('Gallery download error: $e');
+        return null;
+      }
+    });
   }
 
   @override
@@ -2260,63 +2307,102 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
           : GridView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: items.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 9,
                 mainAxisSpacing: 9,
               ),
               itemBuilder: (context, index) {
                 final item = items[index];
-                final path = '${item['path']}';
                 final video = item['type'] == 'video';
 
-                return GestureDetector(
-                  onLongPress: () => widget.onLongPress(item),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => video
-                            ? VideoViewerPage(path: path)
-                            : ImageViewerPage(path: path),
+                return FutureBuilder<String?>(
+                  future: _resolveLocalPath(item),
+                  builder: (context, snapshot) {
+                    final path = snapshot.data;
+
+                    return GestureDetector(
+                      onLongPress: () => widget.onLongPress(item),
+                      onTap: () async {
+                        final resolvedPath =
+                            await _resolveLocalPath(item);
+
+                        if (!mounted) return;
+
+                        if (resolvedPath == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'ফাইল পাওয়া যায়নি। ইন্টারনেট, '
+                                'Partner Connection এবং Drive আপলোড পরীক্ষা করো।',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => video
+                                ? VideoViewerPage(path: resolvedPath)
+                                : ImageViewerPage(path: resolvedPath),
+                          ),
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (path == null)
+                              Container(
+                                color: surfaceColor,
+                                child: Center(
+                                  child: snapshot.connectionState ==
+                                          ConnectionState.waiting
+                                      ? const CircularProgressIndicator()
+                                      : const Icon(
+                                          Icons.cloud_download_outlined,
+                                          size: 42,
+                                        ),
+                                ),
+                              )
+                            else if (video)
+                              Container(
+                                color: surfaceColor,
+                                child: const Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  size: 50,
+                                ),
+                              )
+                            else
+                              Image.file(
+                                File(path),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) {
+                                  return const ColoredBox(
+                                    color: surfaceColor,
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                    ),
+                                  );
+                                },
+                              ),
+                            if (video)
+                              const Align(
+                                alignment: Alignment.bottomRight,
+                                child: Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.videocam_rounded),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     );
                   },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (video)
-                          Container(
-                            color: surfaceColor,
-                            child: const Icon(
-                              Icons.play_circle_fill_rounded,
-                              size: 50,
-                            ),
-                          )
-                        else
-                          Image.file(
-                            File(path),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) {
-                              return const ColoredBox(
-                                color: surfaceColor,
-                                child: Icon(Icons.broken_image_outlined),
-                              );
-                            },
-                          ),
-                        if (video)
-                          const Align(
-                            alignment: Alignment.bottomRight,
-                            child: Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(Icons.videocam_rounded),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
                 );
               },
             ),
@@ -2350,7 +2436,9 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
     final item = await widget.onAdd(video);
 
     if (item != null && mounted) {
-      setState(() => items.add(item));
+      setState(() {
+        items.add(item);
+      });
     }
   }
 }
