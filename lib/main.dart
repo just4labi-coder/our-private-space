@@ -76,7 +76,7 @@ class EternalSpaceApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Eternal Space',
+      title: 'Couple Zone',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -454,7 +454,7 @@ class _SplashScreenState extends State<SplashScreen> {
               Icon(Icons.favorite_rounded, size: 64, color: pinkColor),
               SizedBox(height: 18),
               Text(
-                'Eternal Space',
+                'Couple Zone',
                 style: TextStyle(
                   fontSize: 30,
                   fontWeight: FontWeight.w800,
@@ -668,7 +668,7 @@ class HomePage extends StatelessWidget {
                   ),
                   SizedBox(height: 6),
                   Text(
-                    'Eternal Space',
+                    'Couple Zone',
                     style: TextStyle(
                       fontSize: 27,
                       fontWeight: FontWeight.w800,
