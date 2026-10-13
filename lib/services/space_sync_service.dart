@@ -75,23 +75,72 @@ class SpaceSyncService {
       payload['spaceId'] = await _getSpaceId();
     }
 
+    final client = http.Client();
     http.Response response;
 
     try {
-      response = await http
-          .post(
-            Uri.parse(_apiUrl),
-            headers: const {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode(payload),
-          )
+      final request = http.Request(
+        'POST',
+        Uri.parse(_apiUrl),
+      )
+        ..followRedirects = false
+        ..headers.addAll(const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        })
+        ..body = jsonEncode(payload);
+
+      final streamedResponse = await client
+          .send(request)
           .timeout(const Duration(seconds: 90));
-    } catch (e) {
+
+      response = await http.Response.fromStream(
+        streamedResponse,
+      ).timeout(const Duration(seconds: 90));
+
+      // Google Apps Script-এর 302 Redirect আলাদাভাবে অনুসরণ করা।
+      if (response.statusCode == 301 ||
+          response.statusCode == 302 ||
+          response.statusCode == 303 ||
+          response.statusCode == 307 ||
+          response.statusCode == 308) {
+        final location = response.headers['location'];
+        if (location == null || location.trim().isEmpty) {
+          throw Exception(
+            'সার্ভার Redirect দিয়েছে, কিন্তু গন্তব্য পাওয়া যায়নি।',
+          );
+        }
+
+        final redirectUri = Uri.parse(location);
+
+        // নিরাপত্তার জন্য শুধু Google-এর ContentService
+        // response domain-এ Redirect অনুসরণ করা হবে।
+        if (redirectUri.scheme != 'https' ||
+            !redirectUri.host.endsWith('googleusercontent.com')) {
+          throw Exception(
+            'সার্ভারের Redirect ঠিকানা যাচাই করা যায়নি।',
+          );
+        }
+
+        response = await client
+            .get(
+              redirectUri,
+              headers: const {
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(const Duration(seconds: 90));
+      }
+    } on Exception catch (error) {
+      if (error.toString().contains('Redirect')) {
+        rethrow;
+      }
       throw Exception(
-        'সার্ভারের সঙ্গে যোগাযোগ করা যায়নি। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+        'সার্ভারের সঙ্গে যোগাযোগ করা যায়নি। '
+        'ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
       );
+    } finally {
+      client.close();
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -106,7 +155,8 @@ class SpaceSyncService {
       decoded = jsonDecode(response.body);
     } catch (_) {
       throw Exception(
-        'সার্ভারের উত্তর বোঝা যায়নি। Apps Script Web App deployment পরীক্ষা করো।',
+        'সার্ভারের উত্তর বোঝা যায়নি। '
+        'Apps Script Web App deployment পরীক্ষা করো।',
       );
     }
 
