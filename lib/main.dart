@@ -511,47 +511,36 @@ class _SplashScreenState extends State<SplashScreen> {
 // BACKGROUND
 // ============================================================
 
-class GlowBackground extends StatelessWidget {
+class GlowBackground extends StatefulWidget {
   final Widget child;
 
-  const GlowBackground({super.key, required this.child});
+  const GlowBackground({
+    super.key,
+    required this.child,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF070513),
-            Color(0xFF111026),
-            Color(0xFF172554),
-            Color(0xFF070513),
-          ],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -130,
-            left: -100,
-            child: _glow(300, blueColor.withValues(alpha: 0.14)),
-          ),
-          Positioned(
-            bottom: -150,
-            right: -100,
-            child: _glow(320, pinkColor.withValues(alpha: 0.12)),
-          ),
-          Positioned(
-            top: 250,
-            right: -160,
-            child: _glow(280, purpleColor.withValues(alpha: 0.10)),
-          ),
-          SafeArea(child: child),
-        ],
-      ),
-    );
+  State<GlowBackground> createState() => _GlowBackgroundState();
+}
+
+class _GlowBackgroundState extends State<GlowBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 18),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   Widget _glow(double size, Color color) {
@@ -562,9 +551,82 @@ class GlowBackground extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: RadialGradient(
-            colors: [color, color.withValues(alpha: 0)],
+            colors: [
+              color,
+              color.withValues(alpha: 0.55),
+              color.withValues(alpha: 0),
+            ],
+            stops: const [0.0, 0.38, 1.0],
           ),
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF070513),
+            Color(0xFF10071D),
+            Color(0xFF190D2C),
+            Color(0xFF070513),
+          ],
+        ),
+      ),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final phase = _controller.value * 2 * pi;
+          final waveA = sin(phase);
+          final waveB = cos(phase);
+          final waveC = sin(phase + 1.7);
+
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                top: -125 + (waveA * 42),
+                left: -115 + (waveB * 48),
+                child: _glow(
+                  340,
+                  const Color(0xFF8B1D62).withValues(alpha: 0.34),
+                ),
+              ),
+              Positioned(
+                bottom: -145 + (waveB * 45),
+                right: -120 + (waveC * 55),
+                child: _glow(
+                  370,
+                  const Color(0xFF6826A8).withValues(alpha: 0.34),
+                ),
+              ),
+              Positioned(
+                top: 210 + (waveC * 95),
+                right: -165 + (waveA * 55),
+                child: _glow(
+                  310,
+                  const Color(0xFFB51E72).withValues(alpha: 0.22),
+                ),
+              ),
+              Positioned(
+                bottom: 70 + (waveA * 75),
+                left: -175 + (waveC * 65),
+                child: _glow(
+                  300,
+                  const Color(0xFF5424B8).withValues(alpha: 0.24),
+                ),
+              ),
+              SafeArea(
+                child: widget.child,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1873,7 +1935,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget _messageContent(Map<String, dynamic> message) {
     if (message['unsent'] == true) {
       return const Text(
-        'এই মেসেজটি সরানো হয়েছে',
+        'Unsent a message',
         style: TextStyle(
           color: Colors.white60,
           fontStyle: FontStyle.italic,
@@ -2094,7 +2156,18 @@ class _ChatPageState extends State<ChatPage> {
                 ],
               ),
             ),
-            if (mine) const SizedBox(width: 3),
+            if (mine) ...[
+              const SizedBox(width: 7),
+              const CircleAvatar(
+                radius: 16,
+                backgroundColor: pinkColor,
+                child: Icon(
+                  Icons.person_rounded,
+                  size: 19,
+                  color: Colors.white,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -4020,101 +4093,6 @@ class _SettingsPageState extends State<SettingsPage> {
           onPressed: _pickProfilePhoto,
           icon: const Icon(Icons.add_a_photo_outlined),
           label: const Text('প্রোফাইল ছবি সেট করো'),
-        ),
-        const SizedBox(height: 28),
-        const SectionHeading(title: 'Cloud Sync'),
-        const SizedBox(height: 10),
-        Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: const Icon(
-              Icons.cloud_upload_rounded,
-              color: pinkColor,
-            ),
-            title: const Text('Upload local data'),
-            subtitle: const Text('Send this phone’s data to Firebase'),
-            onTap: () async {
-              try {
-                await SpaceStore.syncAllToFirebase();
-
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Local data uploaded to Firebase'),
-                  ),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Upload failed: $e')),
-                );
-              }
-            },
-          ),
-        ),
-        Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: const Icon(
-              Icons.cloud_sync_rounded,
-              color: purpleColor,
-            ),
-            title: const Text('Sync from Firebase'),
-            subtitle: const Text('Download shared app data'),
-            onTap: () async {
-              try {
-                await SpaceStore.syncFromFirebase();
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Firebase sync completed'),
-                  ),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Sync failed: $e')),
-                );
-              }
-            },
-          ),
-        ),
-        Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: const Icon(
-              Icons.backup_rounded,
-              color: pinkColor,
-            ),
-            title: const Text('Backup to Google Drive'),
-            subtitle: const Text('Save app data to your Drive'),
-            onTap: () async {
-              try {
-                await SpaceSyncService.backupToGoogleDrive({
-                  'partnerOne': SpaceStore.readString('partnerOne'),
-                  'partnerTwo': SpaceStore.readString('partnerTwo'),
-                  'chatMessages': SpaceStore.readList('chatMessages'),
-                  'loveNotes': SpaceStore.readList('loveNotes'),
-                  'specialDates': SpaceStore.readList('specialDates'),
-                  'spaceComplaints': SpaceStore.readList('spaceComplaints'),
-                  'galleryFolders': SpaceStore.readList('galleryFolders'),
-                  'galleryMedia': SpaceStore.readList('galleryMedia'),
-                });
-
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Google Drive backup completed'),
-                  ),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Drive backup failed: $e')),
-                );
-              }
-            },
-          ),
         ),
         const SizedBox(height: 20),
         const SectionHeading(title: 'App information'),
