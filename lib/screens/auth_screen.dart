@@ -515,45 +515,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         ],
                       ),
 
-                      const SizedBox(height: 15),
-                      Center(
-                        child: TextButton(
-                          onPressed: _isLoading
-                              ? null
-                              : () async {
-                                  setState(() => _isLoading = true);
-
-                                  try {
-                                    await widget.onTrial();
-                                  } catch (error) {
-                                    if (!mounted) return;
-
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Trial Mode চালু করা যায়নি: $error',
-                                        ),
-                                      ),
-                                    );
-                                  } finally {
-                                    if (mounted) {
-                                      setState(() => _isLoading = false);
-                                    }
-                                  }
-                                },
-                          child: const Text(
-                            'Skip for Now • Trial Mode',
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-
                       if (_isLoading)
                         const Padding(
-                          padding: EdgeInsets.only(top: 5),
+                          padding: EdgeInsets.only(top: 15),
                           child: Text(
                             'Please wait…',
                             textAlign: TextAlign.center,
