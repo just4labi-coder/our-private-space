@@ -17,7 +17,6 @@ import 'screens/partner_connection_page.dart';
 import 'services/space_sync_service.dart';
 import 'services/chat_sync_service.dart';
 import 'screens/auth_screen.dart';
-import 'services/auth_service.dart';
 import 'services/relationship_service.dart';
 
 const Color backgroundColor = Color(0xFF070513);
