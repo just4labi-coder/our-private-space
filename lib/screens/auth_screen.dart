@@ -94,15 +94,6 @@ class _AuthScreenState extends State<AuthScreen> {
     });
   }
 
-  Future<void> _googleAction() async {
-    await _runAuth(
-      () async {
-        await AuthService.signInWithGoogle();
-      },
-      validateForm: false,
-    );
-  }
-
   Future<void> _forgotPassword() async {
     final email = _emailController.text.trim();
 
@@ -403,71 +394,6 @@ class _AuthScreenState extends State<AuthScreen> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 21),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Divider(
-                              color: Colors.white.withValues(alpha: 0.18),
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: Text(
-                              'OR',
-                              style: TextStyle(
-                                color: Colors.white54,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Divider(
-                              color: Colors.white.withValues(alpha: 0.18),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-
-                      OutlinedButton(
-                        onPressed: _isLoading ? null : _googleAction,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.18),
-                          ),
-                          minimumSize: const Size.fromHeight(51),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 23,
-                              height: 23,
-                              alignment: Alignment.center,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Text(
-                                'G',
-                                style: TextStyle(
-                                  color: Color(0xFF4285F4),
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 11),
-                            const Text('Continue with Google'),
-                          ],
                         ),
                       ),
 
