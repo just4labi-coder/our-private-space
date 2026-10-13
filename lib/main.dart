@@ -236,8 +236,8 @@ class SpaceStore {
     await init();
 
     final data = <String, dynamic>{
-      'partnerOne': readString('partnerOne', 'Tawsif'),
-      'partnerTwo': readString('partnerTwo', 'Nabila'),
+      'partnerOne': readString('partnerOne'),
+      'partnerTwo': readString('partnerTwo'),
       'chatMessages': readList('chatMessages'),
       'loveNotes': readList('loveNotes'),
       'specialDates': readList('specialDates'),
@@ -556,14 +556,33 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
-  String partnerOne = 'Tawsif';
-  String partnerTwo = 'Nabila';
+  String partnerOne = '';
+  String partnerTwo = '';
 
   @override
   void initState() {
     super.initState();
-    partnerOne = SpaceStore.readString('partnerOne', 'Tawsif');
-    partnerTwo = SpaceStore.readString('partnerTwo', 'Nabila');
+    _loadPartnerNames();
+  }
+
+  Future<void> _loadPartnerNames() async {
+    await SpaceStore.init();
+    final user = FirebaseAuth.instance.currentUser;
+    final savedName = SpaceStore.readString('myDisplayName').trim();
+    final accountName = user?.displayName?.trim() ?? '';
+    final emailName = user?.email?.split('@').first.trim() ?? '';
+    final ownName = savedName.isNotEmpty
+        ? savedName
+        : accountName.isNotEmpty
+            ? accountName
+            : emailName;
+    final first = SpaceStore.readString('partnerOne').trim();
+    final second = SpaceStore.readString('partnerTwo').trim();
+    if (!mounted) return;
+    setState(() {
+      partnerOne = first.isNotEmpty ? first : ownName;
+      partnerTwo = second;
+    });
   }
 
   @override
@@ -1443,7 +1462,6 @@ class _ChatPageState extends State<ChatPage> {
     // পুরোনো মেসেজের জন্য সাময়িক সামঞ্জস্য।
     return message['mine'] == true;
   }
-
 
   Future<void> _sendText() async {
     final text = controller.text.trim();
