@@ -1,6 +1,6 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -39,7 +39,14 @@ class AuthService {
     );
 
     await endTrial();
-    await _saveProfile(result.user);
+
+    try {
+      await _saveProfile(result.user);
+    } catch (error, stackTrace) {
+      debugPrint('Profile save error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
     return result;
   }
 
@@ -87,7 +94,14 @@ class AuthService {
 
     final result = await _auth.signInWithCredential(credential);
     await endTrial();
-    await _saveProfile(result.user);
+
+    try {
+      await _saveProfile(result.user);
+    } catch (error, stackTrace) {
+      debugPrint('Google profile save error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
     return result;
   }
 
@@ -102,11 +116,17 @@ class AuthService {
     final snapshot = await doc.get();
     final oldName = snapshot.data()?['name'] as String?;
 
-    final name = oldName?.trim().isNotEmpty == true
-        ? oldName!.trim()
-        : (user.displayName?.trim().isNotEmpty == true
-            ? user.displayName!.trim()
-            : 'Eternal Space User');
+    final displayName = user.displayName?.trim() ?? '';
+    final emailPrefix = user.email?.split('@').first.trim() ?? '';
+
+    final name = oldName?.trim().isNotEmpty == true &&
+            oldName!.trim() != 'Eternal Space User'
+        ? oldName.trim()
+        : displayName.isNotEmpty
+            ? displayName
+            : emailPrefix.isNotEmpty
+                ? emailPrefix
+                : 'Eternal Space User';
 
     await doc.set({
       'name': name,
