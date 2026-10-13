@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -192,7 +191,10 @@ class SpaceSyncService {
     }
 
     final length = await file.length();
-    if (length <= 0) throw Exception('ফাইলটি খালি।');
+
+    if (length <= 0) {
+      throw Exception('ফাইলটি খালি।');
+    }
 
     if (length > _maxUploadBytes) {
       throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
@@ -204,7 +206,6 @@ class SpaceSyncService {
 
     final mime = _mimeType(name);
 
-    // প্রথমে Apps Script থেকে Drive resumable session নেওয়া।
     final session = await _request(
       shared ? 'beginUploadShared' : 'beginUploadPersonal',
       data: {
@@ -217,11 +218,13 @@ class SpaceSyncService {
     );
 
     final sessionUrl = session['sessionUrl']?.toString() ?? '';
+
     if (sessionUrl.isEmpty) {
       throw Exception('Google Drive upload session তৈরি হয়নি।');
     }
 
     final uri = Uri.parse(sessionUrl);
+
     if (uri.scheme != 'https' ||
         !(uri.host.endsWith('googleapis.com') ||
             uri.host.endsWith('googleusercontent.com'))) {
@@ -232,8 +235,10 @@ class SpaceSyncService {
 
     try {
       final handle = await file.open(mode: FileMode.read);
+
       var offset = 0;
       Map<String, dynamic>? uploaded;
+      var retryCount = 0;
 
       try {
         while (offset < length) {
@@ -245,7 +250,7 @@ class SpaceSyncService {
           final chunk = await handle.read(amount);
 
           if (chunk.length != amount) {
-            throw Exception('ফাইলের অংশ পড়া যায়নি। আবার চেষ্টা করো।');
+            throw Exception('ফাইলের অংশ পড়া যায়নি।');
           }
 
           final end = offset + chunk.length - 1;
@@ -266,17 +271,58 @@ class SpaceSyncService {
               .timeout(const Duration(minutes: 2));
 
           if (response.statusCode == 308) {
-            offset += chunk.length;
+            // Google Drive-এর Range header দেখে নিশ্চিত হও
+            // সার্ভার আসলে কত বাইট গ্রহণ করেছে।
+            final range = response.headers['range'];
+
+            if (range == null || range.isEmpty) {
+              // কোনো বাইট গ্রহণের নিশ্চয়তা নেই।
+              retryCount++;
+
+              if (retryCount > 3) {
+                throw Exception(
+                  'Google Drive আপলোড এগোচ্ছে না। আবার চেষ্টা করো।',
+                );
+              }
+
+              continue;
+            }
+
+            final match =
+                RegExp(r'bytes=0-(\d+)').firstMatch(range);
+
+            if (match == null) {
+              throw Exception(
+                'Google Drive-এর আপলোড অগ্রগতি যাচাই করা যায়নি।',
+              );
+            }
+
+            final lastReceived = int.parse(match.group(1)!);
+            final nextOffset = lastReceived + 1;
+
+            if (nextOffset <= offset || nextOffset > length) {
+              throw Exception(
+                'Google Drive-এর আপলোড অবস্থান সঠিক নয়।',
+              );
+            }
+
+            offset = nextOffset;
+            retryCount = 0;
             continue;
           }
 
           if (response.statusCode == 200 ||
               response.statusCode == 201) {
             final decoded = jsonDecode(response.body);
-            if (decoded is Map) {
-              uploaded = Map<String, dynamic>.from(decoded);
+
+            if (decoded is! Map) {
+              throw Exception(
+                'Google Drive-এর চূড়ান্ত উত্তর সঠিক নয়।',
+              );
             }
-            offset += chunk.length;
+
+            uploaded = Map<String, dynamic>.from(decoded);
+            offset = length;
             break;
           }
 
@@ -290,6 +336,7 @@ class SpaceSyncService {
       }
 
       final fileId = uploaded?['id']?.toString();
+
       if (fileId == null || fileId.isEmpty) {
         throw Exception(
           'আপলোড সম্পূর্ণ হয়েছে কি না নিশ্চিত করা যায়নি।',
