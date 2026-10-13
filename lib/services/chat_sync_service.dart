@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -239,11 +238,13 @@ class ChatSyncService {
   static Future<void> saveMyProfile({
     required String name,
     String? photoUrl,
+    String? photoFileId,
+    String? photoFileName,
   }) async {
     final user = _auth.currentUser;
 
     if (user == null) {
-      throw Exception('আগে সাইন ইন করো।');
+      throw Exception('আগে অ্যাকাউন্টে সাইন ইন করো।');
     }
 
     final cleanName = name.trim();
@@ -262,12 +263,24 @@ class ChatSyncService {
     };
 
     final cleanPhotoUrl = photoUrl?.trim();
+    final cleanPhotoFileId = photoFileId?.trim();
+    final cleanPhotoFileName = photoFileName?.trim();
 
     if (cleanPhotoUrl != null && cleanPhotoUrl.isNotEmpty) {
       profile['photoUrl'] = cleanPhotoUrl;
     } else if (user.photoURL != null &&
         user.photoURL!.trim().isNotEmpty) {
       profile['photoUrl'] = user.photoURL!.trim();
+    }
+
+    if (cleanPhotoFileId != null &&
+        cleanPhotoFileId.isNotEmpty) {
+      profile['photoFileId'] = cleanPhotoFileId;
+    }
+
+    if (cleanPhotoFileName != null &&
+        cleanPhotoFileName.isNotEmpty) {
+      profile['photoFileName'] = cleanPhotoFileName;
     }
 
     await ref.doc(user.uid).set(
