@@ -1540,6 +1540,7 @@ class _ChatPageState extends State<ChatPage> {
 
   List<Map<String, dynamic>> messages = [];
   StreamSubscription<List<Map<String, dynamic>>>? _chatSubscription;
+  final Map<String, Future<String?>> _mediaPathFutures = {};
 
   late final Stream<Map<String, dynamic>?> _spaceStream;
   late final Stream<List<Map<String, dynamic>>> _profilesStream;
@@ -1680,26 +1681,53 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     final picker = ImagePicker();
-
-    final file = video
+    final picked = video
         ? await picker.pickVideo(source: ImageSource.gallery)
         : await picker.pickImage(source: ImageSource.gallery);
 
-    if (file == null || !mounted) return;
-
-    final message = <String, dynamic>{
-      'id': DateTime.now().microsecondsSinceEpoch.toString(),
-      'senderUid': user.uid,
-      'text': file.path,
-      'type': video ? 'video' : 'image',
-      'mine': true,
-      'unsent': false,
-      'time': DateTime.now().toIso8601String(),
-    };
+    if (picked == null || !mounted) return;
 
     try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ফাইল আপলোড হচ্ছে...')),
+      );
+
+      final uploaded = await SpaceSyncService.uploadSharedMedia(
+        File(picked.path),
+      );
+
+      final fileId =
+          (uploaded['fileId'] ?? uploaded['driveFileId'] ?? '').trim();
+
+      if (fileId.isEmpty) {
+        throw Exception('আপলোড করা ফাইলের ID পাওয়া যায়নি।');
+      }
+
+      final message = <String, dynamic>{
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'senderUid': user.uid,
+        'text': picked.path,
+        'type': video ? 'video' : 'image',
+        'fileId': fileId,
+        'driveFileId': fileId,
+        'driveFileName':
+            uploaded['driveFileName'] ?? 'chat_media',
+        'mimeType': uploaded['mimeType'] ?? '',
+        'storage': 'shared',
+        'mine': true,
+        'unsent': false,
+        'time': DateTime.now().toIso8601String(),
+      };
+
       await ChatSyncService.sendMessage(message);
       _scrollToBottom();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(video ? 'ভিডিও পাঠানো হয়েছে।' : 'ছবি পাঠানো হয়েছে।'),
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1812,99 +1840,142 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Future<String?> _resolveMediaPath(
+    Map<String, dynamic> media,
+  ) {
+    final localPath = '${media['text'] ?? media['path'] ?? ''}'.trim();
+    final fileId =
+        '${media['fileId'] ?? media['driveFileId'] ?? ''}'.trim();
+    final key = fileId.isNotEmpty ? fileId : localPath;
+
+    return _mediaPathFutures.putIfAbsent(key, () async {
+      if (localPath.isNotEmpty) {
+        try {
+          if (await File(localPath).exists()) return localPath;
+        } catch (_) {}
+      }
+
+      if (fileId.isEmpty) return null;
+
+      try {
+        final name =
+            '${media['driveFileName'] ?? 'chat_media'}';
+
+        return await SpaceSyncService.downloadMedia(
+          fileId,
+          saveAs: '${fileId}_$name',
+        );
+      } catch (error) {
+        debugPrint('Chat media download error: $error');
+        return null;
+      }
+    });
+  }
+
   Widget _messageContent(Map<String, dynamic> message) {
     if (message['unsent'] == true) {
-      return const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.block_rounded,
-            size: 15,
-            color: Colors.white54,
-          ),
-          SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              'এই মেসেজটি সরানো হয়েছে',
-              style: TextStyle(
-                color: Colors.white60,
-                fontStyle: FontStyle.italic,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ],
+      return const Text(
+        'এই মেসেজটি সরানো হয়েছে',
+        style: TextStyle(
+          color: Colors.white60,
+          fontStyle: FontStyle.italic,
+        ),
       );
     }
 
     final type = '${message['type'] ?? 'text'}';
     final path = '${message['text'] ?? ''}';
 
-    if (type == 'image') {
-      return GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ImageViewerPage(path: path),
-            ),
-          );
-        },
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.file(
-            File(path),
-            width: 210,
-            height: 210,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) {
-              return const SizedBox(
-                width: 210,
-                height: 100,
-                child: Center(
-                  child: Text(
-                    'ছবিটি এই ফোনে পাওয়া যায়নি',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70),
+    if (type == 'image' || type == 'video') {
+      return FutureBuilder<String?>(
+        future: _resolveMediaPath(message),
+        builder: (context, snapshot) {
+          final resolvedPath = snapshot.data;
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SizedBox(
+              width: 210,
+              height: 120,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          if (resolvedPath == null) {
+            return const SizedBox(
+              width: 210,
+              height: 100,
+              child: Center(
+                child: Text(
+                  'ফাইলটি লোড করা যায়নি',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+            );
+          }
+
+          if (type == 'image') {
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ImageViewerPage(path: resolvedPath),
                   ),
+                );
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(resolvedPath),
+                  width: 210,
+                  height: 210,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(
+                    width: 210,
+                    height: 100,
+                    child: Center(
+                      child: Text(
+                        'ছবিটি খোলা যায়নি',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => VideoViewerPage(path: resolvedPath),
                 ),
               );
             },
-          ),
-        ),
-      );
-    }
-
-    if (type == 'video') {
-      return GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => VideoViewerPage(path: path),
+            child: Container(
+              width: 210,
+              height: 130,
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.play_circle_fill_rounded,
+                    size: 45,
+                    color: pinkColor,
+                  ),
+                  SizedBox(height: 6),
+                  Text('ভিডিও চালাও'),
+                ],
+              ),
             ),
           );
         },
-        child: Container(
-          width: 210,
-          height: 130,
-          decoration: BoxDecoration(
-            color: Colors.black26,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.play_circle_fill_rounded,
-                size: 45,
-                color: pinkColor,
-              ),
-              SizedBox(height: 6),
-              Text('ভিডিও চালাও'),
-            ],
-          ),
-        ),
       );
     }
 
@@ -2093,11 +2164,34 @@ class _ChatPageState extends State<ChatPage> {
                 ? rawPhoto.trim()
                 : null;
 
+            final photoFileId =
+                '${partnerProfile?['photoFileId'] ?? ''}'.trim();
+            final photoFileName =
+                '${partnerProfile?['photoFileName'] ?? 'profile_photo.jpg'}';
+
             return StreamBuilder<Map<String, dynamic>?>(
               stream: ChatSyncService.watchPresence(partnerUid),
               builder: (context, presenceSnapshot) {
                 final presence = presenceSnapshot.data;
                 final isOnline = presence?['isOnline'] == true;
+
+                if (photoFileId.isNotEmpty) {
+                  return FutureBuilder<String?>(
+                    future: _resolveMediaPath({
+                      'fileId': photoFileId,
+                      'driveFileId': photoFileId,
+                      'driveFileName': photoFileName,
+                    }),
+                    builder: (context, photoSnapshot) {
+                      return _chatHeaderContent(
+                        name: name,
+                        photoUrl: null,
+                        photoPath: photoSnapshot.data,
+                        isOnline: isOnline,
+                      );
+                    },
+                  );
+                }
 
                 return _chatHeaderContent(
                   name: name,
@@ -2115,11 +2209,34 @@ class _ChatPageState extends State<ChatPage> {
   Widget _chatHeaderContent({
     required String name,
     required String? photoUrl,
+    String? photoPath,
     required bool isOnline,
   }) {
     Widget avatar;
 
-    if (photoUrl != null) {
+    if (photoPath != null && photoPath.isNotEmpty) {
+      avatar = ClipOval(
+        child: Image.file(
+          File(photoPath),
+          width: 46,
+          height: 46,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return CircleAvatar(
+              radius: 23,
+              backgroundColor: purpleColor,
+              child: Text(
+                name.isEmpty ? '?' : name[0].toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } else if (photoUrl != null) {
       avatar = ClipOval(
         child: Image.network(
           photoUrl,
@@ -3722,6 +3839,67 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _pickProfilePhoto() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('আগে অ্যাকাউন্টে সাইন ইন করো।'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1200,
+      );
+
+      if (picked == null || !mounted) return;
+
+      final uploaded = await SpaceSyncService.uploadSharedMedia(
+        File(picked.path),
+      );
+
+      final fileId =
+          (uploaded['fileId'] ?? uploaded['driveFileId'] ?? '').trim();
+
+      if (fileId.isEmpty) {
+        throw Exception('আপলোড করা ছবির ID পাওয়া যায়নি।');
+      }
+
+      final name = firstController.text.trim().isNotEmpty
+          ? firstController.text.trim()
+          : 'User';
+
+      await ChatSyncService.saveMyProfile(
+        name: name,
+        photoFileId: fileId,
+        photoFileName:
+            uploaded['driveFileName'] ?? 'profile_photo.jpg',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('প্রোফাইল ছবি সংরক্ষণ হয়েছে।'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('প্রোফাইল ছবি সংরক্ষণ করা যায়নি: $error'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -3751,6 +3929,12 @@ class _SettingsPageState extends State<SettingsPage> {
           onPressed: _saveProfile,
           icon: const Icon(Icons.save_outlined),
           label: const Text('Save profile'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _pickProfilePhoto,
+          icon: const Icon(Icons.add_a_photo_outlined),
+          label: const Text('প্রোফাইল ছবি সেট করো'),
         ),
         const SizedBox(height: 28),
         const SectionHeading(title: 'Cloud Sync'),
