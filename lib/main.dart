@@ -28,6 +28,9 @@ const Color purpleColor = Color(0xFF8B5CF6);
 final FlutterLocalNotificationsPlugin notifications =
     FlutterLocalNotificationsPlugin();
 
+final GlobalKey<NavigatorState> rootNavigatorKey =
+    GlobalKey<NavigatorState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -75,6 +78,7 @@ class EternalSpaceApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'Couple Zone',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -429,7 +433,15 @@ class _SplashScreenState extends State<SplashScreen> {
         MaterialPageRoute(
           builder: (_) => AuthScreen(
             onSuccess: () async {
-              // Login সফল হলে সিঙ্ক চালুর চেষ্টা করো।
+              // লগইন সফল হলে প্রথমেই Home-এ যাও।
+              rootNavigatorKey.currentState?.pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (_) => const MainScreen(),
+                ),
+                (route) => false,
+              );
+
+              // Home খোলার পর সিঙ্ক চালু করার চেষ্টা করো।
               try {
                 await SpaceStore.syncFromFirebase();
               } catch (error) {
@@ -439,19 +451,8 @@ class _SplashScreenState extends State<SplashScreen> {
               try {
                 await SpaceStore.startRealtimeSync();
               } catch (error) {
-                debugPrint(
-                  'Login realtime sync error: $error',
-                );
+                debugPrint('Login realtime sync error: $error');
               }
-
-              if (!mounted) return;
-
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const MainScreen(),
-                ),
-              );
             },
             // পুরোনো AuthScreen constructor-এর জন্য রাখা।
             // এটি আর Trial Mode চালু করবে না।
