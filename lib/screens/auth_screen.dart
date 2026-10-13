@@ -8,8 +8,8 @@ class AuthScreen extends StatefulWidget {
     required this.onTrial,
   });
 
-  final VoidCallback onSuccess;
-  final VoidCallback onTrial;
+  final Future<void> Function() onSuccess;
+final Future<void> Function() onTrial;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -51,7 +51,7 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       await action();
       if (!mounted) return;
-      widget.onSuccess();
+      await widget.onSuccess();
     } catch (error) {
       if (!mounted) return;
 
