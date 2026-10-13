@@ -3517,7 +3517,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 20),
         const Center(
           child: Text(
-            'Eternal Space • Made with love',
+            'Couple Zone • Made with love',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
         ),
