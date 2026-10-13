@@ -1,3 +1,4 @@
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -29,6 +30,36 @@ class AuthService {
     await prefs.setBool(_trialKey, false);
   }
 
+  static Future<void> _cacheDisplayName(String? name) async {
+    final cleaned = name?.trim() ?? '';
+
+    if (cleaned.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('myDisplayName', cleaned);
+  }
+
+  static Future<String?> _getSavedProfileName(User? user) async {
+    if (user == null) return null;
+
+    try {
+      final snapshot =
+          await _db.collection('users').doc(user.uid).get();
+
+      final value = snapshot.data()?['name'];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    } catch (error) {
+      debugPrint('Read profile name error: $error');
+    }
+
+    final displayName = user.displayName?.trim() ?? '';
+    if (displayName.isNotEmpty) return displayName;
+
+    return null;
+  }
+
   static Future<UserCredential> signInWithEmail({
     required String email,
     required String password,
@@ -47,6 +78,9 @@ class AuthService {
       debugPrintStack(stackTrace: stackTrace);
     }
 
+    final name = await _getSavedProfileName(result.user);
+    await _cacheDisplayName(name);
+
     return result;
   }
 
@@ -55,20 +89,33 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    final cleanedName = name.trim();
+
+    if (cleanedName.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'invalid-display-name',
+        message: 'নাম লিখতে হবে।',
+      );
+    }
+
     final result = await _auth.createUserWithEmailAndPassword(
       email: email.trim(),
       password: password,
     );
 
     final user = result.user;
+
     if (user != null) {
-      await user.updateDisplayName(name.trim());
+      await user.updateDisplayName(cleanedName);
       await user.reload();
+
       await _db.collection('users').doc(user.uid).set({
-        'name': name.trim(),
+        'name': cleanedName,
         'email': user.email,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+
+      await _cacheDisplayName(cleanedName);
     }
 
     await endTrial();
@@ -87,6 +134,7 @@ class AuthService {
     }
 
     final googleAuth = await account.authentication;
+
     final credential = GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
@@ -94,6 +142,12 @@ class AuthService {
 
     final result = await _auth.signInWithCredential(credential);
     await endTrial();
+
+    final googleName = result.user?.displayName?.trim() ?? '';
+
+    if (googleName.isNotEmpty) {
+      await _cacheDisplayName(googleName);
+    }
 
     try {
       await _saveProfile(result.user);
@@ -114,8 +168,8 @@ class AuthService {
 
     final doc = _db.collection('users').doc(user.uid);
     final snapshot = await doc.get();
-    final oldName = snapshot.data()?['name'] as String?;
 
+    final oldName = snapshot.data()?['name'] as String?;
     final displayName = user.displayName?.trim() ?? '';
     final emailPrefix = user.email?.split('@').first.trim() ?? '';
 
