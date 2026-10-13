@@ -1,8 +1,6 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
@@ -162,43 +160,6 @@ class AuthService {
     return result;
   }
 
-  static Future<UserCredential> signInWithGoogle() async {
-    final google = GoogleSignIn();
-    final account = await google.signIn();
-
-    if (account == null) {
-      throw FirebaseAuthException(
-        code: 'google-sign-in-cancelled',
-        message: 'Google সাইন-ইন বাতিল হয়েছে।',
-      );
-    }
-
-    final googleAuth = await account.authentication;
-
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-
-    // Google Authentication সফল না হলে এখানে error হবে।
-    final result = await _auth.signInWithCredential(credential);
-
-    await _clearTrialSafely();
-
-    try {
-      await _saveProfile(result.user);
-    } catch (error, stackTrace) {
-      debugPrint('Google profile save error: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-
-    // আগে থেকে সেভ করা নাম থাকলে সেটিকেই অগ্রাধিকার।
-    final savedName = await _getSavedProfileName(result.user);
-    await _cacheDisplayName(savedName);
-
-    return result;
-  }
-
   static Future<void> resetPassword(String email) async {
     await _auth.sendPasswordResetEmail(email: email.trim());
   }
@@ -237,12 +198,6 @@ class AuthService {
   }
 
   static Future<void> signOut() async {
-    try {
-      await GoogleSignIn().signOut();
-    } catch (error) {
-      debugPrint('Google sign-out error: $error');
-    }
-
     await _auth.signOut();
     await endTrial();
   }
@@ -266,9 +221,6 @@ class AuthService {
 
         case 'network-request-failed':
           return 'ইন্টারনেট সংযোগ পরীক্ষা করো।';
-
-        case 'google-sign-in-cancelled':
-          return 'Google লগইন বাতিল হয়েছে।';
 
         case 'invalid-display-name':
           return 'নাম লিখতে হবে।';
