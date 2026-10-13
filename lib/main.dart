@@ -3380,6 +3380,23 @@ class _SpecialDatesPageState extends State<SpecialDatesPage> {
   void initState() {
     super.initState();
     dates = SpaceStore.readList('specialDates');
+    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
+  }
+
+  void _handleSyncVersionChanged() {
+    if (!mounted) return;
+
+    final latestDates = SpaceStore.readList('specialDates');
+
+    setState(() {
+      dates = latestDates;
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
+    super.dispose();
   }
 
   Future<void> _save() {
@@ -3662,6 +3679,23 @@ class _LoveNotesPageState extends State<LoveNotesPage> {
   void initState() {
     super.initState();
     notes = SpaceStore.readList('loveNotes');
+    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
+  }
+
+  void _handleSyncVersionChanged() {
+    if (!mounted) return;
+
+    final latestNotes = SpaceStore.readList('loveNotes');
+
+    setState(() {
+      notes = latestNotes;
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
+    super.dispose();
   }
 
   Future<void> _addNote() async {
@@ -4133,11 +4167,29 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   void initState() {
     super.initState();
     _loadComplaints();
+    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
   }
 
   void _loadComplaints() {
     final data = SpaceStore.readList('spaceComplaints');
     complaints = data.map(SpaceComplaint.fromMap).toList();
+  }
+
+  void _handleSyncVersionChanged() {
+    if (!mounted) return;
+
+    final data = SpaceStore.readList('spaceComplaints');
+    final latestComplaints = data.map(SpaceComplaint.fromMap).toList();
+
+    setState(() {
+      complaints = latestComplaints;
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
+    super.dispose();
   }
 
   Future<void> _saveComplaints() async {
