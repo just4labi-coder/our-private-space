@@ -3359,7 +3359,7 @@ class _SettingsPageState extends State<SettingsPage> {
       await RelationshipService.saveOwnName(ownName);
       await SpaceStore.saveString('partnerOne', ownName);
 
-      widget.onSave(ownName, 'No one');
+      widget.onSave(ownName, widget.partnerTwo);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
