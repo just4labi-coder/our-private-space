@@ -13,6 +13,23 @@ class RelationshipService {
     return prefs.getString('eternal_space_id');
   }
 
+  static Future<String?> _savedOwnName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('myDisplayName')?.trim();
+
+    if (saved != null && saved.isNotEmpty) return saved;
+
+    final user = _auth.currentUser;
+    final displayName = user?.displayName?.trim() ?? '';
+
+    if (displayName.isNotEmpty) return displayName;
+
+    final emailName = user?.email?.split('@').first.trim() ?? '';
+    if (emailName.isNotEmpty) return emailName;
+
+    return null;
+  }
+
   static Future<DocumentReference<Map<String, dynamic>>?>
       _connectedSpace() async {
     final user = _auth.currentUser;
@@ -40,9 +57,8 @@ class RelationshipService {
   }
 
   static Future<Map<String, dynamic>> loadHomeData() async {
-    final prefs = await SharedPreferences.getInstance();
     final user = _auth.currentUser;
-    final fallbackName = prefs.getString('myDisplayName') ?? 'Your name';
+    final fallbackName = await _savedOwnName() ?? 'User';
 
     final ref = await _connectedSpace();
 
@@ -65,8 +81,13 @@ class RelationshipService {
         ? Map<String, dynamic>.from(namesRaw)
         : <String, dynamic>{};
 
-    final ownName = '${names[user.uid] ?? fallbackName}'.trim();
-    final partnerName = '${names[otherUid] ?? 'Partner'}'.trim();
+    final storedOwnName = '${names[user.uid] ?? ''}'.trim();
+    final storedPartnerName = '${names[otherUid] ?? ''}'.trim();
+
+    final ownName =
+        storedOwnName.isNotEmpty ? storedOwnName : fallbackName;
+    final partnerName =
+        storedPartnerName.isNotEmpty ? storedPartnerName : 'Partner';
 
     final rawStart = data['relationshipStartAt'];
     DateTime? startAt;
@@ -79,8 +100,8 @@ class RelationshipService {
 
     return {
       'connected': true,
-      'ownName': ownName.isEmpty ? fallbackName : ownName,
-      'partnerName': partnerName.isEmpty ? 'Partner' : partnerName,
+      'ownName': ownName,
+      'partnerName': partnerName,
       'startAt': startAt,
     };
   }
@@ -96,13 +117,18 @@ class RelationshipService {
     await prefs.setString('myDisplayName', cleaned);
 
     final user = _auth.currentUser;
-
-    // লগইন না থাকলেও নিজের ফোনে নাম সংরক্ষণ হবে।
     if (user == null) return;
 
-    final ref = await _connectedSpace();
+    // নিজের Firebase প্রোফাইলেও নাম সংরক্ষণ।
+    await _db.collection('users').doc(user.uid).set({
+      'name': cleaned,
+      'email': user.email,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
-    // Partner-এর সঙ্গে যুক্ত না থাকলেও নিজের নাম রাখা যাবে।
+    await user.updateDisplayName(cleaned);
+
+    final ref = await _connectedSpace();
     if (ref == null) return;
 
     await _db.runTransaction((transaction) async {
