@@ -396,41 +396,41 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    final isTrial = await AuthService.isTrialMode();
     final user = FirebaseAuth.instance.currentUser;
 
     if (!mounted) return;
 
-    if (isTrial || user != null) {
-      // Login থাকলে Sync চালু করার চেষ্টা করবে।
-      // Sync ব্যর্থ হলেও Home-এ যাওয়া আটকে থাকবে না।
-      if (!isTrial && user != null) {
-        try {
-          await SpaceStore.syncFromFirebase();
-        } catch (error) {
-          debugPrint('Startup sync error: $error');
-        }
+    if (user != null) {
+      // লগইন করা থাকলে সংযুক্ত Space-এর ডেটা লোড করো।
+      try {
+        await SpaceStore.syncFromFirebase();
+      } catch (error) {
+        debugPrint('Startup sync error: $error');
+      }
 
-        try {
-          await SpaceStore.startRealtimeSync();
-        } catch (error) {
-          debugPrint('Startup realtime sync error: $error');
-        }
+      // রিয়েল-টাইম সিঙ্ক চালু করো।
+      try {
+        await SpaceStore.startRealtimeSync();
+      } catch (error) {
+        debugPrint('Startup realtime sync error: $error');
       }
 
       if (!mounted) return;
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
+        MaterialPageRoute(
+          builder: (_) => const MainScreen(),
+        ),
       );
     } else {
+      // Firebase-এ লগইন না থাকলে Login Screen দেখাও।
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => AuthScreen(
             onSuccess: () async {
-              // Login সফল হলে Sync ব্যর্থ হলেও Home খুলবে।
+              // Login সফল হলে সিঙ্ক চালুর চেষ্টা করো।
               try {
                 await SpaceStore.syncFromFirebase();
               } catch (error) {
@@ -440,7 +440,9 @@ class _SplashScreenState extends State<SplashScreen> {
               try {
                 await SpaceStore.startRealtimeSync();
               } catch (error) {
-                debugPrint('Login realtime sync error: $error');
+                debugPrint(
+                  'Login realtime sync error: $error',
+                );
               }
 
               if (!mounted) return;
@@ -452,18 +454,9 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               );
             },
-            onTrial: () async {
-              await AuthService.startTrial();
-
-              if (!mounted) return;
-
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const MainScreen(),
-                ),
-              );
-            },
+            // পুরোনো AuthScreen constructor-এর জন্য রাখা।
+            // এটি আর Trial Mode চালু করবে না।
+            onTrial: () async {},
           ),
         ),
       );
@@ -652,6 +645,10 @@ class _MainScreenState extends State<MainScreen>
 
   StreamSubscription<List<Map<String, dynamic>>>?
       _unreadSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _connectionSubscription;
+  String? _watchedSpaceId;
+  bool _connectionSyncBusy = false;
+  bool _connectionSyncReady = false;
 
   @override
   void initState() {
@@ -660,6 +657,7 @@ class _MainScreenState extends State<MainScreen>
     _loadPartnerNames();
     _startUnreadWatcher();
     _updatePresence(true);
+    _startConnectionWatcher();
   }
 
   Future<void> _loadPartnerNames() async {
@@ -696,8 +694,78 @@ class _MainScreenState extends State<MainScreen>
   ) {
     if (state == AppLifecycleState.resumed) {
       _updatePresence(true);
+      _startConnectionWatcher();
     } else {
       _updatePresence(false);
+    }
+  }
+
+  Future<void> _startConnectionWatcher() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final spaceId = prefs.getString('eternal_space_id');
+      if (!mounted) return;
+      if (spaceId == null || spaceId.isEmpty) {
+        await _connectionSubscription?.cancel();
+        _connectionSubscription = null;
+        _watchedSpaceId = null;
+        _connectionSyncReady = false;
+        return;
+      }
+      // একই Space-এর Listener আগে থেকেই থাকলে আবার তৈরি করবে না।
+      if (_watchedSpaceId == spaceId && _connectionSubscription != null) {
+        return;
+      }
+      await _connectionSubscription?.cancel();
+      _watchedSpaceId = spaceId;
+      _connectionSyncReady = false;
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null || uid.isEmpty) return;
+      _connectionSubscription = FirebaseFirestore.instance
+          .collection('privateSpaces')
+          .doc(spaceId)
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          if (!mounted) return;
+          final data = snapshot.data();
+          final members = data?['memberUids'];
+          final status = data?['connectionStatus'] ?? 'connected';
+          final isConnected = snapshot.exists &&
+              members is List &&
+              members.length == 2 &&
+              members.contains(uid) &&
+              status == 'connected';
+          if (!isConnected) {
+            _connectionSyncReady = false;
+            await SpaceStore.stopRealtimeSync();
+            return;
+          }
+          if (_connectionSyncBusy || _connectionSyncReady) {
+            return;
+          }
+          _connectionSyncBusy = true;
+          try {
+            // দুজন যুক্ত হলেই আগে Firebase-এর ডেটা নামাবে।
+            await SpaceStore.syncFromFirebase();
+            if (!mounted) return;
+            // এরপর দুই ফোনের রিয়েল-টাইম সিঙ্ক চালু করবে।
+            await SpaceStore.startRealtimeSync();
+            if (mounted) {
+              _connectionSyncReady = true;
+            }
+          } catch (error) {
+            debugPrint('Connection sync error: $error');
+          } finally {
+            _connectionSyncBusy = false;
+          }
+        },
+        onError: (Object error) {
+          debugPrint('Connection watcher error: $error');
+        },
+      );
+    } catch (error) {
+      debugPrint('Start connection watcher error: $error');
     }
   }
 
@@ -764,6 +832,7 @@ class _MainScreenState extends State<MainScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _unreadSubscription?.cancel();
+    _connectionSubscription?.cancel();
     _updatePresence(false);
     super.dispose();
   }
@@ -779,6 +848,35 @@ class _MainScreenState extends State<MainScreen>
             selectedIndex = index;
             if (index == 1) hasUnreadChat = false;
           });
+        },
+        onOpenPartnerConnection: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const PartnerConnectionPage(),
+            ),
+          );
+
+          if (!context.mounted) return;
+
+          // নতুন Space তৈরি বা Join করার পর Listener চালু করো।
+          await _startConnectionWatcher();
+
+          // বর্তমান সংযোগের ডেটা নামাও।
+          await SpaceStore.syncFromFirebase();
+
+          // বর্তমান সংযোগে Realtime Sync চালু করো।
+          await SpaceStore.startRealtimeSync();
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Partner Connection যাচাই করা হয়েছে।',
+                ),
+              ),
+            );
+          }
         },
       ),
       const ChatPage(),
@@ -846,12 +944,14 @@ class HomePage extends StatelessWidget {
   final String partnerOne;
   final String partnerTwo;
   final ValueChanged<int> onNavigate;
+  final VoidCallback onOpenPartnerConnection;
 
   const HomePage({
     super.key,
     required this.partnerOne,
     required this.partnerTwo,
     required this.onNavigate,
+    required this.onOpenPartnerConnection,
   });
 
   void _open(BuildContext context, Widget page) {
@@ -925,28 +1025,7 @@ class HomePage extends StatelessWidget {
               style: TextStyle(color: Colors.white54),
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const PartnerConnectionPage(),
-                ),
-              );
-
-              // সংযোগের অবস্থা যাচাই করে আগে পুরোনো শেয়ার করা ডেটা নামাও।
-              await SpaceStore.syncFromFirebase();
-
-              // তারপর দুই ফোনের রিয়েল-টাইম সিঙ্ক চালু করো।
-              await SpaceStore.startRealtimeSync();
-
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Partner Connection-এর সিঙ্ক যাচাই করা হয়েছে।'),
-                  ),
-                );
-              }
-            },
+            onTap: onOpenPartnerConnection,
           ),
         ),
         const SizedBox(height: 18),
