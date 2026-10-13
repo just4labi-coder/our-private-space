@@ -583,15 +583,23 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen>
+    with WidgetsBindingObserver {
   int selectedIndex = 0;
   String partnerOne = '';
   String partnerTwo = '';
+  bool hasUnreadChat = false;
+
+  StreamSubscription<List<Map<String, dynamic>>>?
+      _unreadSubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPartnerNames();
+    _startUnreadWatcher();
+    _updatePresence(true);
   }
 
   Future<void> _loadPartnerNames() async {
@@ -614,13 +622,104 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  Future<void> _updatePresence(bool online) async {
+    try {
+      await ChatSyncService.setPresence(isOnline: online);
+    } catch (_) {
+      // Space সংযুক্ত না থাকলে অ্যাপ ক্র্যাশ করবে না।
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(
+    AppLifecycleState state,
+  ) {
+    if (state == AppLifecycleState.resumed) {
+      _updatePresence(true);
+    } else {
+      _updatePresence(false);
+    }
+  }
+
+  void _startUnreadWatcher() {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+
+    _unreadSubscription =
+        ChatSyncService.watchMessages().listen(
+      (messages) {
+        final unread = messages.any((message) {
+          final senderUid =
+              '${message['senderUid'] ?? ''}';
+          final seenBy = message['seenBy'];
+          final alreadySeen =
+              seenBy is Map && seenBy[uid] == true;
+
+          return senderUid.isNotEmpty &&
+              senderUid != uid &&
+              !alreadySeen &&
+              message['unsent'] != true;
+        });
+
+        if (!mounted) return;
+
+        setState(() {
+          hasUnreadChat =
+              selectedIndex == 1 ? false : unread;
+        });
+      },
+      onError: (_) {
+        // সিঙ্কের সমস্যা হলে নেভিগেশন সচল থাকবে।
+      },
+    );
+  }
+
+  Widget _chatIcon(IconData iconData) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(iconData),
+        if (hasUnreadChat)
+          Positioned(
+            right: -3,
+            top: -3,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: Colors.redAccent,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: surfaceColor,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _unreadSubscription?.cancel();
+    _updatePresence(false);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
       HomePage(
         partnerOne: partnerOne,
         partnerTwo: partnerTwo,
-        onNavigate: (index) => setState(() => selectedIndex = index),
+        onNavigate: (index) {
+          setState(() {
+            selectedIndex = index;
+            if (index == 1) hasUnreadChat = false;
+          });
+        },
       ),
       const ChatPage(),
       const GalleryPage(),
@@ -643,25 +742,32 @@ class _MainScreenState extends State<MainScreen> {
         indicatorColor: blueColor.withValues(alpha: 0.25),
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
-          setState(() => selectedIndex = index);
+          setState(() {
+            selectedIndex = index;
+            if (index == 1) hasUnreadChat = false;
+          });
         },
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
-            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            icon: _chatIcon(
+              Icons.chat_bubble_outline_rounded,
+            ),
+            selectedIcon: _chatIcon(
+              Icons.chat_bubble_rounded,
+            ),
             label: 'Chat',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.photo_library_outlined),
             selectedIcon: Icon(Icons.photo_library_rounded),
             label: 'Gallery',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings_rounded),
             label: 'Settings',
@@ -1435,13 +1541,27 @@ class _ChatPageState extends State<ChatPage> {
   List<Map<String, dynamic>> messages = [];
   StreamSubscription<List<Map<String, dynamic>>>? _chatSubscription;
 
+  late final Stream<Map<String, dynamic>?> _spaceStream;
+  late final Stream<List<Map<String, dynamic>>> _profilesStream;
+
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void initState() {
     super.initState();
+    _spaceStream = ChatSyncService.watchSpaceData();
+    _profilesStream = ChatSyncService.watchMemberProfiles();
     _startChatSync();
+    _saveOwnProfile();
+  }
+
+  Future<void> _saveOwnProfile() async {
+    try {
+      await ChatSyncService.saveMyProfileFromSpace();
+    } catch (error) {
+      debugPrint('Chat profile save skipped: $error');
+    }
   }
 
   Future<void> _startChatSync() async {
@@ -1455,6 +1575,14 @@ class _ChatPageState extends State<ChatPage> {
           setState(() {
             messages = latestMessages;
           });
+
+          unawaited(
+            ChatSyncService.markMessagesSeen(latestMessages).catchError(
+              (Object error) {
+                debugPrint('Mark seen skipped: $error');
+              },
+            ),
+          );
 
           _scrollToBottom();
         },
@@ -1490,6 +1618,15 @@ class _ChatPageState extends State<ChatPage> {
 
     // পুরোনো মেসেজের জন্য সাময়িক সামঞ্জস্য।
     return message['mine'] == true;
+  }
+
+  int get _lastOwnMessageIndex {
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (_isMine(messages[i]) && messages[i]['unsent'] != true) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   Future<void> _sendText() async {
@@ -1834,12 +1971,56 @@ class _ChatPageState extends State<ChatPage> {
                     child: _messageContent(message),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    _formatTime(message['time']),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white54,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _formatTime(message['time']),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white54,
+                        ),
+                      ),
+                      if (mine && index == _lastOwnMessageIndex) ...[
+                        const SizedBox(width: 6),
+                        Builder(
+                          builder: (context) {
+                            final rawSeenBy = message['seenBy'];
+                            final wasSeen = rawSeenBy is Map &&
+                                rawSeenBy.entries.any(
+                                  (entry) =>
+                                      '${entry.key}' != _currentUid &&
+                                      entry.value == true,
+                                );
+
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  wasSeen
+                                      ? Icons.done_all_rounded
+                                      : Icons.done_rounded,
+                                  size: 13,
+                                  color: wasSeen
+                                      ? const Color(0xFF53D9FF)
+                                      : Colors.white54,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  wasSeen ? 'Seen' : 'Sent',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: wasSeen
+                                        ? const Color(0xFF53D9FF)
+                                        : Colors.white54,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -1851,60 +2032,199 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Widget _buildChatHeader() {
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _spaceStream,
+      builder: (context, spaceSnapshot) {
+        final space = spaceSnapshot.data ?? <String, dynamic>{};
+        final rawMembers = space['memberUids'];
+        final members = rawMembers is List
+            ? rawMembers.whereType<String>().toList()
+            : <String>[];
+
+        String partnerUid = '';
+        for (final uid in members) {
+          if (uid != _currentUid) {
+            partnerUid = uid;
+            break;
+          }
+        }
+
+        final rawNames = space['memberNames'];
+        final names = rawNames is Map
+            ? Map<String, dynamic>.from(rawNames)
+            : <String, dynamic>{};
+
+        final fallbackName =
+            '${names[partnerUid] ?? 'Partner'}'.trim();
+
+        if (partnerUid.isEmpty) {
+          return _chatHeaderContent(
+            name: 'Partner',
+            photoUrl: null,
+            isOnline: false,
+          );
+        }
+
+        return StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _profilesStream,
+          builder: (context, profilesSnapshot) {
+            final profiles = profilesSnapshot.data ?? [];
+
+            Map<String, dynamic>? partnerProfile;
+            for (final profile in profiles) {
+              if ('${profile['uid'] ?? ''}' == partnerUid) {
+                partnerProfile = profile;
+                break;
+              }
+            }
+
+            final profileName =
+                '${partnerProfile?['name'] ?? ''}'.trim();
+            final name = profileName.isNotEmpty
+                ? profileName
+                : fallbackName.isNotEmpty
+                    ? fallbackName
+                    : 'Partner';
+
+            final rawPhoto = partnerProfile?['photoUrl'];
+            final photoUrl = rawPhoto is String &&
+                    rawPhoto.trim().isNotEmpty
+                ? rawPhoto.trim()
+                : null;
+
+            return StreamBuilder<Map<String, dynamic>?>(
+              stream: ChatSyncService.watchPresence(partnerUid),
+              builder: (context, presenceSnapshot) {
+                final presence = presenceSnapshot.data;
+                final isOnline = presence?['isOnline'] == true;
+
+                return _chatHeaderContent(
+                  name: name,
+                  photoUrl: photoUrl,
+                  isOnline: isOnline,
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _chatHeaderContent({
+    required String name,
+    required String? photoUrl,
+    required bool isOnline,
+  }) {
+    Widget avatar;
+
+    if (photoUrl != null) {
+      avatar = ClipOval(
+        child: Image.network(
+          photoUrl,
+          width: 46,
+          height: 46,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return CircleAvatar(
+              radius: 23,
+              backgroundColor: purpleColor,
+              child: Text(
+                name.isEmpty ? '?' : name[0].toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } else {
+      avatar = CircleAvatar(
+        radius: 23,
+        backgroundColor: purpleColor,
+        child: Text(
+          name.isEmpty ? '?' : name[0].toUpperCase(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      child: Row(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              avatar,
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: isOnline
+                        ? Colors.greenAccent
+                        : Colors.grey,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: backgroundColor,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  isOnline ? 'Active now' : 'Offline',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isOnline
+                        ? Colors.greenAccent
+                        : Colors.white54,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.lock_outline_rounded,
+            color: pinkColor,
+            size: 21,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-          child: Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [pinkColor, purpleColor],
-                  ),
-                ),
-                child: const Icon(
-                  Icons.favorite_rounded,
-                  color: Colors.white,
-                  size: 25,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Private Chat',
-                      style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      'তোমাদের দুজনের ব্যক্তিগত জায়গা',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.white54,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                Icons.lock_outline_rounded,
-                color: pinkColor,
-                size: 21,
-              ),
-            ],
-          ),
-        ),
+        _buildChatHeader(),
         const Divider(height: 1, color: Colors.white10),
         Expanded(
           child: messages.isEmpty
