@@ -241,6 +241,8 @@ class SpaceStore {
       'loveNotes': readList('loveNotes'),
       'specialDates': readList('specialDates'),
       'spaceComplaints': readList('spaceComplaints'),
+      'galleryFolders': readList('galleryFolders'),
+      'galleryMedia': readList('galleryMedia'),
     };
 
     for (final entry in data.entries) {
@@ -304,10 +306,6 @@ class SpaceStore {
           }).toList();
 
           await _prefs!.setString(entry.key, jsonEncode(safeMedia));
-          continue;
-        }
-
-        if (entry.key == 'galleryFolders') {
           continue;
         }
 
@@ -2459,6 +2457,7 @@ class _GalleryPageState extends State<GalleryPage> {
   @override
   void initState() {
     super.initState();
+    SpaceStore.syncVersion.addListener(_handleGallerySyncChanged);
 
     folders = SpaceStore.readList('galleryFolders');
     media = SpaceStore.readList('galleryMedia');
@@ -2471,6 +2470,24 @@ class _GalleryPageState extends State<GalleryPage> {
 
       SpaceStore.saveList('galleryFolders', folders);
     }
+  }
+
+  void _handleGallerySyncChanged() {
+    if (!mounted) return;
+
+    final latestFolders = SpaceStore.readList('galleryFolders');
+    final latestMedia = SpaceStore.readList('galleryMedia');
+
+    setState(() {
+      folders = latestFolders;
+      media = latestMedia;
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleGallerySyncChanged);
+    super.dispose();
   }
 
   Future<void> _save() async {
@@ -4046,6 +4063,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   'loveNotes': SpaceStore.readList('loveNotes'),
                   'specialDates': SpaceStore.readList('specialDates'),
                   'spaceComplaints': SpaceStore.readList('spaceComplaints'),
+                  'galleryFolders': SpaceStore.readList('galleryFolders'),
+                  'galleryMedia': SpaceStore.readList('galleryMedia'),
                 });
 
                 if (!context.mounted) return;
