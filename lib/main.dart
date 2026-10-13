@@ -202,6 +202,7 @@ class SpaceStore {
   }
 
   static Future<void> _syncKey(String key, dynamic value) async {
+    if (key == 'partnerOne' || key == 'partnerTwo') return;
     if (_applyingRemoteData) return;
 
     try {
@@ -236,8 +237,6 @@ class SpaceStore {
     await init();
 
     final data = <String, dynamic>{
-      'partnerOne': readString('partnerOne'),
-      'partnerTwo': readString('partnerTwo'),
       'chatMessages': readList('chatMessages'),
       'loveNotes': readList('loveNotes'),
       'specialDates': readList('specialDates'),
@@ -290,6 +289,11 @@ class SpaceStore {
     try {
       for (final entry in data.entries) {
         final value = entry.value;
+
+        if (entry.key == 'partnerOne' ||
+            entry.key == 'partnerTwo') {
+          continue;
+        }
 
         // অন্য ফোনের local path বাদ দিয়ে Drive metadata সংরক্ষণ।
         if (entry.key == 'galleryMedia' && value is List) {
@@ -400,9 +404,20 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     if (isTrial || user != null) {
-      if (!isTrial) {
-        await SpaceStore.syncFromFirebase();
-        await SpaceStore.startRealtimeSync();
+      // Login থাকলে Sync চালু করার চেষ্টা করবে।
+      // Sync ব্যর্থ হলেও Home-এ যাওয়া আটকে থাকবে না।
+      if (!isTrial && user != null) {
+        try {
+          await SpaceStore.syncFromFirebase();
+        } catch (error) {
+          debugPrint('Startup sync error: $error');
+        }
+
+        try {
+          await SpaceStore.startRealtimeSync();
+        } catch (error) {
+          debugPrint('Startup realtime sync error: $error');
+        }
       }
 
       if (!mounted) return;
@@ -417,14 +432,26 @@ class _SplashScreenState extends State<SplashScreen> {
         MaterialPageRoute(
           builder: (_) => AuthScreen(
             onSuccess: () async {
-              await SpaceStore.syncFromFirebase();
-              await SpaceStore.startRealtimeSync();
+              // Login সফল হলে Sync ব্যর্থ হলেও Home খুলবে।
+              try {
+                await SpaceStore.syncFromFirebase();
+              } catch (error) {
+                debugPrint('Login sync error: $error');
+              }
+
+              try {
+                await SpaceStore.startRealtimeSync();
+              } catch (error) {
+                debugPrint('Login realtime sync error: $error');
+              }
 
               if (!mounted) return;
 
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => const MainScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const MainScreen(),
+                ),
               );
             },
             onTrial: () async {
@@ -434,7 +461,9 @@ class _SplashScreenState extends State<SplashScreen> {
 
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => const MainScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const MainScreen(),
+                ),
               );
             },
           ),
