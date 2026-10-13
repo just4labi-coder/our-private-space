@@ -9,7 +9,7 @@ class AuthScreen extends StatefulWidget {
   });
 
   final Future<void> Function() onSuccess;
-final Future<void> Function() onTrial;
+  final Future<void> Function() onTrial;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -241,7 +241,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                       const Text(
-                        'Eternal Space',
+                        'Couple Zone',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white,
@@ -479,7 +479,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           Text(
                             _isCreateAccount
                                 ? 'Already have an account? '
-                                : 'New to Eternal Space? ',
+                                : 'New to Couple Zone? ',
                             style: const TextStyle(
                               color: Colors.white60,
                               fontSize: 13,
@@ -518,7 +518,29 @@ class _AuthScreenState extends State<AuthScreen> {
                       const SizedBox(height: 15),
                       Center(
                         child: TextButton(
-                          onPressed: _isLoading ? null : widget.onTrial,
+                          onPressed: _isLoading
+                              ? null
+                              : () async {
+                                  setState(() => _isLoading = true);
+
+                                  try {
+                                    await widget.onTrial();
+                                  } catch (error) {
+                                    if (!mounted) return;
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Trial Mode চালু করা যায়নি: $error',
+                                        ),
+                                      ),
+                                    );
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _isLoading = false);
+                                    }
+                                  }
+                                },
                           child: const Text(
                             'Skip for Now • Trial Mode',
                             style: TextStyle(
