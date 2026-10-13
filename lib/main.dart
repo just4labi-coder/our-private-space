@@ -2878,6 +2878,7 @@ class _GalleryPageState extends State<GalleryPage> {
       MaterialPageRoute(
         builder: (_) => GalleryFolderPage(
           title: '${folder['name']}',
+          folderId: id,
           initialItems: _itemsForFolder(id),
           onAdd: (video) => _addMedia(id, video),
           onDelete: (item) async {
@@ -3010,6 +3011,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
 class GalleryFolderPage extends StatefulWidget {
   final String title;
+  final String folderId;
   final List<Map<String, dynamic>> initialItems;
   final Future<Map<String, dynamic>?> Function(bool video) onAdd;
   final Future<void> Function(Map<String, dynamic>) onDelete;
@@ -3019,6 +3021,7 @@ class GalleryFolderPage extends StatefulWidget {
   const GalleryFolderPage({
     super.key,
     required this.title,
+    required this.folderId,
     required this.initialItems,
     required this.onAdd,
     required this.onDelete,
@@ -3040,6 +3043,37 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
   void initState() {
     super.initState();
     items = List<Map<String, dynamic>>.from(widget.initialItems);
+    SpaceStore.syncVersion.addListener(_handleFolderSyncChanged);
+  }
+
+  void _handleFolderSyncChanged() {
+    if (!mounted) return;
+
+    final latestMedia = SpaceStore.readList('galleryMedia');
+
+    final List<Map<String, dynamic>> updatedItems;
+
+    if (widget.folderId == 'all') {
+      updatedItems = latestMedia;
+    } else if (widget.folderId == 'favorites') {
+      updatedItems = latestMedia
+          .where((item) => item['favorite'] == true)
+          .toList();
+    } else {
+      updatedItems = latestMedia
+          .where((item) => item['folderId'] == widget.folderId)
+          .toList();
+    }
+
+    setState(() {
+      items = List<Map<String, dynamic>>.from(updatedItems);
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleFolderSyncChanged);
+    super.dispose();
   }
 
   Future<String?> _resolveLocalPath(
