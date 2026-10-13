@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -46,115 +45,121 @@ service cloud.firestore {
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.inviteCode == resource.data.inviteCode
         && request.resource.data.createdAt == resource.data.createdAt
+        && resource.data.memberNames is map
+        && request.resource.data.memberNames is map
+        && request.resource.data.memberNames.get(
+          request.auth.uid, ''
+        ) is string
+        && request.resource.data.memberNames.diff(
+          resource.data.memberNames
+        ).affectedKeys().hasOnly([request.auth.uid])
         && validInviteForSpace(spaceId, resource.data.inviteCode)
         && request.resource.data.diff(resource.data)
-          .affectedKeys().hasOnly(['memberUids']);
+          .affectedKeys().hasOnly(['memberUids', 'memberNames']);
     }
 
-    
-function validDisconnectionUpdate() {
-  let members = resource.data.memberUids;
-  let uid = request.auth.uid;
-  let otherUid = members[0] == uid ? members[1] : members[0];
+    function validDisconnectionUpdate() {
+      let members = resource.data.memberUids;
+      let uid = request.auth.uid;
+      let otherUid = members[0] == uid ? members[1] : members[0];
 
-  let oldDisconnect =
-    resource.data.get('disconnectionApprovals', {});
-  let newDisconnect =
-    request.resource.data.get('disconnectionApprovals', {});
+      let oldDisconnect =
+        resource.data.get('disconnectionApprovals', {});
+      let newDisconnect =
+        request.resource.data.get('disconnectionApprovals', {});
 
-  let oldReconnect =
-    resource.data.get('reconnectionApprovals', {});
-  let newReconnect =
-    request.resource.data.get('reconnectionApprovals', {});
+      let oldReconnect =
+        resource.data.get('reconnectionApprovals', {});
+      let newReconnect =
+        request.resource.data.get('reconnectionApprovals', {});
 
-  let oldStatus =
-    resource.data.get('connectionStatus', 'connected');
-  let newStatus =
-    request.resource.data.get('connectionStatus', 'connected');
+      let oldStatus =
+        resource.data.get('connectionStatus', 'connected');
+      let newStatus =
+        request.resource.data.get('connectionStatus', 'connected');
 
-  let changed = request.resource.data.diff(resource.data)
-      .affectedKeys();
+      let changed = request.resource.data.diff(resource.data)
+          .affectedKeys();
 
-  return signedIn()
-    && members is list
-    && members.size() == 2
-    && uid in members
-    && request.resource.data.memberUids == members
-    && request.resource.data.createdBy == resource.data.createdBy
-    && request.resource.data.inviteCode == resource.data.inviteCode
-    && request.resource.data.createdAt == resource.data.createdAt
-    && changed.hasOnly([
-      'disconnectionApprovals',
-      'disconnectionRequestedAt',
-      'connectionStatus',
-      'disconnectedAt',
-      'reconnectionApprovals',
-      'reconnectionRequestedAt',
-      'reconnectedAt'
-    ])
-    && oldDisconnect is map
-    && newDisconnect is map
-    && oldReconnect is map
-    && newReconnect is map
-    && newDisconnect.keys().hasOnly(members)
-    && newReconnect.keys().hasOnly(members)
-    && (
-      (
-        oldStatus == 'connected'
+      return signedIn()
+        && members is list
+        && members.size() == 2
+        && uid in members
+        && request.resource.data.memberUids == members
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.createdAt == resource.data.createdAt
+        && changed.hasOnly([
+          'disconnectionApprovals',
+          'disconnectionRequestedAt',
+          'connectionStatus',
+          'disconnectedAt',
+          'reconnectionApprovals',
+          'reconnectionRequestedAt',
+          'reconnectedAt'
+        ])
+        && oldDisconnect is map
+        && newDisconnect is map
+        && oldReconnect is map
+        && newReconnect is map
+        && newDisconnect.keys().hasOnly(members)
+        && newReconnect.keys().hasOnly(members)
         && (
           (
-            newStatus == 'connected'
-            && changed.hasOnly([
-              'disconnectionApprovals',
-              'disconnectionRequestedAt'
-            ])
-            && newDisconnect.get(uid, false) == true
-            && newDisconnect.get(otherUid, false)
-              == oldDisconnect.get(otherUid, false)
-            && newDisconnect.diff(oldDisconnect)
-              .affectedKeys().hasOnly([uid])
+            oldStatus == 'connected'
+            && (
+              (
+                newStatus == 'connected'
+                && changed.hasOnly([
+                  'disconnectionApprovals',
+                  'disconnectionRequestedAt'
+                ])
+                && newDisconnect.get(uid, false) == true
+                && newDisconnect.get(otherUid, false)
+                  == oldDisconnect.get(otherUid, false)
+                && newDisconnect.diff(oldDisconnect)
+                  .affectedKeys().hasOnly([uid])
+              )
+              ||
+              (
+                newStatus == 'disconnected'
+                && newDisconnect.get(uid, false) == true
+                && newDisconnect.get(otherUid, false) == true
+                && newDisconnect.diff(oldDisconnect)
+                  .affectedKeys().hasOnly([uid])
+                && newReconnect.size() == 0
+              )
+            )
           )
           ||
           (
-            newStatus == 'disconnected'
-            && newDisconnect.get(uid, false) == true
-            && newDisconnect.get(otherUid, false) == true
-            && newDisconnect.diff(oldDisconnect)
-              .affectedKeys().hasOnly([uid])
-            && newReconnect.size() == 0
+            oldStatus == 'disconnected'
+            && (
+              (
+                newStatus == 'disconnected'
+                && changed.hasOnly([
+                  'reconnectionApprovals',
+                  'reconnectionRequestedAt'
+                ])
+                && newReconnect.get(uid, false) == true
+                && newReconnect.get(otherUid, false)
+                  == oldReconnect.get(otherUid, false)
+                && newReconnect.diff(oldReconnect)
+                  .affectedKeys().hasOnly([uid])
+              )
+              ||
+              (
+                newStatus == 'connected'
+                && newReconnect.get(uid, false) == true
+                && newReconnect.get(otherUid, false) == true
+                && newReconnect.diff(oldReconnect)
+                  .affectedKeys().hasOnly([uid])
+                && newDisconnect.size() == 0
+              )
+            )
           )
-        )
-      )
-      ||
-      (
-        oldStatus == 'disconnected'
-        && (
-          (
-            newStatus == 'disconnected'
-            && changed.hasOnly([
-              'reconnectionApprovals',
-              'reconnectionRequestedAt'
-            ])
-            && newReconnect.get(uid, false) == true
-            && newReconnect.get(otherUid, false)
-              == oldReconnect.get(otherUid, false)
-            && newReconnect.diff(oldReconnect)
-              .affectedKeys().hasOnly([uid])
-          )
-          ||
-          (
-            newStatus == 'connected'
-            && newReconnect.get(uid, false) == true
-            && newReconnect.get(otherUid, false) == true
-            && newReconnect.diff(oldReconnect)
-              .affectedKeys().hasOnly([uid])
-            && newDisconnect.size() == 0
-          )
-        )
-      )
-    );
-}
-
+        );
+    }
 
     match /privateSpaces/{spaceId} {
       allow create: if signedIn()
