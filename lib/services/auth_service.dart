@@ -30,13 +30,27 @@ class AuthService {
     await prefs.setBool(_trialKey, false);
   }
 
+  // Login সফল হওয়ার পর Trial বন্ধ করতে সমস্যা হলেও
+  // সফল Authentication-কে ব্যর্থ দেখানো হবে না।
+  static Future<void> _clearTrialSafely() async {
+    try {
+      await endTrial();
+    } catch (error) {
+      debugPrint('Clear trial mode error: $error');
+    }
+  }
+
   static Future<void> _cacheDisplayName(String? name) async {
     final cleaned = name?.trim() ?? '';
 
     if (cleaned.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('myDisplayName', cleaned);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('myDisplayName', cleaned);
+    } catch (error) {
+      debugPrint('Cache display name error: $error');
+    }
   }
 
   static Future<String?> _getSavedProfileName(User? user) async {
@@ -47,7 +61,10 @@ class AuthService {
           await _db.collection('users').doc(user.uid).get();
 
       final value = snapshot.data()?['name'];
-      if (value is String && value.trim().isNotEmpty) {
+
+      if (value is String &&
+          value.trim().isNotEmpty &&
+          value.trim() != 'Eternal Space User') {
         return value.trim();
       }
     } catch (error) {
@@ -55,26 +72,32 @@ class AuthService {
     }
 
     final displayName = user.displayName?.trim() ?? '';
+
     if (displayName.isNotEmpty) return displayName;
 
-    return null;
+    final emailPrefix = user.email?.split('@').first.trim() ?? '';
+
+    return emailPrefix.isNotEmpty ? emailPrefix : null;
   }
 
   static Future<UserCredential> signInWithEmail({
     required String email,
     required String password,
   }) async {
+    // Authentication ব্যর্থ হলে Firebase-এর মূল error
+    // AuthScreen-এ দেখানো হবে।
     final result = await _auth.signInWithEmailAndPassword(
       email: email.trim(),
       password: password,
     );
 
-    await endTrial();
+    // নিচের কাজগুলো ব্যর্থ হলেও Login সফল থাকবে।
+    await _clearTrialSafely();
 
     try {
       await _saveProfile(result.user);
     } catch (error, stackTrace) {
-      debugPrint('Profile save error: $error');
+      debugPrint('Email profile save error: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
 
@@ -98,6 +121,7 @@ class AuthService {
       );
     }
 
+    // এই ধাপ সফল হলে Firebase অ্যাকাউন্ট তৈরি হয়ে গেছে।
     final result = await _auth.createUserWithEmailAndPassword(
       email: email.trim(),
       password: password,
@@ -106,19 +130,35 @@ class AuthService {
     final user = result.user;
 
     if (user != null) {
-      await user.updateDisplayName(cleanedName);
-      await user.reload();
+      // Firebase Auth-এ নাম আপডেট করার চেষ্টা।
+      try {
+        await user.updateDisplayName(cleanedName);
+        await user.reload();
+      } catch (error) {
+        debugPrint('Update account display name error: $error');
+      }
 
-      await _db.collection('users').doc(user.uid).set({
-        'name': cleanedName,
-        'email': user.email,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      // Firestore-এ নাম সংরক্ষণের চেষ্টা।
+      // এটি ব্যর্থ হলেও অ্যাকাউন্ট তৈরি সফল থাকবে।
+      try {
+        await _db.collection('users').doc(user.uid).set({
+          'name': cleanedName,
+          'email': user.email,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (error, stackTrace) {
+        debugPrint('Create account profile save error: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
 
+      // স্থানীয়ভাবে নাম সংরক্ষণের চেষ্টা।
       await _cacheDisplayName(cleanedName);
     }
 
-    await endTrial();
+    await _clearTrialSafely();
+
+    // Firestore-এ সমস্যা হলেও AuthScreen সফল Login-এর
+    // পরবর্তী ধাপে যেতে পারবে।
     return result;
   }
 
@@ -140,14 +180,10 @@ class AuthService {
       idToken: googleAuth.idToken,
     );
 
+    // Google Authentication সফল না হলে এখানে error হবে।
     final result = await _auth.signInWithCredential(credential);
-    await endTrial();
 
-    final googleName = result.user?.displayName?.trim() ?? '';
-
-    if (googleName.isNotEmpty) {
-      await _cacheDisplayName(googleName);
-    }
+    await _clearTrialSafely();
 
     try {
       await _saveProfile(result.user);
@@ -155,6 +191,10 @@ class AuthService {
       debugPrint('Google profile save error: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
+
+    // আগে থেকে সেভ করা নাম থাকলে সেটিকেই অগ্রাধিকার।
+    final savedName = await _getSavedProfileName(result.user);
+    await _cacheDisplayName(savedName);
 
     return result;
   }
@@ -169,18 +209,25 @@ class AuthService {
     final doc = _db.collection('users').doc(user.uid);
     final snapshot = await doc.get();
 
-    final oldName = snapshot.data()?['name'] as String?;
+    final savedValue = snapshot.data()?['name'];
+    final oldName = savedValue is String ? savedValue.trim() : '';
+
     final displayName = user.displayName?.trim() ?? '';
     final emailPrefix = user.email?.split('@').first.trim() ?? '';
 
-    final name = oldName?.trim().isNotEmpty == true &&
-            oldName!.trim() != 'Eternal Space User'
-        ? oldName.trim()
-        : displayName.isNotEmpty
-            ? displayName
-            : emailPrefix.isNotEmpty
-                ? emailPrefix
-                : 'Eternal Space User';
+    // আগে থেকে সেভ করা বৈধ নাম অকারণে পরিবর্তন করা হবে না।
+    final String name;
+
+    if (oldName.isNotEmpty &&
+        oldName != 'Eternal Space User') {
+      name = oldName;
+    } else if (displayName.isNotEmpty) {
+      name = displayName;
+    } else if (emailPrefix.isNotEmpty) {
+      name = emailPrefix;
+    } else {
+      name = 'Eternal Space User';
+    }
 
     await doc.set({
       'name': name,
@@ -192,8 +239,8 @@ class AuthService {
   static Future<void> signOut() async {
     try {
       await GoogleSignIn().signOut();
-    } catch (_) {
-      // Google সাইন-আউট ব্যর্থ হলেও Firebase সাইন-আউট চলবে।
+    } catch (error) {
+      debugPrint('Google sign-out error: $error');
     }
 
     await _auth.signOut();
@@ -205,18 +252,26 @@ class AuthService {
       switch (error.code) {
         case 'invalid-email':
           return 'সঠিক ইমেইল ঠিকানা দাও।';
+
         case 'user-not-found':
         case 'wrong-password':
         case 'invalid-credential':
           return 'ইমেইল বা পাসওয়ার্ড সঠিক নয়।';
+
         case 'email-already-in-use':
           return 'এই ইমেইলে অ্যাকাউন্ট আছে। লগইন করো।';
+
         case 'weak-password':
           return 'পাসওয়ার্ড অন্তত ৬ অক্ষরের দাও।';
+
         case 'network-request-failed':
           return 'ইন্টারনেট সংযোগ পরীক্ষা করো।';
+
         case 'google-sign-in-cancelled':
           return 'Google লগইন বাতিল হয়েছে।';
+
+        case 'invalid-display-name':
+          return 'নাম লিখতে হবে।';
       }
     }
 
