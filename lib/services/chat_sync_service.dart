@@ -240,6 +240,7 @@ class ChatSyncService {
     String? photoUrl,
     String? photoFileId,
     String? photoFileName,
+    String? photoBase64,
   }) async {
     final user = _auth.currentUser;
 
@@ -251,6 +252,14 @@ class ChatSyncService {
 
     if (cleanName.isEmpty) {
       throw Exception('নিজের নাম লিখতে হবে।');
+    }
+
+    final cleanPhotoBase64 = photoBase64?.trim() ?? '';
+
+    if (cleanPhotoBase64.length > 700000) {
+      throw Exception(
+        'প্রোফাইল ছবিটি অনেক বড়। আবার ক্রপ করে চেষ্টা করো।',
+      );
     }
 
     final ref = await _membersRef();
@@ -281,6 +290,10 @@ class ChatSyncService {
     if (cleanPhotoFileName != null &&
         cleanPhotoFileName.isNotEmpty) {
       profile['photoFileName'] = cleanPhotoFileName;
+    }
+
+    if (cleanPhotoBase64.isNotEmpty) {
+      profile['photoBase64'] = cleanPhotoBase64;
     }
 
     await ref.doc(user.uid).set(
