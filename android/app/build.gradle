@@ -5,16 +5,18 @@ plugins {
     id "com.google.gms.google-services"
 }
 
+def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toInteger() ?: 1
+
 android {
     namespace = "com.privatespace.ourspace"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-    coreLibraryDesugaringEnabled true
-}
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
+    }
 
     kotlinOptions {
         jvmTarget = "17"
@@ -24,13 +26,28 @@ android {
         applicationId = "com.privatespace.ourspace"
         minSdk = 23
         targetSdk = flutter.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode = githubRunNumber
+        versionName = "1.0.${githubRunNumber}"
+    }
+
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (keystorePath != null && !keystorePath.isEmpty()) {
+                storeFile file(keystorePath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            } else {
+                // Temporary fallback until permanent signing secrets are configured.
+                initWith signingConfigs.debug
+            }
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.release
         }
     }
 }
