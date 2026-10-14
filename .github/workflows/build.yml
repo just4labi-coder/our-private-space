@@ -5,9 +5,17 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -25,12 +33,11 @@ jobs:
           flutter-version: "3.27.0"
           channel: "stable"
           cache: true
-          
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools'
-
+          packages: "platform-tools"
 
       - name: Install Android SDK packages
         run: |
@@ -39,27 +46,18 @@ jobs:
 
       - name: Check Flutter and Dart versions
         run: flutter --version
- 
-      
-      
-      - name: Get Android SHA-1
+
+      - name: Configure permanent release signing
+        shell: bash
         run: |
-          mkdir -p "$HOME/.android"
-          keytool -genkeypair \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000
-          keytool -list -v \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey
-
-
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" ]]; then
+            mkdir -p "$RUNNER_TEMP/android-signing"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-signing/release-keystore.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/android-signing/release-keystore.jks" >> "$GITHUB_ENV"
+            echo "Permanent Android signing key configured."
+          else
+            echo "::warning::Permanent signing secrets are not configured. This APK uses a temporary debug key and may not update an installed copy."
+          fi
 
       - name: Check Java environment
         run: java -version
@@ -76,6 +74,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: eternal-space-apk
+          name: couple-zone-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
