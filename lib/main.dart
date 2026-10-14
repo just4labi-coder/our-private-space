@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -454,8 +455,6 @@ class _SplashScreenState extends State<SplashScreen> {
                 debugPrint('Login realtime sync error: $error');
               }
             },
-            // পুরোনো AuthScreen constructor-এর জন্য রাখা।
-            // এটি আর Trial Mode চালু করবে না।
             onTrial: () async {},
           ),
         ),
@@ -683,9 +682,7 @@ class _MainScreenState extends State<MainScreen>
   Future<void> _updatePresence(bool online) async {
     try {
       await ChatSyncService.setPresence(isOnline: online);
-    } catch (_) {
-      // Space সংযুক্ত না থাকলে অ্যাপ ক্র্যাশ করবে না।
-    }
+    } catch (_) {}
   }
 
   @override
@@ -712,7 +709,6 @@ class _MainScreenState extends State<MainScreen>
         _connectionSyncReady = false;
         return;
       }
-      // একই Space-এর Listener আগে থেকেই থাকলে আবার তৈরি করবে না।
       if (_watchedSpaceId == spaceId && _connectionSubscription != null) {
         return;
       }
@@ -746,10 +742,8 @@ class _MainScreenState extends State<MainScreen>
           }
           _connectionSyncBusy = true;
           try {
-            // দুজন যুক্ত হলেই আগে Firebase-এর ডেটা নামাবে।
             await SpaceStore.syncFromFirebase();
             if (!mounted) return;
-            // এরপর দুই ফোনের রিয়েল-টাইম সিঙ্ক চালু করবে।
             await SpaceStore.startRealtimeSync();
             if (mounted) {
               _connectionSyncReady = true;
@@ -796,9 +790,7 @@ class _MainScreenState extends State<MainScreen>
               selectedIndex == 1 ? false : unread;
         });
       },
-      onError: (_) {
-        // সিঙ্কের সমস্যা হলে নেভিগেশন সচল থাকবে।
-      },
+      onError: (_) {},
     );
   }
 
@@ -859,13 +851,8 @@ class _MainScreenState extends State<MainScreen>
 
           if (!context.mounted) return;
 
-          // নতুন Space তৈরি বা Join করার পর Listener চালু করো।
           await _startConnectionWatcher();
-
-          // বর্তমান সংযোগের ডেটা নামাও।
           await SpaceStore.syncFromFirebase();
-
-          // বর্তমান সংযোগে Realtime Sync চালু করো।
           await SpaceStore.startRealtimeSync();
 
           if (context.mounted) {
@@ -1029,7 +1016,6 @@ class HomePage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        // Complaints Box Card
         Card(
           color: surfaceColor,
           margin: const EdgeInsets.only(bottom: 14),
@@ -1756,7 +1742,6 @@ class _ChatPageState extends State<ChatPage> {
       return senderUid == _currentUid;
     }
 
-    // পুরোনো মেসেজের জন্য সাময়িক সামঞ্জস্য।
     return message['mine'] == true;
   }
 
@@ -1930,6 +1915,20 @@ class _ChatPageState extends State<ChatPage> {
                   _showDetails(message);
                 },
               ),
+              if (!unsent &&
+                  ('${message['type'] ?? ''}' == 'image' ||
+                      '${message['type'] ?? ''}' == 'video'))
+                ListTile(
+                  leading: const Icon(
+                    Icons.save_alt_rounded,
+                    color: pinkColor,
+                  ),
+                  title: const Text('গ্যালারিতে সংরক্ষণ'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await _saveChatMediaToGallery(message);
+                  },
+                ),
               if (mine && !unsent)
                 ListTile(
                   leading: const Icon(
@@ -1954,6 +1953,73 @@ class _ChatPageState extends State<ChatPage> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _saveChatMediaToGallery(
+    Map<String, dynamic> message,
+  ) async {
+    final type = '${message['type'] ?? ''}';
+    final fileId = (
+      message['fileId'] ??
+      message['driveFileId'] ??
+      ''
+    ).toString().trim();
+
+    if (fileId.isEmpty ||
+        (type != 'image' && type != 'video')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('এই ছবি/ভিডিও গ্যালারিতে সংরক্ষণ করা যাচ্ছে না।'),
+        ),
+      );
+      return;
+    }
+
+    final galleryItems = SpaceStore.readList('galleryMedia');
+
+    final alreadySaved = galleryItems.any((item) {
+      final savedId = (
+        item['fileId'] ??
+        item['driveFileId'] ??
+        ''
+      ).toString().trim();
+
+      return savedId == fileId;
+    });
+
+    if (alreadySaved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('এই ছবি/ভিডিও আগে থেকেই গ্যালারিতে আছে।'),
+        ),
+      );
+      return;
+    }
+
+    final item = <String, dynamic>{
+      'id': 'chat_$fileId',
+      'fileId': fileId,
+      'driveFileId': fileId,
+      'driveFileName':
+          message['driveFileName'] ?? 'chat_media',
+      'mimeType': message['mimeType'] ?? '',
+      'type': type,
+      'folderId': 'all',
+      'storage': 'shared',
+      'source': 'chat',
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+
+    galleryItems.add(item);
+    await SpaceStore.saveList('galleryMedia', galleryItems);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('গ্যালারিতে সংরক্ষণ করা হয়েছে।'),
+      ),
     );
   }
 
@@ -2614,8 +2680,6 @@ class _GalleryPageState extends State<GalleryPage> {
     folders = SpaceStore.readList('galleryFolders');
     media = SpaceStore.readList('galleryMedia');
 
-    unawaited(_loadDriveMedia());
-
     if (folders.isEmpty) {
       folders = [
         {'id': 'all', 'name': 'All Memories'},
@@ -2623,89 +2687,6 @@ class _GalleryPageState extends State<GalleryPage> {
       ];
 
       SpaceStore.saveList('galleryFolders', folders);
-    }
-  }
-
-  Future<void> _loadDriveMedia() async {
-    try {
-      final driveItems = await SpaceSyncService.listSharedMedia();
-
-      if (!mounted || driveItems.isEmpty) return;
-
-      final merged = SpaceStore.readList('galleryMedia');
-      var changed = false;
-
-      for (final driveItem in driveItems) {
-        final fileId =
-            '${driveItem['fileId'] ?? driveItem['id'] ?? ''}'.trim();
-
-        if (fileId.isEmpty) continue;
-
-        final name = (
-          driveItem['name'] ??
-          driveItem['driveFileName'] ??
-          'memory'
-        ).toString();
-
-        final mime = (
-          driveItem['mimeType'] ?? ''
-        ).toString().toLowerCase();
-
-        final lowerName = name.toLowerCase();
-
-        final isVideo = mime.startsWith('video/') ||
-            RegExp(r'\.(mp4|mov|3gp|webm|m4v|mkv)$')
-                .hasMatch(lowerName);
-
-        final isImage = mime.startsWith('image/') ||
-            RegExp(r'\.(jpg|jpeg|png|webp|gif|heic)$')
-                .hasMatch(lowerName);
-
-        // গ্যালারিতে শুধু ছবি ও ভিডিও নেবে।
-        if (!isImage && !isVideo) continue;
-
-        final existingIndex = merged.indexWhere((item) {
-          final existingId = (
-            item['fileId'] ?? item['driveFileId'] ?? ''
-          ).toString().trim();
-
-          return existingId == fileId;
-        });
-
-        // একই ফাইল দ্বিতীয়বার যোগ করবে না।
-        if (existingIndex != -1) continue;
-
-        merged.add({
-          'id': fileId,
-          'fileId': fileId,
-          'driveFileId': fileId,
-          'driveFileName': name,
-          'name': name,
-          'mimeType': mime,
-          'type': isVideo ? 'video' : 'image',
-          'folderId': 'all',
-          'createdAt': (
-            driveItem['createdAt'] ??
-            driveItem['createdTime'] ??
-            DateTime.now().toIso8601String()
-          ).toString(),
-          'storage': 'shared',
-        });
-
-        changed = true;
-      }
-
-      if (!changed || !mounted) return;
-
-      await SpaceStore.saveList('galleryMedia', merged);
-
-      if (!mounted) return;
-
-      setState(() {
-        media = SpaceStore.readList('galleryMedia');
-      });
-    } catch (e) {
-      debugPrint('Drive gallery sync error: $e');
     }
   }
 
@@ -2983,21 +2964,27 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Future<void> _deleteMediaItem(Map<String, dynamic> item) async {
-    final driveId =
-        '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+    final driveId = (
+      item['fileId'] ??
+      item['driveFileId'] ??
+      ''
+    ).toString().trim();
 
-    // Drive-এ ফাইল থাকলে আগে সেটি মুছে ফেলবে।
-    if (driveId.isNotEmpty) {
+    final itemId = '${item['id'] ?? ''}';
+    final isChatMedia =
+        item['source'] == 'chat' || itemId.startsWith('chat_');
+
+    if (driveId.isNotEmpty && !isChatMedia) {
       try {
         await SpaceSyncService.deleteSharedMedia(driveId);
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Drive থেকে মুছতে সমস্যা হয়েছে: $e'),
-            ),
-          );
-        }
+      } catch (error) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Drive থেকে মুছতে সমস্যা হয়েছে: $error'),
+          ),
+        );
         return;
       }
     }
@@ -3005,18 +2992,20 @@ class _GalleryPageState extends State<GalleryPage> {
     if (!mounted) return;
 
     setState(() {
-      media.removeWhere((m) => m['id'] == item['id']);
+      media.removeWhere((m) {
+        return '${m['id'] ?? ''}' == itemId;
+      });
     });
 
     await _save();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('ছবি/ভিডিও মুছে ফেলা হয়েছে।'),
-        ),
-      );
-    }
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('গ্যালারি থেকে সরানো হয়েছে।'),
+      ),
+    );
   }
 
   Future<void> _showMediaMenu(Map<String, dynamic> item) async {
@@ -3272,8 +3261,6 @@ class GalleryFolderPage extends StatefulWidget {
 
 class _GalleryFolderPageState extends State<GalleryFolderPage> {
   late List<Map<String, dynamic>> items;
-
-  // একই ফাইল বারবার ডাউনলোড করা ঠেকায়।
   final Map<String, Future<String?>> _pathFutures = {};
 
   @override
@@ -3324,7 +3311,6 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
         : (item['path'] ?? item['id'] ?? '').toString();
 
     return _pathFutures.putIfAbsent(key, () async {
-      // প্রথমে এই ফোনের ফাইল আছে কি না দেখি।
       final localPath = (item['path'] ?? '').toString();
 
       if (localPath.isNotEmpty) {
@@ -3335,7 +3321,6 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
         } catch (_) {}
       }
 
-      // লোকাল ফাইল না থাকলে Drive থেকে ডাউনলোড।
       if (fileId.isEmpty) return null;
 
       try {
@@ -4176,18 +4161,54 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 1200,
+        imageQuality: 90,
+        maxWidth: 1600,
       );
 
       if (picked == null || !mounted) return;
 
-      final uploaded = await SpaceSyncService.uploadSharedMedia(
-        File(picked.path),
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        compressQuality: 85,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        aspectRatio: const CropAspectRatio(
+          ratioX: 1,
+          ratioY: 1,
+        ),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'প্রোফাইল ছবি ঠিক করো',
+            toolbarColor: surfaceColor,
+            toolbarWidgetColor: Colors.white,
+            backgroundColor: backgroundColor,
+            activeControlsWidgetColor: pinkColor,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(
+            title: 'প্রোফাইল ছবি ঠিক করো',
+            aspectRatioLockEnabled: true,
+          ),
+        ],
       );
 
-      final fileId =
-          (uploaded['fileId'] ?? uploaded['driveFileId'] ?? '').trim();
+      if (cropped == null || !mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('প্রোফাইল ছবি আপলোড হচ্ছে...'),
+        ),
+      );
+
+      final uploaded = await SpaceSyncService.uploadSharedMedia(
+        File(cropped.path),
+      );
+
+      final fileId = (
+        uploaded['fileId'] ??
+        uploaded['driveFileId'] ??
+        ''
+      ).trim();
 
       if (fileId.isEmpty) {
         throw Exception('আপলোড করা ছবির ID পাওয়া যায়নি।');
