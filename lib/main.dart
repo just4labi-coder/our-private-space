@@ -4682,7 +4682,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
-        cropStyle: CropStyle.circle,
         aspectRatio: const CropAspectRatio(
           ratioX: 1,
           ratioY: 1,
