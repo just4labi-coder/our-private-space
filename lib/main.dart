@@ -2076,10 +2076,10 @@ class _ChatPageState extends State<ChatPage> {
         );
 
         if (!await File(result).exists() &&
-    identical(_mediaPathFutures[key], future)) {
-  _mediaPathFutures.remove(key);
-}
-return result;
+            identical(_mediaPathFutures[key], future)) {
+          _mediaPathFutures.remove(key);
+        }
+        return result;
       } catch (error) {
         if (identical(_mediaPathFutures[key], future)) {
           _mediaPathFutures.remove(key);
@@ -2725,8 +2725,9 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Future<void> _save() async {
-    await SpaceStore.saveList('galleryFolders', folders);
+    // আগে মিডিয়া সেভ হবে, যাতে sync listener পুরোনো তালিকা ফিরিয়ে না আনতে পারে।
     await SpaceStore.saveList('galleryMedia', media);
+    await SpaceStore.saveList('galleryFolders', folders);
   }
 
   Future<void> _createFolder() async {
@@ -2987,10 +2988,8 @@ class _GalleryPageState extends State<GalleryPage> {
     ).toString().trim();
 
     final itemId = '${item['id'] ?? ''}';
-    final isChatMedia =
-        item['source'] == 'chat' || itemId.startsWith('chat_');
 
-    if (driveId.isNotEmpty && !isChatMedia) {
+    if (driveId.isNotEmpty) {
       try {
         await SpaceSyncService.deleteSharedMedia(driveId);
       } catch (error) {
@@ -3351,10 +3350,10 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
         );
 
         if (!await File(result).exists() &&
-    identical(_pathFutures[key], future)) {
-  _pathFutures.remove(key);
-}
-return result;
+            identical(_pathFutures[key], future)) {
+          _pathFutures.remove(key);
+        }
+        return result;
       } catch (error) {
         if (identical(_pathFutures[key], future)) {
           _pathFutures.remove(key);
@@ -3403,15 +3402,21 @@ return result;
                 final video = item['type'] == 'video';
 
                 return FutureBuilder<String?>(
-                  future: _resolveLocalPath(item),
+                  future: video
+                      ? Future<String?>.value(null)
+                      : _resolveLocalPath(item),
                   builder: (context, snapshot) {
                     final path = snapshot.data;
 
                     return GestureDetector(
                       onLongPress: () => widget.onLongPress(item),
                       onTap: () async {
-                        final resolvedPath =
-                            await _resolveLocalPath(item);
+                        final resolvedPath = video
+                            ? (item['path'] ?? '').toString().isNotEmpty &&
+                                    await File(item['path']).exists()
+                                ? item['path']
+                                : await _resolveLocalPath(item)
+                            : await _resolveLocalPath(item);
 
                         if (!mounted) return;
 
@@ -3441,7 +3446,15 @@ return result;
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            if (path == null)
+                            if (video)
+                              Container(
+                                color: surfaceColor,
+                                child: const Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  size: 50,
+                                ),
+                              )
+                            else if (path == null)
                               Container(
                                 color: surfaceColor,
                                 child: Center(
@@ -3452,14 +3465,6 @@ return result;
                                           Icons.cloud_download_outlined,
                                           size: 42,
                                         ),
-                                ),
-                              )
-                            else if (video)
-                              Container(
-                                color: surfaceColor,
-                                child: const Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  size: 50,
                                 ),
                               )
                             else
