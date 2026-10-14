@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PrivateSpaceService {
@@ -39,7 +40,43 @@ class PrivateSpaceService {
   /// আগে থেকে সংরক্ষিত Space ID
   static Future<String?> getSavedSpaceId() async {
     final prefs = await _prefs;
-    return prefs.getString(_spaceIdKey);
+    final savedId = prefs.getString(_spaceIdKey);
+
+    if (savedId != null && savedId.isNotEmpty) {
+      return savedId;
+    }
+
+    // অ্যাপ পুনরায় ইনস্টল হলে লোকাল Space ID থাকে না।
+    // একই Firebase অ্যাকাউন্টের সদস্যপদ দিয়ে পুরোনো Space খুঁজবে।
+    final user = _auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final result = await _spaces
+          .where('memberUids', arrayContains: user.uid)
+          .limit(1)
+          .get();
+
+      for (final document in result.docs) {
+        final data = document.data();
+        final members = List<String>.from(
+          data['memberUids'] ?? [],
+        );
+
+        if (!members.contains(user.uid) || members.length != 2) {
+          continue;
+        }
+
+        final inviteCode = '${data['inviteCode'] ?? ''}';
+
+        await _saveConnection(document.id, inviteCode);
+        return document.id;
+      }
+    } catch (error) {
+      debugPrint('Saved Space recovery error: $error');
+    }
+
+    return null;
   }
 
   /// আগে থেকে সংরক্ষিত Invite Code
