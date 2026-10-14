@@ -17,6 +17,7 @@ dependencies:
   cloud_firestore: ^5.4.1
   firebase_storage: ^12.3.0
   image_picker: ^1.0.8
+  image_cropper: ^7.1.0
   video_player: ^2.8.6
   shared_preferences: ^2.3.2
   googleapis: ^13.2.0
