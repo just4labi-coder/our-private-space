@@ -2614,6 +2614,8 @@ class _GalleryPageState extends State<GalleryPage> {
     folders = SpaceStore.readList('galleryFolders');
     media = SpaceStore.readList('galleryMedia');
 
+    unawaited(_loadDriveMedia());
+
     if (folders.isEmpty) {
       folders = [
         {'id': 'all', 'name': 'All Memories'},
@@ -2621,6 +2623,89 @@ class _GalleryPageState extends State<GalleryPage> {
       ];
 
       SpaceStore.saveList('galleryFolders', folders);
+    }
+  }
+
+  Future<void> _loadDriveMedia() async {
+    try {
+      final driveItems = await SpaceSyncService.listSharedMedia();
+
+      if (!mounted || driveItems.isEmpty) return;
+
+      final merged = SpaceStore.readList('galleryMedia');
+      var changed = false;
+
+      for (final driveItem in driveItems) {
+        final fileId =
+            '${driveItem['fileId'] ?? driveItem['id'] ?? ''}'.trim();
+
+        if (fileId.isEmpty) continue;
+
+        final name = (
+          driveItem['name'] ??
+          driveItem['driveFileName'] ??
+          'memory'
+        ).toString();
+
+        final mime = (
+          driveItem['mimeType'] ?? ''
+        ).toString().toLowerCase();
+
+        final lowerName = name.toLowerCase();
+
+        final isVideo = mime.startsWith('video/') ||
+            RegExp(r'\.(mp4|mov|3gp|webm|m4v|mkv)$')
+                .hasMatch(lowerName);
+
+        final isImage = mime.startsWith('image/') ||
+            RegExp(r'\.(jpg|jpeg|png|webp|gif|heic)$')
+                .hasMatch(lowerName);
+
+        // গ্যালারিতে শুধু ছবি ও ভিডিও নেবে।
+        if (!isImage && !isVideo) continue;
+
+        final existingIndex = merged.indexWhere((item) {
+          final existingId = (
+            item['fileId'] ?? item['driveFileId'] ?? ''
+          ).toString().trim();
+
+          return existingId == fileId;
+        });
+
+        // একই ফাইল দ্বিতীয়বার যোগ করবে না।
+        if (existingIndex != -1) continue;
+
+        merged.add({
+          'id': fileId,
+          'fileId': fileId,
+          'driveFileId': fileId,
+          'driveFileName': name,
+          'name': name,
+          'mimeType': mime,
+          'type': isVideo ? 'video' : 'image',
+          'folderId': 'all',
+          'createdAt': (
+            driveItem['createdAt'] ??
+            driveItem['createdTime'] ??
+            DateTime.now().toIso8601String()
+          ).toString(),
+          'storage': 'shared',
+        });
+
+        changed = true;
+      }
+
+      if (!changed || !mounted) return;
+
+      await SpaceStore.saveList('galleryMedia', merged);
+
+      if (!mounted) return;
+
+      setState(() {
+        media = SpaceStore.readList('galleryMedia');
+      });
+    } catch (e) {
+      debugPrint('Drive gallery sync error: $e');
     }
   }
 
