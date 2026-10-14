@@ -2053,28 +2053,43 @@ class _ChatPageState extends State<ChatPage> {
         '${media['fileId'] ?? media['driveFileId'] ?? ''}'.trim();
     final key = fileId.isNotEmpty ? fileId : localPath;
 
-    return _mediaPathFutures.putIfAbsent(key, () async {
-      if (localPath.isNotEmpty) {
-        try {
-          if (await File(localPath).exists()) return localPath;
-        } catch (_) {}
-      }
+    final existing = _mediaPathFutures[key];
+    if (existing != null) return existing;
 
-      if (fileId.isEmpty) return null;
-
+    late final Future<String?> future;
+    future = Future<String?>.microtask(() async {
       try {
-        final name =
-            '${media['driveFileName'] ?? 'chat_media'}';
+        if (localPath.isNotEmpty) {
+          try {
+            if (await File(localPath).exists()) {
+              return localPath;
+            }
+          } catch (_) {}
+        }
 
-        return await SpaceSyncService.downloadMedia(
+        if (fileId.isEmpty) return null;
+
+        final name = '${media['driveFileName'] ?? 'chat_media'}';
+        final result = await SpaceSyncService.downloadMedia(
           fileId,
           saveAs: '${fileId}_$name',
         );
+
+        if (result == null && identical(_mediaPathFutures[key], future)) {
+          _mediaPathFutures.remove(key);
+        }
+        return result;
       } catch (error) {
+        if (identical(_mediaPathFutures[key], future)) {
+          _mediaPathFutures.remove(key);
+        }
         debugPrint('Chat media download error: $error');
         return null;
       }
     });
+
+    _mediaPathFutures[key] = future;
+    return future;
   }
 
   Widget _messageContent(Map<String, dynamic> message) {
@@ -3303,43 +3318,52 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
   Future<String?> _resolveLocalPath(
     Map<String, dynamic> item,
   ) {
-    final fileId =
-        (item['fileId'] ?? item['driveFileId'] ?? '').toString();
-
+    final fileId = (item['fileId'] ?? item['driveFileId'] ?? '').toString();
     final key = fileId.isNotEmpty
         ? fileId
         : (item['path'] ?? item['id'] ?? '').toString();
 
-    return _pathFutures.putIfAbsent(key, () async {
-      final localPath = (item['path'] ?? '').toString();
+    final existing = _pathFutures[key];
+    if (existing != null) return existing;
 
-      if (localPath.isNotEmpty) {
-        try {
-          if (await File(localPath).exists()) {
-            return localPath;
-          }
-        } catch (_) {}
-      }
-
-      if (fileId.isEmpty) return null;
-
+    late final Future<String?> future;
+    future = Future<String?>.microtask(() async {
       try {
+        final localPath = (item['path'] ?? '').toString();
+        if (localPath.isNotEmpty) {
+          try {
+            if (await File(localPath).exists()) {
+              return localPath;
+            }
+          } catch (_) {}
+        }
+
+        if (fileId.isEmpty) return null;
+
         final originalName =
-            (item['driveFileName'] ?? item['name'] ?? 'memory')
-                .toString();
+            (item['driveFileName'] ?? item['name'] ?? 'memory').toString();
+        final safeName = '${item['id'] ?? fileId}_$originalName';
 
-        final safeName =
-            '${item['id'] ?? fileId}_$originalName';
-
-        return await SpaceSyncService.downloadMedia(
+        final result = await SpaceSyncService.downloadMedia(
           fileId,
           saveAs: safeName,
         );
-      } catch (e) {
-        debugPrint('Gallery download error: $e');
+
+        if (result == null && identical(_pathFutures[key], future)) {
+          _pathFutures.remove(key);
+        }
+        return result;
+      } catch (error) {
+        if (identical(_pathFutures[key], future)) {
+          _pathFutures.remove(key);
+        }
+        debugPrint('Gallery download error: $error');
         return null;
       }
     });
+
+    _pathFutures[key] = future;
+    return future;
   }
 
   @override
