@@ -4698,6 +4698,7 @@ class _SettingsPageState extends State<SettingsPage> {
             activeControlsWidgetColor: pinkColor,
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
+            cropStyle: CropStyle.circle,
             showCropGrid: true,
             hideBottomControls: false,
           ),
@@ -4705,6 +4706,7 @@ class _SettingsPageState extends State<SettingsPage> {
             title: 'প্রোফাইল ছবি ঠিক করো',
             aspectRatioLockEnabled: true,
             resetAspectRatioEnabled: false,
+            cropStyle: CropStyle.circle,
           ),
         ],
       );
