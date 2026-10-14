@@ -8,7 +8,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -602,6 +601,287 @@ class _GlowBackgroundState extends State<GlowBackground>
 }
 
 // ============================================================
+// UPLOAD FLOATING INDICATOR
+// ============================================================
+
+class UploadFloatingIndicator extends StatelessWidget {
+  const UploadFloatingIndicator({super.key});
+
+  String _formatSpeed(double bytesPerSecond) {
+    if (bytesPerSecond >= 1024 * 1024) {
+      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    }
+    if (bytesPerSecond >= 1024) {
+      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    }
+    return '${bytesPerSecond.toStringAsFixed(0)} B/s';
+  }
+
+  IconData _fileIcon(String fileName) {
+    final name = fileName.toLowerCase();
+
+    if (name.endsWith('.mp4') ||
+        name.endsWith('.mov') ||
+        name.endsWith('.mkv') ||
+        name.endsWith('.webm') ||
+        name.endsWith('.avi')) {
+      return Icons.videocam_rounded;
+    }
+
+    if (name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') ||
+        name.endsWith('.png') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.gif') ||
+        name.endsWith('.heic')) {
+      return Icons.image_rounded;
+    }
+
+    return Icons.upload_file_rounded;
+  }
+
+  void _showUploadDetails(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: surfaceColor,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: ValueListenableBuilder<List<UploadProgress>>(
+              valueListenable: SpaceSyncService.uploadProgress,
+              builder: (context, uploads, _) {
+                final activeUploads = uploads
+                    .where((upload) => upload.isUploading)
+                    .toList();
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.cloud_upload_rounded,
+                          color: pinkColor,
+                          size: 25,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'ফাইল আপলোড হচ্ছে (${activeUploads.length})',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    if (activeUploads.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          'এখন কোনো ফাইল আপলোড হচ্ছে না।',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const ClampingScrollPhysics(),
+                          itemCount: activeUploads.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 14),
+                          itemBuilder: (context, index) {
+                            final upload = activeUploads[index];
+                            final progress =
+                                upload.progress.clamp(0.0, 1.0);
+
+                            return Row(
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    color: purpleColor.withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    _fileIcon(upload.fileName),
+                                    color: pinkColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        upload.fileName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        _formatSpeed(upload.bytesPerSecond),
+                                        style: const TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                SizedBox(
+                                  width: 46,
+                                  height: 46,
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 42,
+                                        height: 42,
+                                        child: CircularProgressIndicator(
+                                          value: progress,
+                                          strokeWidth: 4,
+                                          backgroundColor: Colors.white12,
+                                          valueColor:
+                                              const AlwaysStoppedAnimation<
+                                                  Color>(pinkColor),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${(progress * 100).round()}%',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<List<UploadProgress>>(
+      valueListenable: SpaceSyncService.uploadProgress,
+      builder: (context, uploads, _) {
+        final count =
+            uploads.where((upload) => upload.isUploading).length;
+
+        if (count == 0) {
+          return const SizedBox.shrink();
+        }
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showUploadDetails(context),
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: surfaceColor,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: pinkColor.withValues(alpha: 0.8),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: pinkColor.withValues(alpha: 0.25),
+                    blurRadius: 16,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  const Icon(
+                    Icons.cloud_upload_rounded,
+                    color: Colors.white,
+                    size: 27,
+                  ),
+                  Positioned(
+                    right: -3,
+                    top: -3,
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 23,
+                        minHeight: 23,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 3,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: pinkColor,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ============================================================
 // MAIN SCREEN AND NAVIGATION
 // ============================================================
 
@@ -851,7 +1131,20 @@ class _MainScreenState extends State<MainScreen>
     ];
 
     return Scaffold(
-      body: GlowBackground(child: pages[selectedIndex]),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: GlowBackground(
+              child: pages[selectedIndex],
+            ),
+          ),
+          const Positioned(
+            right: 16,
+            bottom: 16,
+            child: UploadFloatingIndicator(),
+          ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: surfaceColor,
         indicatorColor: blueColor.withValues(alpha: 0.25),
@@ -4372,38 +4665,12 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        imageQuality: 90,
-        maxWidth: 1600,
+        imageQuality: 78,
+        maxWidth: 1000,
+        maxHeight: 1000,
       );
 
       if (picked == null || !mounted) return;
-
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: picked.path,
-        compressQuality: 85,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        aspectRatio: const CropAspectRatio(
-          ratioX: 1,
-          ratioY: 1,
-        ),
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'প্রোফাইল ছবি ঠিক করো',
-            toolbarColor: surfaceColor,
-            toolbarWidgetColor: Colors.white,
-            backgroundColor: backgroundColor,
-            activeControlsWidgetColor: pinkColor,
-            lockAspectRatio: true,
-          ),
-          IOSUiSettings(
-            title: 'প্রোফাইল ছবি ঠিক করো',
-            aspectRatioLockEnabled: true,
-          ),
-        ],
-      );
-
-      if (cropped == null || !mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -4412,7 +4679,7 @@ class _SettingsPageState extends State<SettingsPage> {
       );
 
       final uploaded = await SpaceSyncService.uploadSharedMedia(
-        File(cropped.path),
+        File(picked.path),
       );
 
       final fileId = (
