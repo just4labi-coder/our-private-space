@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'private_space_service.dart';
 
@@ -50,6 +51,35 @@ class SpaceSyncService {
 
   static const int _maxUploadBytes = 30 * 1024 * 1024;
   static const int _chunkSize = 1024 * 1024;
+
+  static const String _pendingUploadsKey = 'pendingDriveUploads';
+
+  static Future<List<Map<String, dynamic>>> _readPendingUploads() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_pendingUploadsKey);
+
+    if (raw == null || raw.isEmpty) return [];
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return [];
+
+      return decoded
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } catch (error) {
+      debugPrint('Pending upload read error: $error');
+      return [];
+    }
+  }
+
+  static Future<void> _savePendingUploads(
+    List<Map<String, dynamic>> uploads,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pendingUploadsKey, jsonEncode(uploads));
+  }
 
   static final ValueNotifier<List<UploadProgress>> uploadProgress =
       ValueNotifier<List<UploadProgress>>([]);
