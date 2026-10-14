@@ -1140,11 +1140,12 @@ class _MainScreenState extends State<MainScreen>
               child: pages[selectedIndex],
             ),
           ),
-          const Positioned(
-            right: 16,
-            bottom: 16,
-            child: UploadFloatingIndicator(),
-          ),
+          if (selectedIndex == 2)
+            const Positioned(
+              right: 16,
+              bottom: 16,
+              child: UploadFloatingIndicator(),
+            ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
