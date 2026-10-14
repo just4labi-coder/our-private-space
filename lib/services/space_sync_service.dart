@@ -10,6 +10,36 @@ import 'package:path_provider/path_provider.dart';
 
 import 'private_space_service.dart';
 
+class UploadProgress {
+  final String id;
+  final String fileName;
+  final double progress;
+  final double bytesPerSecond;
+  final bool isUploading;
+
+  const UploadProgress({
+    required this.id,
+    required this.fileName,
+    required this.progress,
+    required this.bytesPerSecond,
+    required this.isUploading,
+  });
+
+  UploadProgress copyWith({
+    double? progress,
+    double? bytesPerSecond,
+    bool? isUploading,
+  }) {
+    return UploadProgress(
+      id: id,
+      fileName: fileName,
+      progress: progress ?? this.progress,
+      bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
+      isUploading: isUploading ?? this.isUploading,
+    );
+  }
+}
+
 class SpaceSyncService {
   SpaceSyncService._();
 
@@ -20,6 +50,35 @@ class SpaceSyncService {
 
   static const int _maxUploadBytes = 30 * 1024 * 1024;
   static const int _chunkSize = 1024 * 1024;
+
+  static final ValueNotifier<List<UploadProgress>> uploadProgress =
+      ValueNotifier<List<UploadProgress>>([]);
+
+  static void _updateUpload(
+    String id, {
+    double? progress,
+    double? bytesPerSecond,
+    bool? isUploading,
+  }) {
+    uploadProgress.value = [
+      for (final item in uploadProgress.value)
+        if (item.id == id)
+          item.copyWith(
+            progress: progress,
+            bytesPerSecond: bytesPerSecond,
+            isUploading: isUploading,
+          )
+        else
+          item,
+    ];
+  }
+
+  static void _removeUpload(String id) {
+    uploadProgress.value = [
+      for (final item in uploadProgress.value)
+        if (item.id != id) item,
+    ];
+  }
 
   static final Map<String, Future<String>> _activeDownloads = {};
 
@@ -186,9 +245,10 @@ class SpaceSyncService {
     return 'image/jpeg';
   }
 
-  static Future<Map<String, String>> _upload(
+  static Future<Map<String, String>> _uploadFile(
     File file, {
     required bool shared,
+    required String uploadId,
   }) async {
     if (!await file.exists()) {
       throw Exception('ফাইলটি এই ফোনে পাওয়া যায়নি।');
@@ -243,6 +303,7 @@ class SpaceSyncService {
       var offset = 0;
       Map<String, dynamic>? uploaded;
       var retryCount = 0;
+      final uploadClock = Stopwatch()..start();
 
       try {
         while (offset < length) {
@@ -309,6 +370,14 @@ class SpaceSyncService {
 
             offset = nextOffset;
             retryCount = 0;
+
+            final seconds = uploadClock.elapsedMilliseconds / 1000;
+            _updateUpload(
+              uploadId,
+              progress: offset / length,
+              bytesPerSecond: seconds > 0 ? offset / seconds : 0,
+            );
+
             continue;
           }
 
@@ -324,6 +393,14 @@ class SpaceSyncService {
 
             uploaded = Map<String, dynamic>.from(decoded);
             offset = length;
+
+            final seconds = uploadClock.elapsedMilliseconds / 1000;
+            _updateUpload(
+              uploadId,
+              progress: 1,
+              bytesPerSecond: seconds > 0 ? length / seconds : 0,
+            );
+
             break;
           }
 
@@ -360,6 +437,40 @@ class SpaceSyncService {
       );
     } finally {
       client.close();
+    }
+  }
+
+  static Future<Map<String, String>> _upload(
+    File file, {
+    required bool shared,
+  }) async {
+    final id = DateTime.now().microsecondsSinceEpoch.toString() +
+        '_${uploadProgress.value.length}';
+
+    final name = file.uri.pathSegments.isNotEmpty
+        ? file.uri.pathSegments.last
+        : 'media';
+
+    uploadProgress.value = [
+      ...uploadProgress.value,
+      UploadProgress(
+        id: id,
+        fileName: name,
+        progress: 0,
+        bytesPerSecond: 0,
+        isUploading: true,
+      ),
+    ];
+
+    try {
+      return await _uploadFile(
+        file,
+        shared: shared,
+        uploadId: id,
+      );
+    } finally {
+      _updateUpload(id, isUploading: false);
+      _removeUpload(id);
     }
   }
 
@@ -612,7 +723,7 @@ class SpaceSyncService {
       throw Exception('ব্যাকআপটি ৩০ MB সীমা অতিক্রম করেছে।');
     }
 
-    final tempDir = await Directory.systemTemp.createTemp(
+    final tempDir = `await Directory.systemTemp.createTemp(
       'eternal_space_backup_',
     );
 
