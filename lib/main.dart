@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -1187,6 +1189,70 @@ class _MainScreenState extends State<MainScreen>
 }
 
 // ============================================================
+// PROFILE AVATAR WIDGET
+// ============================================================
+
+class ProfileAvatar extends StatelessWidget {
+  final String name;
+  final String photoBase64;
+  final double radius;
+  final Color color;
+
+  const ProfileAvatar({
+    super.key,
+    required this.name,
+    this.photoBase64 = '',
+    this.radius = 25,
+    this.color = purpleColor,
+  });
+
+  Widget _letterAvatar() {
+    final cleanName = name.trim();
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: color.withValues(alpha: 0.23),
+      child: Text(
+        cleanName.isEmpty ? '?' : cleanName[0].toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontSize: radius * 0.8,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Uint8List? bytes;
+
+    try {
+      if (photoBase64.trim().isNotEmpty) {
+        bytes = base64Decode(photoBase64.trim());
+      }
+    } catch (_) {
+      bytes = null;
+    }
+
+    if (bytes == null || bytes.isEmpty) {
+      return _letterAvatar();
+    }
+
+    return ClipOval(
+      child: Image.memory(
+        bytes,
+        width: radius * 2,
+        height: radius * 2,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => _letterAvatar(),
+      ),
+    );
+  }
+}
+
+// ============================================================
 // HOME
 // ============================================================
 
@@ -1359,11 +1425,13 @@ class _RelationshipHomeHeader extends StatefulWidget {
 class _RelationshipHomeHeaderState
     extends State<_RelationshipHomeHeader> {
   Future<String?>? _spaceIdFuture;
+  late final Stream<List<Map<String, dynamic>>> _profilesStream;
 
   @override
   void initState() {
     super.initState();
     _spaceIdFuture = _getSpaceId();
+    _profilesStream = ChatSyncService.watchMemberProfiles();
   }
 
   Future<String?> _getSpaceId() async {
@@ -1412,6 +1480,8 @@ class _RelationshipHomeHeaderState
             var ownName = widget.fallbackName;
             var partnerName = 'No one';
             DateTime? startAt;
+            var ownUid = '';
+            var partnerUid = '';
 
             if (connected) {
               final rawNames = data['memberNames'];
@@ -1420,9 +1490,9 @@ class _RelationshipHomeHeaderState
                   : <String, dynamic>{};
 
               ownName = '${names[user.uid] ?? widget.fallbackName}';
-              final otherUid =
-                  members.firstWhere((uid) => uid != user.uid);
-              partnerName = '${names[otherUid] ?? 'Partner'}';
+              ownUid = user.uid;
+              partnerUid = members.firstWhere((uid) => uid != user.uid);
+              partnerName = '${names[partnerUid] ?? 'Partner'}';
 
               final rawStart = data['relationshipStartAt'];
               if (rawStart is Timestamp) {
@@ -1430,18 +1500,36 @@ class _RelationshipHomeHeaderState
               }
             }
 
-            return Column(
-              children: [
-                _CoupleCard(
-                  first: ownName,
-                  second: partnerName,
-                ),
-                const SizedBox(height: 18),
-                LoveCounterCard(
-                  connected: connected,
-                  startDate: startAt,
-                ),
-              ],
+            return StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _profilesStream,
+              builder: (context, profileSnapshot) {
+                final profiles = profileSnapshot.data ?? [];
+
+                String photoFor(String uid) {
+                  for (final profile in profiles) {
+                    if ('${profile['uid'] ?? ''}' == uid) {
+                      return '${profile['photoBase64'] ?? ''}';
+                    }
+                  }
+                  return '';
+                }
+
+                return Column(
+                  children: [
+                    _CoupleCard(
+                      first: ownName,
+                      second: partnerName,
+                      firstPhotoBase64: photoFor(ownUid),
+                      secondPhotoBase64: photoFor(partnerUid),
+                    ),
+                    const SizedBox(height: 18),
+                    LoveCounterCard(
+                      connected: connected,
+                      startDate: startAt,
+                    ),
+                  ],
+                );
+              },
             );
           },
         );
@@ -1453,10 +1541,14 @@ class _RelationshipHomeHeaderState
 class _CoupleCard extends StatelessWidget {
   final String first;
   final String second;
+  final String firstPhotoBase64;
+  final String secondPhotoBase64;
 
   const _CoupleCard({
     required this.first,
     required this.second,
+    this.firstPhotoBase64 = '',
+    this.secondPhotoBase64 = '',
   });
 
   @override
@@ -1477,7 +1569,11 @@ class _CoupleCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _AvatarLetter(name: first, color: blueColor),
+          ProfileAvatar(
+            name: first,
+            photoBase64: firstPhotoBase64,
+            color: blueColor,
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 13),
             child: Icon(
@@ -1486,7 +1582,11 @@ class _CoupleCard extends StatelessWidget {
               size: 27,
             ),
           ),
-          _AvatarLetter(name: second, color: pinkColor),
+          ProfileAvatar(
+            name: second,
+            photoBase64: secondPhotoBase64,
+            color: pinkColor,
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -1504,38 +1604,15 @@ class _CoupleCard extends StatelessWidget {
                 const SizedBox(height: 5),
                 const Text(
                   'Two hearts, one little world',
-                  style: TextStyle(fontSize: 11, color: Colors.white60),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white60,
+                  ),
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _AvatarLetter extends StatelessWidget {
-  final String name;
-  final Color color;
-
-  const _AvatarLetter({
-    required this.name,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CircleAvatar(
-      radius: 25,
-      backgroundColor: color.withValues(alpha: 0.23),
-      child: Text(
-        name.isEmpty ? '?' : name[0].toUpperCase(),
-        style: TextStyle(
-          fontSize: 21,
-          fontWeight: FontWeight.bold,
-          color: color,
-        ),
       ),
     );
   }
@@ -1933,14 +2010,54 @@ class _ChatPageState extends State<ChatPage> {
   late final Stream<Map<String, dynamic>?> _spaceStream;
   late final Stream<List<Map<String, dynamic>>> _profilesStream;
 
+  List<Map<String, dynamic>> _memberProfiles = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _profilesSubscription;
+
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  String _photoBase64ForUid(String uid) {
+    if (uid.isEmpty) return '';
+
+    for (final profile in _memberProfiles) {
+      if ('${profile['uid'] ?? ''}' == uid) {
+        return '${profile['photoBase64'] ?? ''}';
+      }
+    }
+
+    return '';
+  }
+
+  String _profileNameForUid(String uid, String fallback) {
+    for (final profile in _memberProfiles) {
+      if ('${profile['uid'] ?? ''}' == uid) {
+        final name = '${profile['name'] ?? ''}'.trim();
+        if (name.isNotEmpty) return name;
+      }
+    }
+
+    return fallback;
+  }
 
   @override
   void initState() {
     super.initState();
     _spaceStream = ChatSyncService.watchSpaceData();
     _profilesStream = ChatSyncService.watchMemberProfiles();
+
+    _profilesSubscription = _profilesStream.listen(
+      (profiles) {
+        if (!mounted) return;
+
+        setState(() {
+          _memberProfiles = profiles;
+        });
+      },
+      onError: (Object error) {
+        debugPrint('Profile sync skipped: $error');
+      },
+    );
+
     _startChatSync();
     _saveOwnProfile();
   }
@@ -1992,6 +2109,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _profilesSubscription?.cancel();
     _chatSubscription?.cancel();
     controller.dispose();
     scrollController.dispose();
@@ -2475,6 +2593,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildMessage(Map<String, dynamic> message, int index) {
     final mine = _isMine(message);
+    final senderUid = '${message['senderUid'] ?? ''}';
 
     return GestureDetector(
       onLongPress: () => _showMessageOptions(index),
@@ -2486,14 +2605,11 @@ class _ChatPageState extends State<ChatPage> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!mine) ...[
-              const CircleAvatar(
+              ProfileAvatar(
+                name: _profileNameForUid(senderUid, 'Partner'),
+                photoBase64: _photoBase64ForUid(senderUid),
                 radius: 16,
-                backgroundColor: purpleColor,
-                child: Icon(
-                  Icons.person_rounded,
-                  size: 19,
-                  color: Colors.white,
-                ),
+                color: purpleColor,
               ),
               const SizedBox(width: 7),
             ],
@@ -2582,14 +2698,18 @@ class _ChatPageState extends State<ChatPage> {
             ),
             if (mine) ...[
               const SizedBox(width: 7),
-              const CircleAvatar(
-                radius: 16,
-                backgroundColor: pinkColor,
-                child: Icon(
-                  Icons.person_rounded,
-                  size: 19,
-                  color: Colors.white,
+              ProfileAvatar(
+                name: _profileNameForUid(
+                  _currentUid,
+                  FirebaseAuth.instance.currentUser?.displayName ??
+                      FirebaseAuth.instance.currentUser?.email
+                          ?.split('@')
+                          .first ??
+                      'You',
                 ),
+                photoBase64: _photoBase64ForUid(_currentUid),
+                radius: 16,
+                color: pinkColor,
               ),
             ],
           ],
@@ -2616,84 +2736,26 @@ class _ChatPageState extends State<ChatPage> {
           }
         }
 
-        final rawNames = space['memberNames'];
-        final names = rawNames is Map
-            ? Map<String, dynamic>.from(rawNames)
-            : <String, dynamic>{};
-
-        final fallbackName =
-            '${names[partnerUid] ?? 'Partner'}'.trim();
-
         if (partnerUid.isEmpty) {
           return _chatHeaderContent(
             name: 'Partner',
-            photoUrl: null,
+            photoBase64: '',
             isOnline: false,
           );
         }
 
-        return StreamBuilder<List<Map<String, dynamic>>>(
-          stream: _profilesStream,
-          builder: (context, profilesSnapshot) {
-            final profiles = profilesSnapshot.data ?? [];
+        return StreamBuilder<Map<String, dynamic>?>(
+          stream: ChatSyncService.watchPresence(partnerUid),
+          builder: (context, presenceSnapshot) {
+            final presence = presenceSnapshot.data;
+            final isOnline = presence?['isOnline'] == true;
 
-            Map<String, dynamic>? partnerProfile;
-            for (final profile in profiles) {
-              if ('${profile['uid'] ?? ''}' == partnerUid) {
-                partnerProfile = profile;
-                break;
-              }
-            }
+            final name = _profileNameForUid(partnerUid, 'Partner');
 
-            final profileName =
-                '${partnerProfile?['name'] ?? ''}'.trim();
-            final name = profileName.isNotEmpty
-                ? profileName
-                : fallbackName.isNotEmpty
-                    ? fallbackName
-                    : 'Partner';
-
-            final rawPhoto = partnerProfile?['photoUrl'];
-            final photoUrl = rawPhoto is String &&
-                    rawPhoto.trim().isNotEmpty
-                ? rawPhoto.trim()
-                : null;
-
-            final photoFileId =
-                '${partnerProfile?['photoFileId'] ?? ''}'.trim();
-            final photoFileName =
-                '${partnerProfile?['photoFileName'] ?? 'profile_photo.jpg'}';
-
-            return StreamBuilder<Map<String, dynamic>?>(
-              stream: ChatSyncService.watchPresence(partnerUid),
-              builder: (context, presenceSnapshot) {
-                final presence = presenceSnapshot.data;
-                final isOnline = presence?['isOnline'] == true;
-
-                if (photoFileId.isNotEmpty) {
-                  return FutureBuilder<String?>(
-                    future: _resolveMediaPath({
-                      'fileId': photoFileId,
-                      'driveFileId': photoFileId,
-                      'driveFileName': photoFileName,
-                    }),
-                    builder: (context, photoSnapshot) {
-                      return _chatHeaderContent(
-                        name: name,
-                        photoUrl: null,
-                        photoPath: photoSnapshot.data,
-                        isOnline: isOnline,
-                      );
-                    },
-                  );
-                }
-
-                return _chatHeaderContent(
-                  name: name,
-                  photoUrl: photoUrl,
-                  isOnline: isOnline,
-                );
-              },
+            return _chatHeaderContent(
+              name: name,
+              photoBase64: _photoBase64ForUid(partnerUid),
+              isOnline: isOnline,
             );
           },
         );
@@ -2703,69 +2765,15 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _chatHeaderContent({
     required String name,
-    required String? photoUrl,
-    String? photoPath,
+    required String photoBase64,
     required bool isOnline,
   }) {
-    Widget avatar;
-
-    if (photoPath != null && photoPath.isNotEmpty) {
-      avatar = ClipOval(
-        child: Image.file(
-          File(photoPath),
-          width: 46,
-          height: 46,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return CircleAvatar(
-              radius: 23,
-              backgroundColor: purpleColor,
-              child: Text(
-                name.isEmpty ? '?' : name[0].toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            );
-          },
-        ),
-      );
-    } else if (photoUrl != null) {
-      avatar = ClipOval(
-        child: Image.network(
-          photoUrl,
-          width: 46,
-          height: 46,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return CircleAvatar(
-              radius: 23,
-              backgroundColor: purpleColor,
-              child: Text(
-                name.isEmpty ? '?' : name[0].toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            );
-          },
-        ),
-      );
-    } else {
-      avatar = CircleAvatar(
-        radius: 23,
-        backgroundColor: purpleColor,
-        child: Text(
-          name.isEmpty ? '?' : name[0].toUpperCase(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      );
-    }
+    final avatar = ProfileAvatar(
+      name: name,
+      photoBase64: photoBase64,
+      radius: 23,
+      color: purpleColor,
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
@@ -4665,31 +4673,57 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        imageQuality: 78,
-        maxWidth: 1000,
-        maxHeight: 1000,
+        imageQuality: 90,
+        maxWidth: 1200,
+        maxHeight: 1200,
       );
 
       if (picked == null || !mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('প্রোফাইল ছবি আপলোড হচ্ছে...'),
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        cropStyle: CropStyle.circle,
+        aspectRatio: const CropAspectRatio(
+          ratioX: 1,
+          ratioY: 1,
         ),
+        maxWidth: 384,
+        maxHeight: 384,
+        compressFormat: ImageCompressFormat.jpg,
+        compressQuality: 72,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'প্রোফাইল ছবি ঠিক করো',
+            toolbarColor: const Color(0xFF111026),
+            toolbarWidgetColor: Colors.white,
+            activeControlsWidgetColor: pinkColor,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+            showCropGrid: true,
+            hideBottomControls: false,
+          ),
+          IOSUiSettings(
+            title: 'প্রোফাইল ছবি ঠিক করো',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
       );
 
-      final uploaded = await SpaceSyncService.uploadSharedMedia(
-        File(picked.path),
-      );
+      if (cropped == null || !mounted) return;
 
-      final fileId = (
-        uploaded['fileId'] ??
-        uploaded['driveFileId'] ??
-        ''
-      ).trim();
+      final croppedFile = File(cropped.path);
 
-      if (fileId.isEmpty) {
-        throw Exception('আপলোড করা ছবির ID পাওয়া যায়নি।');
+      if (!await croppedFile.exists()) {
+        throw Exception('ক্রপ করা ছবি পাওয়া যায়নি।');
+      }
+
+      final bytes = await croppedFile.readAsBytes();
+
+      if (bytes.isEmpty || bytes.length > 500 * 1024) {
+        throw Exception(
+          'ছবির আকার গ্রহণযোগ্য নয়। আবার ক্রপ করে চেষ্টা করো।',
+        );
       }
 
       final name = firstController.text.trim().isNotEmpty
@@ -4698,9 +4732,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
       await ChatSyncService.saveMyProfile(
         name: name,
-        photoFileId: fileId,
-        photoFileName:
-            uploaded['driveFileName'] ?? 'profile_photo.jpg',
+        photoBase64: base64Encode(bytes),
       );
 
       if (!mounted) return;
