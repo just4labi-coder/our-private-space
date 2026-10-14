@@ -2075,10 +2075,11 @@ class _ChatPageState extends State<ChatPage> {
           saveAs: '${fileId}_$name',
         );
 
-        if (result == null && identical(_mediaPathFutures[key], future)) {
-          _mediaPathFutures.remove(key);
-        }
-        return result;
+        if (!await File(result).exists() &&
+    identical(_mediaPathFutures[key], future)) {
+  _mediaPathFutures.remove(key);
+}
+return result;
       } catch (error) {
         if (identical(_mediaPathFutures[key], future)) {
           _mediaPathFutures.remove(key);
@@ -3349,10 +3350,11 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
           saveAs: safeName,
         );
 
-        if (result == null && identical(_pathFutures[key], future)) {
-          _pathFutures.remove(key);
-        }
-        return result;
+        if (!await File(result).exists() &&
+    identical(_pathFutures[key], future)) {
+  _pathFutures.remove(key);
+}
+return result;
       } catch (error) {
         if (identical(_pathFutures[key], future)) {
           _pathFutures.remove(key);
