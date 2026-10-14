@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'private_space_service.dart';
@@ -18,6 +19,8 @@ class SpaceSyncService {
 
   static const int _maxUploadBytes = 30 * 1024 * 1024;
   static const int _chunkSize = 1024 * 1024;
+
+  static final Map<String, Future<String>> _activeDownloads = {};
 
   static Future<User> _requireUser() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -271,12 +274,9 @@ class SpaceSyncService {
               .timeout(const Duration(minutes: 2));
 
           if (response.statusCode == 308) {
-            // Google Drive-এর Range header দেখে নিশ্চিত হও
-            // সার্ভার আসলে কত বাইট গ্রহণ করেছে।
             final range = response.headers['range'];
 
             if (range == null || range.isEmpty) {
-              // কোনো বাইট গ্রহণের নিশ্চয়তা নেই।
               retryCount++;
 
               if (retryCount > 3) {
@@ -400,8 +400,59 @@ class SpaceSyncService {
     required bool shared,
     String? saveAs,
   }) async {
-    if (fileId.trim().isEmpty) {
+    final id = fileId.trim();
+    if (id.isEmpty) {
       throw Exception('ফাইলের ID পাওয়া যায়নি।');
+    }
+
+    final key = '${shared ? 'shared' : 'personal'}:$id';
+
+    final active = _activeDownloads[key];
+    if (active != null) {
+      return active;
+    }
+
+    final future = _downloadAndCache(
+      fileId: id,
+      shared: shared,
+      saveAs: saveAs,
+    );
+
+    _activeDownloads[key] = future;
+
+    try {
+      return await future;
+    } finally {
+      if (identical(_activeDownloads[key], future)) {
+        _activeDownloads.remove(key);
+      }
+    }
+  }
+
+  static Future<String> _downloadAndCache({
+    required String fileId,
+    required bool shared,
+    String? saveAs,
+  }) async {
+    final safeId = fileId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final prefix = 'media_${shared ? 'shared' : 'personal'}_${safeId}__';
+
+    final directory = Directory(
+      '${Directory.systemTemp.path}/eternal_space_media',
+    );
+    await directory.create(recursive: true);
+
+    await for (final entity in directory.list()) {
+      if (entity is! File) continue;
+      final name = entity.uri.pathSegments.last;
+      if (!name.startsWith(prefix)) continue;
+
+      try {
+        if (await entity.exists() && await entity.length() > 0) {
+          return entity.path;
+        }
+        await entity.delete();
+      } catch (_) {}
     }
 
     final result = await _request(
@@ -416,22 +467,27 @@ class SpaceSyncService {
     }
 
     final bytes = base64Decode(encoded);
-    final directory = Directory(
-      '${Directory.systemTemp.path}/eternal_space_media',
-    );
-    await directory.create(recursive: true);
+    if (bytes.isEmpty) {
+      throw Exception('ডাউনলোড করা ফাইল খালি।');
+    }
 
-    var safeName = saveAs?.trim().isNotEmpty == true
+    var name = saveAs?.trim().isNotEmpty == true
         ? saveAs!.trim()
         : (result['name']?.toString() ?? 'media_$fileId');
 
-    safeName = safeName.replaceAll(RegExp(r'[/\\\x00-\x1F]'), '_');
+    name = name.replaceAll(RegExp(r'[/\\\x00-\x1F]'), '_');
 
-    final file = File('${directory.path}/$safeName');
+    final lastDot = name.lastIndexOf('.');
+    var extension = '';
+    if (lastDot > 0 && name.length - lastDot <= 10) {
+      extension = name.substring(lastDot).toLowerCase();
+    }
+
+    final file = File('${directory.path}/$prefix$extension');
     await file.writeAsBytes(bytes, flush: true);
 
     if (!await file.exists() || await file.length() == 0) {
-      throw Exception('ডাউনলোড করা ফাইল খালি।');
+      throw Exception('ডাউনলোড করা ফাইল সংরক্ষণ করা যায়নি।');
     }
 
     return file.path;
@@ -449,12 +505,42 @@ class SpaceSyncService {
   }) =>
       _download(fileId: fileId, shared: false, saveAs: saveAs);
 
+  static Future<void> _clearCachedMedia(
+    String fileId, {
+    required bool shared,
+  }) async {
+    final id = fileId.trim();
+    if (id.isEmpty) return;
+
+    final safeId = id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final prefix = 'media_${shared ? 'shared' : 'personal'}_${safeId}__';
+
+    final directory = Directory(
+      '${Directory.systemTemp.path}/eternal_space_media',
+    );
+
+    if (!await directory.exists()) return;
+
+    await for (final entity in directory.list()) {
+      if (entity is! File) continue;
+      final name = entity.uri.pathSegments.last;
+      if (!name.startsWith(prefix)) continue;
+
+      try {
+        await entity.delete();
+      } catch (error) {
+        debugPrint('Media cache delete error: $error');
+      }
+    }
+  }
+
   static Future<void> deleteSharedMedia(String fileId) async {
     await _request(
       'deleteShared',
       data: {'fileId': fileId},
       needsSpace: true,
     );
+    await _clearCachedMedia(fileId, shared: true);
   }
 
   static Future<void> deletePersonalMedia(String fileId) async {
@@ -462,6 +548,7 @@ class SpaceSyncService {
       'deletePersonal',
       data: {'fileId': fileId},
     );
+    await _clearCachedMedia(fileId, shared: false);
   }
 
   static Future<DocumentReference<Map<String, dynamic>>>
