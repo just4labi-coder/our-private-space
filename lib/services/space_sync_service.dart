@@ -438,8 +438,9 @@ class SpaceSyncService {
     final safeId = fileId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
     final prefix = 'media_${shared ? 'shared' : 'personal'}_${safeId}__';
 
+    final supportDirectory = await getApplicationSupportDirectory();
     final directory = Directory(
-      '${Directory.systemTemp.path}/eternal_space_media',
+      '${supportDirectory.path}/eternal_space_media',
     );
     await directory.create(recursive: true);
 
@@ -516,8 +517,9 @@ class SpaceSyncService {
     final safeId = id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
     final prefix = 'media_${shared ? 'shared' : 'personal'}_${safeId}__';
 
+    final supportDirectory = await getApplicationSupportDirectory();
     final directory = Directory(
-      '${Directory.systemTemp.path}/eternal_space_media',
+      '${supportDirectory.path}/eternal_space_media',
     );
 
     if (!await directory.exists()) return;
