@@ -19,6 +19,7 @@ import 'services/space_sync_service.dart';
 import 'services/chat_sync_service.dart';
 import 'screens/auth_screen.dart';
 import 'services/relationship_service.dart';
+import 'services/private_space_service.dart';
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -49,7 +50,6 @@ Future<void> main() async {
   await notifications.initialize(initializationSettings);
   await SpaceStore.init();
 
-  // লগইন যাচাই করার আগে Firebase Sync চালু হবে না।
   runApp(const EternalSpaceApp());
 }
 
@@ -162,11 +162,9 @@ class SpaceStore {
   }
 
   static Future<String?> _getSpaceId() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('eternal_space_id');
+    return PrivateSpaceService.getSavedSpaceId();
   }
 
-  // Space যুক্ত এবং connected না থাকলে কোনো Firebase sync নয়।
   static Future<String?> _getConnectedSpaceId() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
@@ -187,14 +185,12 @@ class SpaceStore {
 
       final members = data['memberUids'];
 
-      // দুজন সদস্য যুক্ত না হলে সংযোগ সম্পূর্ণ নয়।
       if (members is! List ||
           members.length != 2 ||
           !members.contains(user.uid)) {
         return null;
       }
 
-      // বিচ্ছিন্ন অবস্থায় কোনো শেয়ার করা ডেটা সিঙ্ক হবে না।
       final status = data['connectionStatus'] ?? 'connected';
       if (status != 'connected') return null;
 
@@ -233,10 +229,7 @@ class SpaceStore {
 
   static Future<void> syncAllToFirebase() async {
     final spaceId = await _getConnectedSpaceId();
-    if (spaceId == null) {
-      debugPrint('Sync বন্ধ: Space connected নয়।');
-      return;
-    }
+    if (spaceId == null) return;
 
     await init();
 
@@ -250,7 +243,6 @@ class SpaceStore {
     };
 
     for (final entry in data.entries) {
-      // আপলোডের সময়ও connected অবস্থা পুনরায় যাচাই হবে।
       if (await _getConnectedSpaceId() != spaceId) return;
       await _syncKey(entry.key, entry.value);
     }
@@ -262,10 +254,7 @@ class SpaceStore {
       if (user == null) return;
 
       final spaceId = await _getConnectedSpaceId();
-      if (spaceId == null) {
-        debugPrint('Download বন্ধ: Space connected নয়।');
-        return;
-      }
+      if (spaceId == null) return;
 
       final snapshot = await FirebaseFirestore.instance
           .collection('privateSpaces')
@@ -274,9 +263,7 @@ class SpaceStore {
           .doc('appState')
           .get();
 
-      // ডাউনলোড চলাকালে সংযোগ বিচ্ছিন্ন হলে স্থানীয় ডেটা বদলাবে না।
       if (await _getConnectedSpaceId() != spaceId) return;
-
       if (!snapshot.exists) return;
       await _applyRemoteData(snapshot.data());
     } catch (e) {
@@ -301,7 +288,6 @@ class SpaceStore {
           continue;
         }
 
-        // অন্য ফোনের local path বাদ দিয়ে Drive metadata সংরক্ষণ।
         if (entry.key == 'galleryMedia' && value is List) {
           final safeMedia = value.whereType<Map>().map((rawItem) {
             final item = Map<String, dynamic>.from(rawItem);
@@ -358,8 +344,6 @@ class SpaceStore {
 
         final data = snapshot.data();
         if (data == null) return;
-
-        // নিজের পরিবর্তন আবার ডাউনলোড করার দরকার নেই।
         if (data['updatedBy'] == user.uid) return;
 
         await _applyRemoteData(data);
@@ -401,18 +385,15 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     final user = FirebaseAuth.instance.currentUser;
-
     if (!mounted) return;
 
     if (user != null) {
-      // লগইন করা থাকলে সংযুক্ত Space-এর ডেটা লোড করো।
       try {
         await SpaceStore.syncFromFirebase();
       } catch (error) {
         debugPrint('Startup sync error: $error');
       }
 
-      // রিয়েল-টাইম সিঙ্ক চালু করো।
       try {
         await SpaceStore.startRealtimeSync();
       } catch (error) {
@@ -428,13 +409,11 @@ class _SplashScreenState extends State<SplashScreen> {
         ),
       );
     } else {
-      // Firebase-এ লগইন না থাকলে Login Screen দেখাও।
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => AuthScreen(
             onSuccess: () async {
-              // লগইন সফল হলে প্রথমেই Home-এ যাও।
               rootNavigatorKey.currentState?.pushAndRemoveUntil(
                 MaterialPageRoute(
                   builder: (_) => const MainScreen(),
@@ -442,7 +421,6 @@ class _SplashScreenState extends State<SplashScreen> {
                 (route) => false,
               );
 
-              // Home খোলার পর সিঙ্ক চালু করার চেষ্টা করো।
               try {
                 await SpaceStore.syncFromFirebase();
               } catch (error) {
@@ -522,7 +500,6 @@ class _GlowBackgroundState extends State<GlowBackground>
   @override
   void initState() {
     super.initState();
-
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 18),
@@ -642,8 +619,7 @@ class _MainScreenState extends State<MainScreen>
   String partnerTwo = '';
   bool hasUnreadChat = false;
 
-  StreamSubscription<List<Map<String, dynamic>>>?
-      _unreadSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _unreadSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _connectionSubscription;
   String? _watchedSpaceId;
   bool _connectionSyncBusy = false;
@@ -686,9 +662,7 @@ class _MainScreenState extends State<MainScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(
-    AppLifecycleState state,
-  ) {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _updatePresence(true);
       _startConnectionWatcher();
@@ -767,15 +741,12 @@ class _MainScreenState extends State<MainScreen>
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
 
-    _unreadSubscription =
-        ChatSyncService.watchMessages().listen(
+    _unreadSubscription = ChatSyncService.watchMessages().listen(
       (messages) {
         final unread = messages.any((message) {
-          final senderUid =
-              '${message['senderUid'] ?? ''}';
+          final senderUid = '${message['senderUid'] ?? ''}';
           final seenBy = message['seenBy'];
-          final alreadySeen =
-              seenBy is Map && seenBy[uid] == true;
+          final alreadySeen = seenBy is Map && seenBy[uid] == true;
 
           return senderUid.isNotEmpty &&
               senderUid != uid &&
@@ -786,8 +757,7 @@ class _MainScreenState extends State<MainScreen>
         if (!mounted) return;
 
         setState(() {
-          hasUnreadChat =
-              selectedIndex == 1 ? false : unread;
+          hasUnreadChat = selectedIndex == 1 ? false : unread;
         });
       },
       onError: (_) {},
@@ -2724,10 +2694,30 @@ class _GalleryPageState extends State<GalleryPage> {
     super.dispose();
   }
 
+  String _currentCreatorName() {
+    final user = FirebaseAuth.instance.currentUser;
+    final savedName = SpaceStore.readString('myDisplayName').trim();
+    final displayName = user?.displayName?.trim() ?? '';
+    final emailName = user?.email?.split('@').first.trim() ?? '';
+
+    if (savedName.isNotEmpty) return savedName;
+    if (displayName.isNotEmpty) return displayName;
+    if (emailName.isNotEmpty) return emailName;
+
+    return 'অজানা';
+  }
+
   Future<void> _save() async {
-    // আগে মিডিয়া সেভ হবে, যাতে sync listener পুরোনো তালিকা ফিরিয়ে না আনতে পারে।
-    await SpaceStore.saveList('galleryMedia', media);
-    await SpaceStore.saveList('galleryFolders', folders);
+    final foldersToSave = folders
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    final mediaToSave = media
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    await SpaceStore.saveList('galleryMedia', mediaToSave);
+    await SpaceStore.saveList('galleryFolders', foldersToSave);
   }
 
   Future<void> _createFolder() async {
@@ -2766,6 +2756,9 @@ class _GalleryPageState extends State<GalleryPage> {
       folders.add({
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
         'name': name,
+        'createdByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
+        'createdByName': _currentCreatorName(),
+        'createdAt': DateTime.now().toIso8601String(),
       });
     });
 
@@ -2823,6 +2816,8 @@ class _GalleryPageState extends State<GalleryPage> {
           content: Text(
             'Name: ${folder['name']}\n'
             'Items: $count\n'
+            'Created by: ${folder['createdByName'] ?? 'অজানা (পুরোনো ফোল্ডার)'}\n'
+            'Created: ${folder['createdAt'] ?? 'Unknown'}\n'
             'Folder ID: $id',
           ),
           actions: [
@@ -2945,7 +2940,6 @@ class _GalleryPageState extends State<GalleryPage> {
         : await picker.pickImage(source: ImageSource.gallery);
 
     if (picked == null) return null;
-
     if (!mounted) return null;
 
     Map<String, String> uploaded;
@@ -2969,6 +2963,8 @@ class _GalleryPageState extends State<GalleryPage> {
       'type': video ? 'video' : 'image',
       'folderId': folderId,
       'createdAt': DateTime.now().toIso8601String(),
+      'createdByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
+      'createdByName': _currentCreatorName(),
       ...uploaded,
     };
 
@@ -3092,6 +3088,7 @@ class _GalleryPageState extends State<GalleryPage> {
         content: Text(
           'Type: ${item['type']}\n'
           'Added: ${item['createdAt'] ?? 'Unknown'}\n'
+          'Added by: ${item['createdByName'] ?? 'অজানা (পুরোনো ফাইল)'}\n'
           'Folder: ${_folderName('${item['folderId']}')}',
         ),
         actions: [
@@ -3411,33 +3408,14 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                     return GestureDetector(
                       onLongPress: () => widget.onLongPress(item),
                       onTap: () async {
-                        final resolvedPath = video
-                            ? (item['path'] ?? '').toString().isNotEmpty &&
-                                    await File(item['path']).exists()
-                                ? item['path']
-                                : await _resolveLocalPath(item)
-                            : await _resolveLocalPath(item);
-
-                        if (!mounted) return;
-
-                        if (resolvedPath == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'ফাইল পাওয়া যায়নি। ইন্টারনেট, '
-                                'Partner Connection এবং Drive আপলোড পরীক্ষা করো।',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => video
-                                ? VideoViewerPage(path: resolvedPath)
-                                : ImageViewerPage(path: resolvedPath),
+                            builder: (_) => GalleryMediaViewerPage(
+                              items: List<Map<String, dynamic>>.from(items),
+                              initialIndex: index,
+                              resolvePath: _resolveLocalPath,
+                            ),
                           ),
                         );
                       },
@@ -3534,13 +3512,295 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
 }
 
 // ============================================================
-// IMAGE VIEWER
+// GALLERY MEDIA VIEWER & PLAYERS
 // ============================================================
+
+class GalleryMediaViewerPage extends StatefulWidget {
+  final List<Map<String, dynamic>> items;
+  final int initialIndex;
+  final Future<String?> Function(Map<String, dynamic>) resolvePath;
+
+  const GalleryMediaViewerPage({
+    super.key,
+    required this.items,
+    required this.initialIndex,
+    required this.resolvePath,
+  });
+
+  @override
+  State<GalleryMediaViewerPage> createState() =>
+      _GalleryMediaViewerPageState();
+}
+
+class _GalleryMediaViewerPageState
+    extends State<GalleryMediaViewerPage> {
+  late final PageController _pageController;
+  late int currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: currentIndex);
+  }
+
+  int? _previousVideoIndex(int from) {
+    for (var i = from - 1; i >= 0; i--) {
+      if (widget.items[i]['type'] == 'video') return i;
+    }
+    return null;
+  }
+
+  int? _nextVideoIndex(int from) {
+    for (var i = from + 1; i < widget.items.length; i++) {
+      if (widget.items[i]['type'] == 'video') return i;
+    }
+    return null;
+  }
+
+  void _goTo(int? index) {
+    if (index == null) return;
+
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: Text('${currentIndex + 1} / ${widget.items.length}'),
+        centerTitle: true,
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.items.length,
+        onPageChanged: (index) {
+          setState(() => currentIndex = index);
+        },
+        itemBuilder: (context, index) {
+          final item = widget.items[index];
+          final isVideo = item['type'] == 'video';
+
+          return FutureBuilder<String?>(
+            future: widget.resolvePath(item),
+            builder: (context, snapshot) {
+              final path = snapshot.data;
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              if (path == null) {
+                return const Center(
+                  child: Text(
+                    'ফাইল পাওয়া যায়নি। ইন্টারনেট ও Drive পরীক্ষা করো।',
+                    textAlign: TextAlign.center,
+                  ),
+                );
+              }
+
+              if (!isVideo) {
+                return Center(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 5,
+                    child: Image.file(
+                      File(path),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) {
+                        return const Text('ছবিটি খোলা যাচ্ছে না।');
+                      },
+                    ),
+                  ),
+                );
+              }
+
+              return _GalleryVideoPlayer(
+                key: ValueKey(path),
+                path: path,
+                onPrevious: () => _goTo(_previousVideoIndex(index)),
+                onNext: () => _goTo(_nextVideoIndex(index)),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _GalleryVideoPlayer extends StatefulWidget {
+  final String path;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  const _GalleryVideoPlayer({
+    super.key,
+    required this.path,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  @override
+  State<_GalleryVideoPlayer> createState() =>
+      _GalleryVideoPlayerState();
+}
+
+class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
+  VideoPlayerController? _controller;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    final video = VideoPlayerController.file(File(widget.path));
+    _controller = video;
+
+    try {
+      await video.initialize();
+
+      if (!mounted) {
+        await video.dispose();
+        return;
+      }
+
+      setState(() {});
+      await video.play();
+    } catch (error) {
+      await video.dispose();
+
+      if (mounted) {
+        setState(() {
+          _controller = null;
+          _error = 'ভিডিও খোলা যাচ্ছে না। আবার চেষ্টা করো।';
+        });
+      }
+    }
+  }
+
+  Future<void> _togglePlayback() async {
+    final video = _controller;
+    if (video == null || !video.value.isInitialized) return;
+
+    if (video.value.isPlaying) {
+      await video.pause();
+    } else {
+      await video.play();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final video = _controller;
+
+    if (_error != null) {
+      return Center(child: Text(_error!));
+    }
+
+    if (video == null || !video.value.isInitialized) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    return Center(
+      child: AspectRatio(
+        aspectRatio: video.value.aspectRatio,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            VideoPlayer(video),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'আগের ভিডিও',
+                      onPressed: widget.onPrevious,
+                      icon: const Icon(Icons.skip_previous_rounded),
+                    ),
+                    Expanded(
+                      child: VideoProgressIndicator(
+                        video,
+                        allowScrubbing: true,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 4,
+                        ),
+                      ),
+                    ),
+                    ValueListenableBuilder<VideoPlayerValue>(
+                      valueListenable: video,
+                      builder: (context, value, child) {
+                        return IconButton(
+                          tooltip: value.isPlaying ? 'Pause' : 'Play',
+                          onPressed: _togglePlayback,
+                          icon: Icon(
+                            value.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                          ),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'পরের ভিডিও',
+                      onPressed: widget.onNext,
+                      icon: const Icon(Icons.skip_next_rounded),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class ImageViewerPage extends StatelessWidget {
   final String path;
 
-  const ImageViewerPage({super.key, required this.path});
+  const ImageViewerPage({
+    super.key,
+    required this.path,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -3555,7 +3815,7 @@ class ImageViewerPage extends StatelessWidget {
             File(path),
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) {
-              return const Text('Image is no longer available');
+              return const Text('ছবিটি পাওয়া যাচ্ছে না।');
             },
           ),
         ),
@@ -3564,103 +3824,23 @@ class ImageViewerPage extends StatelessWidget {
   }
 }
 
-// ============================================================
-// VIDEO VIEWER
-// ============================================================
-
-class VideoViewerPage extends StatefulWidget {
+class VideoViewerPage extends StatelessWidget {
   final String path;
 
-  const VideoViewerPage({super.key, required this.path});
-
-  @override
-  State<VideoViewerPage> createState() => _VideoViewerPageState();
-}
-
-class _VideoViewerPageState extends State<VideoViewerPage> {
-  VideoPlayerController? controller;
-  String? error;
-
-  @override
-  void initState() {
-    super.initState();
-    _initialize();
-  }
-
-  Future<void> _initialize() async {
-    VideoPlayerController? video;
-
-    try {
-      video = VideoPlayerController.file(File(widget.path));
-      await video.initialize();
-
-      if (!mounted) {
-        await video.dispose();
-        return;
-      }
-
-      setState(() => controller = video);
-      await video.play();
-    } catch (_) {
-      await video?.dispose();
-
-      if (mounted) {
-        setState(() => error = 'Unable to open this video.');
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    controller?.dispose();
-    super.dispose();
-  }
+  const VideoViewerPage({
+    super.key,
+    required this.path,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(backgroundColor: Colors.black),
-      body: Center(
-        child: error != null
-            ? Text(error!)
-            : controller == null
-                ? const CircularProgressIndicator()
-                : AspectRatio(
-                    aspectRatio: controller!.value.aspectRatio,
-                    child: Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        VideoPlayer(controller!),
-                        VideoProgressIndicator(
-                          controller!,
-                          allowScrubbing: true,
-                          padding: const EdgeInsets.all(12),
-                        ),
-                        Align(
-                          alignment: Alignment.center,
-                          child: IconButton.filled(
-                            onPressed: () {
-                              final video = controller!;
-
-                              setState(() {
-                                if (video.value.isPlaying) {
-                                  video.pause();
-                                } else {
-                                  video.play();
-                                }
-                              });
-                            },
-                            icon: Icon(
-                              controller!.value.isPlaying
-                                  ? Icons.pause
-                                  : Icons.play_arrow,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+      body: _GalleryVideoPlayer(
+        path: path,
+        onPrevious: null,
+        onNext: null,
       ),
     );
   }
