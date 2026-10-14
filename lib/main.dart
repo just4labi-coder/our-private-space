@@ -2008,6 +2008,11 @@ class _ChatPageState extends State<ChatPage> {
   StreamSubscription<List<Map<String, dynamic>>>? _chatSubscription;
   final Map<String, Future<String?>> _mediaPathFutures = {};
 
+  String? _pendingMediaName;
+  bool _pendingMediaVideo = false;
+  double _pendingMediaProgress = 0;
+  double _pendingMediaSpeed = 0;
+
   late final Stream<Map<String, dynamic>?> _spaceStream;
   late final Stream<List<Map<String, dynamic>>> _profilesStream;
 
@@ -2043,6 +2048,9 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    SpaceSyncService.uploadProgress.addListener(
+      _handleUploadProgressChanged,
+    );
     _spaceStream = ChatSyncService.watchSpaceData();
     _profilesStream = ChatSyncService.watchMemberProfiles();
 
@@ -2061,6 +2069,26 @@ class _ChatPageState extends State<ChatPage> {
 
     _startChatSync();
     _saveOwnProfile();
+  }
+
+  void _handleUploadProgressChanged() {
+    final name = _pendingMediaName;
+    if (!mounted || name == null) return;
+
+    for (final upload in SpaceSyncService.uploadProgress.value) {
+      if (upload.fileName == name && upload.isUploading) {
+        final progress = upload.progress.clamp(0.0, 1.0).toDouble();
+
+        if (_pendingMediaProgress != progress ||
+            _pendingMediaSpeed != upload.bytesPerSecond) {
+          setState(() {
+            _pendingMediaProgress = progress;
+            _pendingMediaSpeed = upload.bytesPerSecond;
+          });
+        }
+        return;
+      }
+    }
   }
 
   Future<void> _saveOwnProfile() async {
@@ -2110,6 +2138,9 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    SpaceSyncService.uploadProgress.removeListener(
+      _handleUploadProgressChanged,
+    );
     _profilesSubscription?.cancel();
     _chatSubscription?.cancel();
     controller.dispose();
@@ -2186,6 +2217,15 @@ class _ChatPageState extends State<ChatPage> {
       return;
     }
 
+    if (_pendingMediaName != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('আগের ফাইলটির আপলোড শেষ হলে আবার চেষ্টা করো।'),
+        ),
+      );
+      return;
+    }
+
     final picker = ImagePicker();
     final picked = video
         ? await picker.pickVideo(source: ImageSource.gallery)
@@ -2193,14 +2233,23 @@ class _ChatPageState extends State<ChatPage> {
 
     if (picked == null || !mounted) return;
 
-    try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ফাইল আপলোড হচ্ছে...')),
-      );
+    final file = File(picked.path);
+    final fileName = file.uri.pathSegments.isNotEmpty
+        ? file.uri.pathSegments.last
+        : 'chat_media';
 
-      final uploaded = await SpaceSyncService.uploadSharedMedia(
-        File(picked.path),
-      );
+    setState(() {
+      _pendingMediaName = fileName;
+      _pendingMediaVideo = video;
+      _pendingMediaProgress = 0;
+      _pendingMediaSpeed = 0;
+    });
+
+    _scrollToBottom();
+
+    try {
+      final uploaded =
+          await SpaceSyncService.uploadSharedMedia(file);
 
       final fileId =
           (uploaded['fileId'] ?? uploaded['driveFileId'] ?? '').trim();
@@ -2216,8 +2265,7 @@ class _ChatPageState extends State<ChatPage> {
         'type': video ? 'video' : 'image',
         'fileId': fileId,
         'driveFileId': fileId,
-        'driveFileName':
-            uploaded['driveFileName'] ?? 'chat_media',
+        'driveFileName': uploaded['driveFileName'] ?? fileName,
         'mimeType': uploaded['mimeType'] ?? '',
         'storage': 'shared',
         'mine': true,
@@ -2225,21 +2273,51 @@ class _ChatPageState extends State<ChatPage> {
         'time': DateTime.now().toIso8601String(),
       };
 
+      if (!mounted) return;
+
+      setState(() {
+        _pendingMediaProgress = 1;
+      });
+
       await ChatSyncService.sendMessage(message);
       _scrollToBottom();
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(video ? 'ভিডিও পাঠানো হয়েছে।' : 'ছবি পাঠানো হয়েছে।'),
+          content: Text(
+            video ? 'ভিডিও পাঠানো হয়েছে।' : 'ছবি পাঠানো হয়েছে।',
+          ),
         ),
       );
     } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('মিডিয়া পাঠানো যায়নি: $error')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('মিডিয়া পাঠানো যায়নি: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingMediaName = null;
+          _pendingMediaProgress = 0;
+          _pendingMediaSpeed = 0;
+        });
+      }
     }
+  }
+
+  String _formatChatUploadSpeed(double bytesPerSecond) {
+    if (bytesPerSecond >= 1024 * 1024) {
+      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    }
+
+    if (bytesPerSecond >= 1024) {
+      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    }
+
+    return '${bytesPerSecond.toStringAsFixed(0)} B/s';
   }
 
   void _scrollToBottom() {
@@ -2592,6 +2670,105 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Widget _buildPendingMediaMessage() {
+    final fileName = _pendingMediaName ?? 'মিডিয়া ফাইল';
+    final progress =
+        _pendingMediaProgress.clamp(0.0, 1.0).toDouble();
+    final percent = (progress * 100).round();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Flexible(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+              ),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF453078),
+                border: Border.all(
+                  color: pinkColor.withValues(alpha: 0.35),
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _pendingMediaVideo
+                            ? Icons.videocam_rounded
+                            : Icons.image_rounded,
+                        color: pinkColor,
+                        size: 25,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          fileName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$percent%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 5,
+                      backgroundColor: Colors.white12,
+                      valueColor:
+                          const AlwaysStoppedAnimation<Color>(pinkColor),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'আপলোড হচ্ছে...',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        _formatChatUploadSpeed(_pendingMediaSpeed),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessage(Map<String, dynamic> message, int index) {
     final mine = _isMine(message);
     final senderUid = '${message['senderUid'] ?? ''}';
@@ -2848,7 +3025,7 @@ class _ChatPageState extends State<ChatPage> {
         _buildChatHeader(),
         const Divider(height: 1, color: Colors.white10),
         Expanded(
-          child: messages.isEmpty
+          child: messages.isEmpty && _pendingMediaName == null
               ? const Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -2869,8 +3046,13 @@ class _ChatPageState extends State<ChatPage> {
               : ListView.builder(
                   controller: scrollController,
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                  itemCount: messages.length,
+                  itemCount:
+                      messages.length + (_pendingMediaName != null ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (index >= messages.length) {
+                      return _buildPendingMediaMessage();
+                    }
+
                     return _buildMessage(messages[index], index);
                   },
                 ),
