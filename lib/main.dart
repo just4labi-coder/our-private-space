@@ -915,6 +915,106 @@ class _MainScreenState extends State<MainScreen>
     _startUnreadWatcher();
     _updatePresence(true);
     _startConnectionWatcher();
+    _recoverPendingUploads();
+  }
+
+  Future<void> _recoverPendingUploads() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await SpaceSyncService.resumePendingUploads();
+
+      final pending = await SpaceSyncService.getPendingUploads();
+
+      for (final task in pending) {
+        if (task['status'] != 'completed') continue;
+
+        final taskId = '${task['id'] ?? ''}';
+        final rawMetadata = task['metadata'];
+        final rawResult = task['result'];
+
+        if (taskId.isEmpty ||
+            rawMetadata is! Map ||
+            rawResult is! Map) {
+          continue;
+        }
+
+        final metadata = Map<String, dynamic>.from(rawMetadata);
+        final uploaded = Map<String, dynamic>.from(rawResult);
+
+        if ('${metadata['senderUid'] ?? ''}' != user.uid &&
+            metadata['purpose'] == 'chat') {
+          continue;
+        }
+
+        final fileId =
+            '${uploaded['fileId'] ?? uploaded['driveFileId'] ?? ''}';
+        if (fileId.isEmpty) continue;
+
+        final purpose = '${metadata['purpose'] ?? ''}';
+
+        try {
+          if (purpose == 'chat') {
+            final messageId = '${metadata['messageId'] ?? ''}';
+            if (messageId.isEmpty) continue;
+
+            await ChatSyncService.sendMessage({
+              'id': messageId,
+              'senderUid': user.uid,
+              'text': '${task['filePath'] ?? ''}',
+              'type': metadata['type'] ?? 'image',
+              'fileId': fileId,
+              'driveFileId': fileId,
+              'driveFileName':
+                  uploaded['driveFileName'] ?? metadata['fileName'] ?? 'media',
+              'mimeType': uploaded['mimeType'] ?? '',
+              'storage': 'shared',
+              'mine': true,
+              'unsent': false,
+              'time': metadata['createdAt'] ??
+                  DateTime.now().toIso8601String(),
+            });
+          } else if (purpose == 'gallery') {
+            final galleryItems = SpaceStore.readList('galleryMedia');
+            final itemId = '${metadata['itemId'] ?? ''}';
+
+            final alreadySaved = galleryItems.any((item) =>
+                '${item['id'] ?? ''}' == itemId ||
+                '${item['fileId'] ?? item['driveFileId'] ?? ''}' ==
+                    fileId);
+
+            if (!alreadySaved) {
+              final item = <String, dynamic>{
+                'id': itemId.isNotEmpty ? itemId : 'drive_$fileId',
+                'type': metadata['type'] ?? 'image',
+                'folderId': metadata['folderId'] ?? 'all',
+                'createdByUid': metadata['createdByUid'] ?? user.uid,
+                'createdByName': metadata['createdByName'] ?? '',
+                'createdAt': metadata['createdAt'] ??
+                    DateTime.now().toIso8601String(),
+                'storage': 'shared',
+                ...uploaded.map(
+                  (key, value) => MapEntry(key, value),
+                ),
+              };
+
+              item.remove('_uploadTaskId');
+              galleryItems.add(item);
+              await SpaceStore.saveList('galleryMedia', galleryItems);
+            }
+          } else {
+            continue;
+          }
+
+          await SpaceSyncService.acknowledgeUpload(taskId);
+        } catch (error) {
+          debugPrint('Pending upload recovery failed ($taskId): $error');
+        }
+      }
+    } catch (error) {
+      debugPrint('Upload recovery error: $error');
+    }
   }
 
   Future<void> _loadPartnerNames() async {
@@ -2238,6 +2338,10 @@ class _ChatPageState extends State<ChatPage> {
         ? file.uri.pathSegments.last
         : 'chat_media';
 
+    final messageId =
+        DateTime.now().microsecondsSinceEpoch.toString();
+    final uploadCreatedAt = DateTime.now().toIso8601String();
+
     setState(() {
       _pendingMediaName = fileName;
       _pendingMediaVideo = video;
@@ -2248,8 +2352,17 @@ class _ChatPageState extends State<ChatPage> {
     _scrollToBottom();
 
     try {
-      final uploaded =
-          await SpaceSyncService.uploadSharedMedia(file);
+      final uploaded = await SpaceSyncService.uploadSharedMedia(
+        file,
+        metadata: {
+          'purpose': 'chat',
+          'messageId': messageId,
+          'senderUid': user.uid,
+          'type': video ? 'video' : 'image',
+          'fileName': fileName,
+          'createdAt': uploadCreatedAt,
+        },
+      );
 
       final fileId =
           (uploaded['fileId'] ?? uploaded['driveFileId'] ?? '').trim();
@@ -2259,7 +2372,7 @@ class _ChatPageState extends State<ChatPage> {
       }
 
       final message = <String, dynamic>{
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'id': messageId,
         'senderUid': user.uid,
         'text': picked.path,
         'type': video ? 'video' : 'image',
@@ -2270,7 +2383,7 @@ class _ChatPageState extends State<ChatPage> {
         'storage': 'shared',
         'mine': true,
         'unsent': false,
-        'time': DateTime.now().toIso8601String(),
+        'time': uploadCreatedAt,
       };
 
       if (!mounted) return;
@@ -2280,6 +2393,12 @@ class _ChatPageState extends State<ChatPage> {
       });
 
       await ChatSyncService.sendMessage(message);
+      
+      final taskId = uploaded['_uploadTaskId'] ?? '';
+      if (taskId.isNotEmpty) {
+        await SpaceSyncService.acknowledgeUpload(taskId);
+      }
+
       _scrollToBottom();
 
       if (!mounted) return;
@@ -3426,11 +3545,27 @@ class _GalleryPageState extends State<GalleryPage> {
     if (picked == null) return null;
     if (!mounted) return null;
 
+    final itemId = DateTime.now().microsecondsSinceEpoch.toString();
+    final uploadCreatedAt = DateTime.now().toIso8601String();
+    final creatorUid =
+        FirebaseAuth.instance.currentUser?.uid ?? '';
+    final creatorName = _currentCreatorName();
+
     Map<String, String> uploaded;
 
     try {
       uploaded = await SpaceSyncService.uploadSharedMedia(
         File(picked.path),
+        metadata: {
+          'purpose': 'gallery',
+          'itemId': itemId,
+          'type': video ? 'video' : 'image',
+          'folderId': folderId,
+          'createdByUid': creatorUid,
+          'createdByName': creatorName,
+          'createdAt': uploadCreatedAt,
+          'fileName': picked.name,
+        },
       );
     } catch (e) {
       if (mounted) {
@@ -3442,13 +3577,13 @@ class _GalleryPageState extends State<GalleryPage> {
     }
 
     final item = <String, dynamic>{
-      'id': DateTime.now().microsecondsSinceEpoch.toString(),
+      'id': itemId,
       'path': picked.path,
       'type': video ? 'video' : 'image',
       'folderId': folderId,
-      'createdAt': DateTime.now().toIso8601String(),
-      'createdByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
-      'createdByName': _currentCreatorName(),
+      'createdAt': uploadCreatedAt,
+      'createdByUid': creatorUid,
+      'createdByName': creatorName,
       ...uploaded,
     };
 
@@ -3457,6 +3592,12 @@ class _GalleryPageState extends State<GalleryPage> {
     });
 
     await _save();
+    
+    final taskId = uploaded['_uploadTaskId'] ?? '';
+    if (taskId.isNotEmpty) {
+      await SpaceSyncService.acknowledgeUpload(taskId);
+    }
+
     return item;
   }
 
