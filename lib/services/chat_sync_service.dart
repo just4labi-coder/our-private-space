@@ -235,6 +235,45 @@ class ChatSyncService {
     });
   }
 
+  /// নির্দিষ্ট সদস্যের Typing Status রিয়েল-টাইমে শোনে।
+  static Stream<Map<String, dynamic>?> watchMemberTyping(
+    String uid,
+  ) async* {
+    if (uid.trim().isEmpty) {
+      yield null;
+      return;
+    }
+
+    final ref = await _membersRef();
+
+    yield* ref.doc(uid).snapshots().map((snapshot) {
+      if (!snapshot.exists) return null;
+      final data = snapshot.data();
+      if (data == null) return null;
+
+      final isTyping = data['isTyping'] == true;
+      final updatedAt = data['typingUpdatedAt'];
+
+      if (!isTyping) {
+        return <String, dynamic>{'isTyping': false};
+      }
+
+      if (updatedAt is! Timestamp) {
+        return <String, dynamic>{'isTyping': false};
+      }
+
+      final age = DateTime.now().difference(
+        updatedAt.toDate(),
+      );
+
+      if (age.isNegative || age.inSeconds > 8) {
+        return <String, dynamic>{'isTyping': false};
+      }
+
+      return <String, dynamic>{'isTyping': true};
+    });
+  }
+
   static Future<void> saveMyProfile({
     required String name,
     String? photoUrl,
