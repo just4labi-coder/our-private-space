@@ -370,4 +370,25 @@ class ChatSyncService {
       'unsentAt': FieldValue.serverTimestamp(),
     });
   }
+
+  /// নিজের Typing Status Firebase-এ সংরক্ষণ করে।
+  static Future<void> setTyping({
+    required bool isTyping,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final ref = await _membersRef();
+
+    await ref.doc(user.uid).set({
+      'uid': user.uid,
+      'isTyping': isTyping,
+      'typingUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// নিজের Typing Status বন্ধ করে।
+  static Future<void> clearTyping() async {
+    await setTyping(isTyping: false);
+  }
 }
