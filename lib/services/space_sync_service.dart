@@ -262,7 +262,7 @@ class SpaceSyncService {
       case 'FILE_DATA_REQUIRED':
         return 'আপলোড করার ফাইল পাওয়া যায়নি।';
       case 'FILE_TOO_LARGE':
-        return 'ফাইলটি ৩০ MB সীমা অতিক্রম করেছে।';
+        return 'ফাইলটি ১৫০ MB সীমা অতিক্রম করেছে।';
       case 'DOWNLOAD_TOO_LARGE':
         return 'ফাইলটি বর্তমান ডাউনলোড সীমার চেয়ে বড়।';
       case 'INVALID_FILE_ID':
@@ -668,7 +668,7 @@ class SpaceSyncService {
     final length = await file.length();
     if (length <= 0) throw Exception('ফাইলটি খালি।');
     if (length > _maxUploadBytes) {
-      throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
+      throw Exception('একটি ফাইল সর্বোচ্চ ১৫০ MB হতে পারবে।');
     }
 
     final support = await getApplicationSupportDirectory();
@@ -1049,7 +1049,7 @@ class SpaceSyncService {
     }));
 
     if (bytes.length > _maxUploadBytes) {
-      throw Exception('ব্যাকআপটি ৩০ MB সীমা অতিক্রম করেছে।');
+      throw Exception('ব্যাকআপটি ১৫০ MB সীমা অতিক্রম করেছে।');
     }
 
     final tempDir = await Directory.systemTemp.createTemp(
