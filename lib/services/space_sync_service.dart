@@ -239,21 +239,34 @@ class SpaceSyncService {
       var result = await http.Response.fromStream(response)
           .timeout(const Duration(seconds: 90));
 
+      debugPrint(
+        '[MediaAPI] action=$action '
+        'status=${result.statusCode} '
+        'redirect=${result.headers['location'] != null}',
+      );
+
       if ([301, 302, 303, 307, 308].contains(result.statusCode)) {
         final location = result.headers['location'];
+
         if (location == null) {
           throw Exception('সার্ভারের Redirect ঠিকানা পাওয়া যায়নি।');
         }
 
         final uri = Uri.parse(location);
+
         if (uri.scheme != 'https' ||
             !uri.host.endsWith('googleusercontent.com')) {
           throw Exception('সার্ভারের Redirect ঠিকানা নিরাপদ নয়।');
         }
 
         result = await client.get(uri).timeout(
-              const Duration(seconds: 90),
-            );
+          const Duration(seconds: 90),
+        );
+
+        debugPrint(
+          '[MediaAPI] action=$action '
+          'redirectStatus=${result.statusCode}',
+        );
       }
 
       if (result.statusCode < 200 || result.statusCode >= 300) {
@@ -261,6 +274,7 @@ class SpaceSyncService {
       }
 
       final decoded = jsonDecode(result.body);
+
       if (decoded is! Map) {
         throw Exception('সার্ভারের উত্তর সঠিক নয়।');
       }
@@ -272,13 +286,23 @@ class SpaceSyncService {
       }
 
       final dataResult = decoded['data'];
+
       if (dataResult is Map) {
         return Map<String, dynamic>.from(dataResult);
       }
 
       return {};
     } on TimeoutException {
-      throw Exception('সার্ভারে উত্তর পেতে দেরি হচ্ছে। আবার চেষ্টা করো।');
+      debugPrint('[MediaAPI] action=$action timeout');
+
+      throw Exception(
+        'সার্ভারে উত্তর পেতে দেরি হচ্ছে। আবার চেষ্টা করো।',
+      );
+    } catch (error) {
+      debugPrint(
+        '[MediaAPI] action=$action errorType=${error.runtimeType}',
+      );
+      rethrow;
     } finally {
       client.close();
     }
@@ -423,6 +447,11 @@ class SpaceSyncService {
         final response = await http.Response.fromStream(streamed)
             .timeout(const Duration(minutes: 2));
 
+        debugPrint(
+          '[MediaUpload] sessionCheck '
+          'status=${response.statusCode} host=${uri.host}',
+        );
+
         if (response.statusCode == 200 ||
             response.statusCode == 201) {
           final decoded = jsonDecode(response.body);
@@ -548,6 +577,13 @@ class SpaceSyncService {
 
           final response = await http.Response.fromStream(streamed)
               .timeout(const Duration(minutes: 2));
+
+          debugPrint(
+            '[MediaUpload] chunkUpload '
+            'status=${response.statusCode} '
+            'offset=$offset/$length '
+            'host=${Uri.parse(sessionUrl).host}',
+          );
 
           if (response.statusCode == 308) {
             final range = response.headers['range'];
@@ -938,6 +974,12 @@ class SpaceSyncService {
           final recordedSize = int.tryParse(
             (await marker.readAsString()).trim(),
           );
+
+          debugPrint(
+            '[MediaCache] validCandidate '
+            'bytes=${await entity.length()}',
+          );
+
           if (recordedSize == await entity.length()) {
             return entity.path;
           }
@@ -946,6 +988,11 @@ class SpaceSyncService {
         if (await marker.exists()) await marker.delete();
       } catch (_) {}
     }
+
+    debugPrint(
+      '[MediaCache] cacheMiss '
+      'shared=$shared fileId=$safeId',
+    );
 
     final needsSpace = shared;
     final info = await _request(
