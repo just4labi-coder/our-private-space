@@ -1,4 +1,4 @@
-import 'dart:async';
+Import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -2134,6 +2134,7 @@ class _ChatPageState extends State<ChatPage> {
 
   bool _isTypingSent = false;
   int _typingRequestId = 0;
+  Timer? _typingHeartbeatTimer;
 
   String? _pendingMediaName;
   bool _pendingMediaVideo = false;
@@ -2219,34 +2220,59 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _handleTypingChanged(String value) {
-    final requestId = ++_typingRequestId;
     final shouldType = value.trim().isNotEmpty;
-    if (shouldType != _isTypingSent) {
-      _isTypingSent = shouldType;
-      unawaited(
-        ChatSyncService.setTyping(isTyping: shouldType).catchError(
-          (Object error) {
-            debugPrint('Typing status update failed: $error');
-          },
-        ),
+
+    if (shouldType) {
+      if (!_isTypingSent) {
+        _isTypingSent = true;
+
+        unawaited(
+          ChatSyncService.setTyping(isTyping: true).catchError(
+            (Object error) {
+              debugPrint('Typing status update failed: $error');
+            },
+          ),
+        );
+      }
+
+      _typingHeartbeatTimer ??= Timer.periodic(
+        const Duration(seconds: 3),
+        (_) {
+          if (!mounted || controller.text.trim().isEmpty) {
+            return;
+          }
+
+          unawaited(
+            ChatSyncService.setTyping(isTyping: true).catchError(
+              (Object error) {
+                debugPrint('Typing heartbeat failed: $error');
+              },
+            ),
+          );
+        },
       );
+    } else {
+      _typingHeartbeatTimer?.cancel();
+      _typingHeartbeatTimer = null;
+
+      if (_isTypingSent) {
+        _isTypingSent = false;
+
+        unawaited(
+          ChatSyncService.clearTyping().catchError(
+            (Object error) {
+              debugPrint('Typing status clear failed: $error');
+            },
+          ),
+        );
+      }
     }
-    if (!shouldType) return;
-    Future<void>.delayed(const Duration(seconds: 3), () async {
-      if (!mounted || requestId != _typingRequestId || controller.text.trim().isNotEmpty) {
-        return;
-      }
-      _isTypingSent = false;
-      try {
-        await ChatSyncService.clearTyping();
-      } catch (error) {
-        debugPrint('Typing status clear failed: $error');
-      }
-    });
   }
 
   Future<void> _stopTyping() async {
     ++_typingRequestId;
+    _typingHeartbeatTimer?.cancel();
+    _typingHeartbeatTimer = null;
     if (!_isTypingSent) return;
     _isTypingSent = false;
     try {
@@ -2303,6 +2329,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _typingHeartbeatTimer?.cancel();
     SpaceSyncService.uploadProgress.removeListener(
       _handleUploadProgressChanged,
     );
@@ -2814,7 +2841,14 @@ class _ChatPageState extends State<ChatPage> {
       return ValueListenableBuilder<bool>(
         valueListenable: DataSaverSettings.enabled,
         builder: (context, dataSaverEnabled, _) {
-          final shouldDownload = !dataSaverEnabled ||
+          final localMediaPath =
+              '${message['text'] ?? message['path'] ?? ''}'.trim();
+
+          final senderHasLocalFile = localMediaPath.isNotEmpty &&
+              File(localMediaPath).existsSync();
+
+          final shouldDownload = senderHasLocalFile ||
+              !dataSaverEnabled ||
               _requestedMediaDownloads.contains(mediaKey);
 
           return FutureBuilder<String?>(
@@ -3894,41 +3928,65 @@ class _GalleryPageState extends State<GalleryPage> {
     ).toString().trim();
 
     final itemId = '${item['id'] ?? ''}';
+    final originalIndex = media.indexWhere(
+      (m) => '${m['id'] ?? ''}' == itemId,
+    );
 
-    if (driveId.isNotEmpty) {
-      try {
-        await SpaceSyncService.deleteSharedMedia(driveId);
-      } catch (error) {
-        if (!mounted) return;
+    if (originalIndex == -1) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'মুছতে সমস্যা হয়েছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
-            ),
-          ),
-        );
-        return;
-      }
-    }
+    final removedItem = Map<String, dynamic>.from(
+      media[originalIndex],
+    );
 
-    if (!mounted) return;
-
+    // আগে গ্যালারি থেকে সরিয়ে দাও।
     setState(() {
-      media.removeWhere((m) {
-        return '${m['id'] ?? ''}' == itemId;
-      });
+      media.removeAt(originalIndex);
     });
 
-    await _save();
+    try {
+      await _save();
 
-    if (!mounted) return;
+      // Drive-এ থাকা ফাইলটি পেছনে মুছে ফেলো।
+      if (driveId.isNotEmpty) {
+        await SpaceSyncService.deleteSharedMedia(driveId);
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('গ্যালারি থেকে সরানো হয়েছে।'),
-      ),
-    );
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('গ্যালারি থেকে সরানো হয়েছে।'),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Gallery delete failed: $error');
+
+      // সার্ভারে মুছতে ব্যর্থ হলে আইটেমটি ফিরিয়ে দাও।
+      if (!mounted) return;
+
+      setState(() {
+        if (!media.any((m) => '${m['id'] ?? ''}' == itemId)) {
+          final insertIndex = originalIndex.clamp(0, media.length);
+          media.insert(insertIndex, removedItem);
+        }
+      });
+
+      try {
+        await _save();
+      } catch (saveError) {
+        debugPrint('Gallery restore failed: $saveError');
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'ফাইলটি মুছতে সমস্যা হয়েছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _showMediaMenu(Map<String, dynamic> item) async {
@@ -4186,6 +4244,77 @@ class GalleryFolderPage extends StatefulWidget {
 class _GalleryFolderPageState extends State<GalleryFolderPage> {
   late List<Map<String, dynamic>> items;
   final Map<String, Future<String?>> _pathFutures = {};
+  final Set<String> _selectedIds = <String>{};
+  bool _selectionMode = false;
+
+  String _mediaKey(Map<String, dynamic> item) {
+    return '${item['id'] ?? item['fileId'] ?? item['driveFileId'] ?? ''}';
+  }
+
+  void _toggleSelection(Map<String, dynamic> item) {
+    final key = _mediaKey(item);
+    if (key.isEmpty) return;
+
+    setState(() {
+      _selectionMode = true;
+
+      if (_selectedIds.contains(key)) {
+        _selectedIds.remove(key);
+      } else {
+        _selectedIds.add(key);
+      }
+
+      if (_selectedIds.isEmpty) {
+        _selectionMode = false;
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedItems() async {
+    final selectedItems = items
+        .where((item) => _selectedIds.contains(_mediaKey(item)))
+        .toList();
+
+    if (selectedItems.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('নির্বাচিত ফাইল মুছবে?'),
+        content: Text(
+          '${selectedItems.length}টি ছবি/ভিডিও গ্যালারি থেকে মুছে ফেলা হবে।',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('বাতিল'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('মুছে ফেলো'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    for (final item in selectedItems) {
+      try {
+        await widget.onDelete(item);
+      } catch (error) {
+        debugPrint('Multi-delete failed: $error');
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _selectedIds.clear();
+      _selectionMode = false;
+    });
+  }
 
   @override
   void initState() {
@@ -4313,6 +4442,26 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
         backgroundColor: backgroundColor,
         title: Text(widget.title),
         actions: [
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'নির্বাচিত ফাইল মুছুন',
+              onPressed: _selectedIds.isEmpty ? null : _deleteSelectedItems,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          IconButton(
+            tooltip: _selectionMode ? 'নির্বাচন বাতিল' : 'একাধিক ফাইল নির্বাচন',
+            onPressed: () {
+              setState(() {
+                _selectionMode = !_selectionMode;
+                _selectedIds.clear();
+              });
+            },
+            icon: Icon(
+              _selectionMode
+                  ? Icons.close_rounded
+                  : Icons.checklist_rounded,
+            ),
+          ),
           IconButton(
             onPressed: _chooseAddType,
             icon: const Icon(Icons.add_photo_alternate_outlined),
@@ -4347,8 +4496,17 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                     final path = snapshot.data;
 
                     return GestureDetector(
-                      onLongPress: () => widget.onLongPress(item),
+                      onLongPress: () {
+                        if (!_selectionMode) {
+                          widget.onLongPress(item);
+                        }
+                      },
                       onTap: () async {
+                        if (_selectionMode) {
+                          _toggleSelection(item);
+                          return;
+                        }
+
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -4405,6 +4563,28 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                                 child: Padding(
                                   padding: EdgeInsets.all(8),
                                   child: Icon(Icons.videocam_rounded),
+                                ),
+                              ),
+                            if (_selectionMode)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: _selectedIds.contains(_mediaKey(item))
+                                        ? pinkColor
+                                        : Colors.black54,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white70),
+                                  ),
+                                  child: Icon(
+                                    _selectedIds.contains(_mediaKey(item))
+                                        ? Icons.check_rounded
+                                        : Icons.circle_outlined,
+                                    size: 22,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                           ],
