@@ -3245,7 +3245,6 @@ class _ChatPageState extends State<ChatPage> {
         final members = rawMembers is List
             ? rawMembers.whereType<String>().toList()
             : <String>[];
-
         String partnerUid = '';
         for (final uid in members) {
           if (uid != _currentUid) {
@@ -3253,27 +3252,30 @@ class _ChatPageState extends State<ChatPage> {
             break;
           }
         }
-
         if (partnerUid.isEmpty) {
           return _chatHeaderContent(
             name: 'Partner',
             photoBase64: '',
             isOnline: false,
+            isTyping: false,
           );
         }
-
         return StreamBuilder<Map<String, dynamic>?>(
           stream: ChatSyncService.watchPresence(partnerUid),
           builder: (context, presenceSnapshot) {
             final presence = presenceSnapshot.data;
             final isOnline = presence?['isOnline'] == true;
-
-            final name = _profileNameForUid(partnerUid, 'Partner');
-
-            return _chatHeaderContent(
-              name: name,
-              photoBase64: _photoBase64ForUid(partnerUid),
-              isOnline: isOnline,
+            return StreamBuilder<Map<String, dynamic>?>(
+              stream: ChatSyncService.watchMemberTyping(partnerUid),
+              builder: (context, typingSnapshot) {
+                final isTyping = typingSnapshot.data?['isTyping'] == true;
+                return _chatHeaderContent(
+                  name: _profileNameForUid(partnerUid, 'Partner'),
+                  photoBase64: _photoBase64ForUid(partnerUid),
+                  isOnline: isOnline,
+                  isTyping: isTyping,
+                );
+              },
             );
           },
         );
@@ -3285,6 +3287,7 @@ class _ChatPageState extends State<ChatPage> {
     required String name,
     required String photoBase64,
     required bool isOnline,
+    required bool isTyping,
   }) {
     final avatar = ProfileAvatar(
       name: name,
@@ -3337,12 +3340,10 @@ class _ChatPageState extends State<ChatPage> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  isOnline ? 'Active now' : 'Offline',
+                  isTyping ? 'Typing...' : (isOnline ? 'Active now' : 'Offline'),
                   style: TextStyle(
                     fontSize: 11,
-                    color: isOnline
-                        ? Colors.greenAccent
-                        : Colors.white54,
+                    color: isTyping ? pinkColor : (isOnline ? Colors.greenAccent : Colors.white54),
                   ),
                 ),
               ],
@@ -3355,6 +3356,47 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _spaceStream,
+      builder: (context, spaceSnapshot) {
+        final rawMembers = spaceSnapshot.data?['memberUids'];
+        final members = rawMembers is List ? rawMembers.whereType<String>().toList() : <String>[];
+        String partnerUid = '';
+        for (final uid in members) {
+          if (uid != _currentUid) {
+            partnerUid = uid;
+            break;
+          }
+        }
+        if (partnerUid.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return StreamBuilder<Map<String, dynamic>?>(
+          stream: ChatSyncService.watchMemberTyping(partnerUid),
+          builder: (context, snapshot) {
+            if (snapshot.data?['isTyping'] != true) {
+              return const SizedBox.shrink();
+            }
+            return const Padding(
+              padding: EdgeInsets.only(
+                left: 18,
+                right: 18,
+                top: 2,
+                bottom: 8,
+              ),
+              child: Row(
+                children: [
+                  TypingDotsIndicator(),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -3397,6 +3439,7 @@ class _ChatPageState extends State<ChatPage> {
                   },
                 ),
         ),
+        _buildTypingIndicator(),
         SafeArea(
           top: false,
           child: Container(
@@ -5834,5 +5877,84 @@ class FirebaseComplaintStore {
               )
               .toList(),
         );
+  }
+}
+
+// ============================================================
+// TYPING DOTS INDICATOR WIDGET
+// ============================================================
+
+class TypingDotsIndicator extends StatefulWidget {
+  const TypingDotsIndicator({super.key});
+
+  @override
+  State<TypingDotsIndicator> createState() => _TypingDotsIndicatorState();
+}
+
+class _TypingDotsIndicatorState extends State<TypingDotsIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 10,
+          ),
+          decoration: BoxDecoration(
+            color: surfaceColor,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (index) {
+              final phase = (_controller.value * 3 - index).abs() % 3;
+              final active = phase < 1;
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 3,
+                ),
+                child: Transform.translate(
+                  offset: Offset(
+                    0,
+                    active ? -3 : 2,
+                  ),
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: pinkColor.withValues(
+                        alpha: active ? 1 : 0.45,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
   }
 }
