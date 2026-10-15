@@ -5397,7 +5397,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       : 'ট্যাপ করে ডাউনলোড করো; ফাইলের সাইজ দেখা যাবে।',
                 ),
                 value: enabled,
-                activeThumbColor: pinkColor,
+                activeColor: pinkColor,
                 onChanged: (value) async {
                   try {
                     await DataSaverSettings.setEnabled(value);
