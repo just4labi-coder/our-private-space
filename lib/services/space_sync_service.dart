@@ -50,7 +50,9 @@ class SpaceSyncService {
       'https://script.google.com/macros/s/AKfycbw5JDObuu19_VQQ1ytXsA2Bav2M_szPSoiARCrc5KvNZYKm-RoDr1lwUiy14s3nsnzSoQ/exec';
 
   static const int _maxUploadBytes = 30 * 1024 * 1024;
-  static const int _chunkSize = 1024 * 1024;
+  static const int _minChunkSize = 1 * 1024 * 1024;
+  static const int _initialChunkSize = 4 * 1024 * 1024;
+  static const int _maxChunkSize = 10 * 1024 * 1024;
 
   static const String _pendingUploadsKey = 'pendingDriveUploads';
 
@@ -448,14 +450,42 @@ class SpaceSyncService {
         }
       }
 
+      var currentChunkSize = _initialChunkSize;
+
+      void adjustChunkSize(int acknowledgedBytes, int elapsedMs) {
+        if (acknowledgedBytes <= 0) {
+          currentChunkSize = currentChunkSize ~/ 2;
+          if (currentChunkSize < _minChunkSize) {
+            currentChunkSize = _minChunkSize;
+          }
+          return;
+        }
+
+        final safeElapsedMs = elapsedMs > 0 ? elapsedMs : 1;
+        final bytesPerSecond =
+            acknowledgedBytes * 1000 / safeElapsedMs;
+
+        if (bytesPerSecond >= 2 * 1024 * 1024) {
+          currentChunkSize += 2 * 1024 * 1024;
+          if (currentChunkSize > _maxChunkSize) {
+            currentChunkSize = _maxChunkSize;
+          }
+        } else if (bytesPerSecond < 512 * 1024) {
+          currentChunkSize = currentChunkSize ~/ 2;
+          if (currentChunkSize < _minChunkSize) {
+            currentChunkSize = _minChunkSize;
+          }
+        }
+      }
+
       final handle = await file.open(mode: FileMode.read);
       final clock = Stopwatch()..start();
 
       try {
         while (offset < length && uploaded == null) {
-          final amount = (length - offset) < _chunkSize
+          final amount = (length - offset) < currentChunkSize
               ? length - offset
-              : _chunkSize;
+              : currentChunkSize;
 
           await handle.setPosition(offset);
           final chunk = await handle.read(amount);
@@ -464,6 +494,8 @@ class SpaceSyncService {
             throw Exception('ফাইলের অংশ পড়া যায়নি।');
           }
 
+          final chunkStartOffset = offset;
+          final chunkClock = Stopwatch()..start();
           final end = offset + chunk.length - 1;
 
           final request = http.Request('PUT', Uri.parse(sessionUrl))
@@ -482,54 +514,44 @@ class SpaceSyncService {
 
           if (response.statusCode == 308) {
             final range = response.headers['range'];
+            int confirmed;
 
             if (range == null || range.isEmpty) {
-              final confirmed = await queryServerOffset(
-                Uri.parse(sessionUrl),
-              );
+              confirmed = await queryServerOffset(Uri.parse(sessionUrl));
 
               if (confirmed == -1) {
                 await createSession();
                 retryCount = 0;
                 continue;
               }
-
-              if (confirmed == length) break;
-
-              if (confirmed <= offset) {
-                retryCount++;
-                if (retryCount > 3) {
-                  throw Exception(
-                    'Google Drive আপলোড এগোচ্ছে না। আবার চেষ্টা করো।',
-                  );
-                }
-              } else {
-                offset = confirmed;
-                retryCount = 0;
-              }
             } else {
-              final match =
-                  RegExp(r'bytes=0-(\d+)').firstMatch(range);
+              final match = RegExp(r'bytes=0-(\d+)').firstMatch(range);
 
               if (match == null) {
                 throw Exception('আপলোডের অবস্থান যাচাই করা যায়নি।');
               }
 
-              final confirmed = int.parse(match.group(1)!) + 1;
+              confirmed = int.parse(match.group(1)!) + 1;
 
-              if (confirmed > length || confirmed < 0) {
+              if (confirmed < 0 || confirmed > length) {
                 throw Exception('Google Drive-এর আপলোড অবস্থান সঠিক নয়।');
               }
+            }
 
-              if (confirmed <= offset) {
-                retryCount++;
-                if (retryCount > 3) {
-                  throw Exception('Google Drive আপলোড এগোচ্ছে না।');
-                }
-              } else {
-                offset = confirmed;
-                retryCount = 0;
+            if (confirmed <= chunkStartOffset) {
+              adjustChunkSize(0, chunkClock.elapsedMilliseconds);
+              retryCount++;
+
+              if (retryCount > 3) {
+                throw Exception('Google Drive আপলোড এগোচ্ছে না। আবার চেষ্টা করো।');
               }
+            } else {
+              adjustChunkSize(
+                confirmed - chunkStartOffset,
+                chunkClock.elapsedMilliseconds,
+              );
+              offset = confirmed;
+              retryCount = 0;
             }
 
             pending['offset'] = offset;
@@ -571,6 +593,7 @@ class SpaceSyncService {
           if (response.statusCode == 404 ||
               response.statusCode == 410) {
             await createSession();
+            retryCount = 0;
             continue;
           }
 
