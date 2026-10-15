@@ -38,6 +38,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp();
+  await DataSaverSettings.load();
 
   tz_data.initializeTimeZones();
 
@@ -52,6 +53,27 @@ Future<void> main() async {
   await SpaceStore.init();
 
   runApp(const EternalSpaceApp());
+}
+
+class DataSaverSettings {
+  DataSaverSettings._();
+
+  static const String _key = 'dataSaverEnabled';
+
+  static final ValueNotifier<bool> enabled =
+      ValueNotifier<bool>(false);
+
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    enabled.value = prefs.getBool(_key) ?? false;
+  }
+
+  static Future<void> setEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setBool(_key, value);
+    enabled.value = value;
+  }
 }
 
 class FirebaseServices {
@@ -93,7 +115,7 @@ class EternalSpaceApp extends StatelessWidget {
         useMaterial3: true,
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.055),
+          fillColor: Colors.white.withOpacity(0.055),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
@@ -523,8 +545,8 @@ class _GlowBackgroundState extends State<GlowBackground>
           gradient: RadialGradient(
             colors: [
               color,
-              color.withValues(alpha: 0.55),
-              color.withValues(alpha: 0),
+              color.withOpacity(0.55),
+              color.withOpacity(0),
             ],
             stops: const [0.0, 0.38, 1.0],
           ),
@@ -564,7 +586,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 left: -115 + (waveB * 48),
                 child: _glow(
                   340,
-                  const Color(0xFF8B1D62).withValues(alpha: 0.34),
+                  const Color(0xFF8B1D62).withOpacity(0.34),
                 ),
               ),
               Positioned(
@@ -572,7 +594,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 right: -120 + (waveC * 55),
                 child: _glow(
                   370,
-                  const Color(0xFF6826A8).withValues(alpha: 0.34),
+                  const Color(0xFF6826A8).withOpacity(0.34),
                 ),
               ),
               Positioned(
@@ -580,7 +602,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 right: -165 + (waveA * 55),
                 child: _glow(
                   310,
-                  const Color(0xFFB51E72).withValues(alpha: 0.22),
+                  const Color(0xFFB51E72).withOpacity(0.22),
                 ),
               ),
               Positioned(
@@ -588,7 +610,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 left: -175 + (waveC * 65),
                 child: _glow(
                   300,
-                  const Color(0xFF5424B8).withValues(alpha: 0.24),
+                  const Color(0xFF5424B8).withOpacity(0.24),
                 ),
               ),
               SafeArea(
@@ -723,7 +745,7 @@ class UploadFloatingIndicator extends StatelessWidget {
                                   width: 42,
                                   height: 42,
                                   decoration: BoxDecoration(
-                                    color: purpleColor.withValues(alpha: 0.18),
+                                    color: purpleColor.withOpacity(0.18),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(
@@ -826,12 +848,12 @@ class UploadFloatingIndicator extends StatelessWidget {
                 color: surfaceColor,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: pinkColor.withValues(alpha: 0.8),
+                  color: pinkColor.withOpacity(0.8),
                   width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: pinkColor.withValues(alpha: 0.25),
+                    color: pinkColor.withOpacity(0.25),
                     blurRadius: 16,
                     spreadRadius: 2,
                   ),
@@ -969,6 +991,7 @@ class _MainScreenState extends State<MainScreen>
               'driveFileName':
                   uploaded['driveFileName'] ?? metadata['fileName'] ?? 'media',
               'mimeType': uploaded['mimeType'] ?? '',
+              'size': uploaded['size'] ?? '',
               'storage': 'shared',
               'mine': true,
               'unsent': false,
@@ -1250,7 +1273,7 @@ class _MainScreenState extends State<MainScreen>
       ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: surfaceColor,
-        indicatorColor: blueColor.withValues(alpha: 0.25),
+        indicatorColor: blueColor.withOpacity(0.25),
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
           setState(() {
@@ -1312,7 +1335,7 @@ class ProfileAvatar extends StatelessWidget {
 
     return CircleAvatar(
       radius: radius,
-      backgroundColor: color.withValues(alpha: 0.23),
+      backgroundColor: color.withOpacity(0.23),
       child: Text(
         cleanName.isEmpty ? '?' : cleanName[0].toUpperCase(),
         style: TextStyle(
@@ -1660,12 +1683,12 @@ class _CoupleCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(25),
         gradient: LinearGradient(
           colors: [
-            blueColor.withValues(alpha: 0.22),
-            pinkColor.withValues(alpha: 0.16),
+            blueColor.withOpacity(0.22),
+            pinkColor.withOpacity(0.16),
           ],
         ),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.09),
+          color: Colors.white.withOpacity(0.09),
         ),
       ),
       child: Row(
@@ -1877,9 +1900,9 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
       padding: const EdgeInsets.all(21),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: surfaceColor.withValues(alpha: 0.86),
+        color: surfaceColor.withOpacity(0.86),
         border: Border.all(
-          color: pinkColor.withValues(alpha: 0.25),
+          color: pinkColor.withOpacity(0.25),
         ),
       ),
       child: Column(
@@ -2046,7 +2069,7 @@ class FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: surfaceColor.withValues(alpha: 0.82),
+      color: surfaceColor.withOpacity(0.82),
       borderRadius: BorderRadius.circular(21),
       child: InkWell(
         onTap: onTap,
@@ -2056,7 +2079,7 @@ class FeatureCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(21),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.055),
+              color: Colors.white.withOpacity(0.055),
             ),
           ),
           child: Column(
@@ -2107,6 +2130,10 @@ class _ChatPageState extends State<ChatPage> {
   List<Map<String, dynamic>> messages = [];
   StreamSubscription<List<Map<String, dynamic>>>? _chatSubscription;
   final Map<String, Future<String?>> _mediaPathFutures = {};
+  final Set<String> _requestedMediaDownloads = {};
+
+  bool _isTypingSent = false;
+  int _typingRequestId = 0;
 
   String? _pendingMediaName;
   bool _pendingMediaVideo = false;
@@ -2191,6 +2218,44 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  void _handleTypingChanged(String value) {
+    final requestId = ++_typingRequestId;
+    final shouldType = value.trim().isNotEmpty;
+    if (shouldType != _isTypingSent) {
+      _isTypingSent = shouldType;
+      unawaited(
+        ChatSyncService.setTyping(isTyping: shouldType).catchError(
+          (Object error) {
+            debugPrint('Typing status update failed: $error');
+          },
+        ),
+      );
+    }
+    if (!shouldType) return;
+    Future<void>.delayed(const Duration(seconds: 3), () async {
+      if (!mounted || requestId != _typingRequestId || controller.text.trim().isNotEmpty) {
+        return;
+      }
+      _isTypingSent = false;
+      try {
+        await ChatSyncService.clearTyping();
+      } catch (error) {
+        debugPrint('Typing status clear failed: $error');
+      }
+    });
+  }
+
+  Future<void> _stopTyping() async {
+    ++_typingRequestId;
+    if (!_isTypingSent) return;
+    _isTypingSent = false;
+    try {
+      await ChatSyncService.clearTyping();
+    } catch (error) {
+      debugPrint('Typing status clear failed: $error');
+    }
+  }
+
   Future<void> _saveOwnProfile() async {
     try {
       await ChatSyncService.saveMyProfileFromSpace();
@@ -2271,6 +2336,7 @@ class _ChatPageState extends State<ChatPage> {
     final text = controller.text.trim();
     if (text.isEmpty) return;
 
+    await _stopTyping();
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
@@ -2380,6 +2446,7 @@ class _ChatPageState extends State<ChatPage> {
         'driveFileId': fileId,
         'driveFileName': uploaded['driveFileName'] ?? fileName,
         'mimeType': uploaded['mimeType'] ?? '',
+        'size': uploaded['size'] ?? '',
         'storage': 'shared',
         'mine': true,
         'unsent': false,
@@ -2624,18 +2691,32 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  String _formatMediaSize(dynamic value) {
+    final bytes = int.tryParse('${value ?? ''}') ?? 0;
+
+    if (bytes <= 0) return 'ফাইলের সাইজ জানা নেই';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
   Future<String?> _resolveMediaPath(
     Map<String, dynamic> media,
   ) {
     final localPath = '${media['text'] ?? media['path'] ?? ''}'.trim();
     final fileId =
         '${media['fileId'] ?? media['driveFileId'] ?? ''}'.trim();
+
     final key = fileId.isNotEmpty ? fileId : localPath;
 
     final existing = _mediaPathFutures[key];
     if (existing != null) return existing;
 
     late final Future<String?> future;
+
     future = Future<String?>.microtask(() async {
       try {
         if (localPath.isNotEmpty) {
@@ -2648,27 +2729,41 @@ class _ChatPageState extends State<ChatPage> {
 
         if (fileId.isEmpty) return null;
 
+        final cachedPath = await SpaceSyncService.getCachedMediaPath(
+          fileId,
+          shared: true,
+        );
+
+        if (cachedPath != null) {
+          return cachedPath;
+        }
+
         final name = '${media['driveFileName'] ?? 'chat_media'}';
+
         final result = await SpaceSyncService.downloadMedia(
           fileId,
           saveAs: '${fileId}_$name',
         );
 
-        if (!await File(result).exists() &&
-            identical(_mediaPathFutures[key], future)) {
-          _mediaPathFutures.remove(key);
+        if (await File(result).exists()) {
+          return result;
         }
-        return result;
+
+        return null;
       } catch (error) {
-        if (identical(_mediaPathFutures[key], future)) {
-          _mediaPathFutures.remove(key);
-        }
         debugPrint('Chat media download error: $error');
         return null;
       }
     });
 
     _mediaPathFutures[key] = future;
+
+    future.then((path) {
+      if (path == null && identical(_mediaPathFutures[key], future)) {
+        _mediaPathFutures.remove(key);
+      }
+    });
+
     return future;
   }
 
@@ -2687,93 +2782,215 @@ class _ChatPageState extends State<ChatPage> {
     final path = '${message['text'] ?? ''}';
 
     if (type == 'image' || type == 'video') {
-      return FutureBuilder<String?>(
-        future: _resolveMediaPath(message),
-        builder: (context, snapshot) {
-          final resolvedPath = snapshot.data;
+      final fileId =
+          '${message['fileId'] ?? message['driveFileId'] ?? ''}'.trim();
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const SizedBox(
-              width: 210,
-              height: 120,
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
+      final mediaKey = fileId.isNotEmpty ? fileId : path;
 
-          if (resolvedPath == null) {
-            return const SizedBox(
-              width: 210,
-              height: 100,
-              child: Center(
-                child: Text(
-                  'ফাইলটি লোড করা যায়নি',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ),
-            );
-          }
+      return ValueListenableBuilder<bool>(
+        valueListenable: DataSaverSettings.enabled,
+        builder: (context, dataSaverEnabled, _) {
+          final shouldDownload = dataSaverEnabled ||
+              _requestedMediaDownloads.contains(mediaKey);
 
-          if (type == 'image') {
-            return GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ImageViewerPage(path: resolvedPath),
+          return FutureBuilder<String?>(
+            future: shouldDownload ? _resolveMediaPath(message) : null,
+            builder: (context, snapshot) {
+              final resolvedPath = snapshot.data;
+
+              if (!shouldDownload) {
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    setState(() {
+                      _requestedMediaDownloads.add(mediaKey);
+                    });
+                  },
+                  child: Container(
+                    width: 210,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          type == 'image'
+                              ? Icons.image_outlined
+                              : Icons.play_circle_outline_rounded,
+                          size: 36,
+                          color: pinkColor,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text('ডাউনলোড করতে ট্যাপ করো'),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatMediaSize(message['size']),
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
-              },
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(
-                  File(resolvedPath),
+              }
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return SizedBox(
                   width: 210,
-                  height: 210,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox(
+                  height: 120,
+                  child: ValueListenableBuilder<List<DownloadProgress>>(
+                    valueListenable: SpaceSyncService.downloadProgress,
+                    builder: (context, downloads, _) {
+                      DownloadProgress? current;
+                      for (final item in downloads) {
+                        if (item.fileId == fileId) {
+                          current = item;
+                          break;
+                        }
+                      }
+                      final progress = current;
+
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              LinearProgressIndicator(
+                                value: progress?.progress,
+                                backgroundColor: Colors.white12,
+                                color: pinkColor,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                progress == null
+                                    ? 'ডাউনলোড শুরু হচ্ছে...'
+                                    : '${(progress.progress * 100).toStringAsFixed(0)}%',
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                              if (progress != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${(progress.downloadedBytes / (1024 * 1024)).toStringAsFixed(1)}'
+                                  ' / '
+                                  '${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                Text(
+                                  '${(progress.bytesPerSecond / (1024 * 1024)).toStringAsFixed(2)} MB/s',
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              }
+
+              if (snapshot.hasError ||
+                  resolvedPath == null ||
+                  !File(resolvedPath).existsSync()) {
+                return InkWell(
+                  onTap: () {
+                    _mediaPathFutures.remove(mediaKey);
+                    setState(() {
+                      _requestedMediaDownloads.add(mediaKey);
+                    });
+                  },
+                  child: Container(
                     width: 210,
-                    height: 100,
-                    child: Center(
-                      child: Text(
-                        'ছবিটি খোলা যায়নি',
-                        style: TextStyle(color: Colors.white70),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.refresh_rounded, color: pinkColor, size: 32),
+                        SizedBox(height: 8),
+                        Text('ডাউনলোড হয়নি — আবার চেষ্টা করো'),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              if (type == 'image') {
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ImageViewerPage(path: resolvedPath),
+                      ),
+                    );
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      File(resolvedPath),
+                      width: 210,
+                      height: 210,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox(
+                        width: 210,
+                        height: 100,
+                        child: Center(
+                          child: Text('ছবিটি খোলা যায়নি'),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            );
-          }
+                );
+              }
 
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => VideoViewerPage(path: resolvedPath),
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => VideoViewerPage(path: resolvedPath),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 210,
+                  height: 130,
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.play_circle_fill_rounded,
+                        size: 45,
+                        color: pinkColor,
+                      ),
+                      SizedBox(height: 6),
+                      Text('ভিডিও চালাও'),
+                    ],
+                  ),
                 ),
               );
             },
-            child: Container(
-              width: 210,
-              height: 130,
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.play_circle_fill_rounded,
-                    size: 45,
-                    color: pinkColor,
-                  ),
-                  SizedBox(height: 6),
-                  Text('ভিডিও চালাও'),
-                ],
-              ),
-            ),
           );
         },
       );
@@ -2809,7 +3026,7 @@ class _ChatPageState extends State<ChatPage> {
               decoration: BoxDecoration(
                 color: const Color(0xFF453078),
                 border: Border.all(
-                  color: pinkColor.withValues(alpha: 0.35),
+                  color: pinkColor.withOpacity(0.35),
                 ),
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -2926,7 +3143,7 @@ class _ChatPageState extends State<ChatPage> {
                           : surfaceColor,
                       border: Border.all(
                         color: mine
-                            ? pinkColor.withValues(alpha: 0.25)
+                            ? pinkColor.withOpacity(0.25)
                             : Colors.white10,
                       ),
                       borderRadius: BorderRadius.only(
@@ -3184,7 +3401,7 @@ class _ChatPageState extends State<ChatPage> {
               color: backgroundColor,
               border: Border(
                 top: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.08),
+                  color: Colors.white.withOpacity(0.08),
                 ),
               ),
             ),
@@ -3212,6 +3429,7 @@ class _ChatPageState extends State<ChatPage> {
                     minLines: 1,
                     maxLines: 4,
                     textCapitalization: TextCapitalization.sentences,
+                    onChanged: _handleTypingChanged,
                     onSubmitted: (_) => _sendText(),
                     decoration: InputDecoration(
                       hintText: 'মেসেজ লেখো...',
@@ -4398,7 +4616,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
+                  color: Colors.black.withOpacity(0.65),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
@@ -4914,7 +5132,7 @@ class _LoveNotesPageState extends State<LoveNotesPage> {
                     color: surfaceColor,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: pinkColor.withValues(alpha: 0.14),
+                      color: pinkColor.withOpacity(0.14),
                     ),
                   ),
                   child: Row(
@@ -5156,6 +5374,48 @@ class _SettingsPageState extends State<SettingsPage> {
           onPressed: _pickProfilePhoto,
           icon: const Icon(Icons.add_a_photo_outlined),
           label: const Text('প্রোফাইল ছবি সেট করো'),
+        ),
+        const SizedBox(height: 24),
+        const SectionHeading(title: 'Data & downloads'),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: DataSaverSettings.enabled,
+          builder: (context, enabled, _) {
+            return Card(
+              color: surfaceColor,
+              child: SwitchListTile(
+                secondary: Icon(
+                  enabled
+                      ? Icons.cloud_download_outlined
+                      : Icons.touch_app_outlined,
+                  color: pinkColor,
+                ),
+                title: const Text('Data Saver'),
+                subtitle: Text(
+                  enabled
+                      ? 'ছবি ও ভিডিও স্বয়ংক্রিয়ভাবে ডাউনলোড হবে।'
+                      : 'ট্যাপ করে ডাউনলোড করো; ফাইলের সাইজ দেখা যাবে।',
+                ),
+                value: enabled,
+                activeThumbColor: pinkColor,
+                onChanged: (value) async {
+                  try {
+                    await DataSaverSettings.setEnabled(value);
+                  } catch (error) {
+                    if (!context.mounted) return;
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Data Saver সেটিং সংরক্ষণ করা যায়নি।',
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            );
+          },
         ),
         const SizedBox(height: 20),
         const SectionHeading(title: 'App information'),
