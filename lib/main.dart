@@ -3940,7 +3940,9 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
   Future<String?> _resolveLocalPath(
     Map<String, dynamic> item,
   ) {
-    final fileId = (item['fileId'] ?? item['driveFileId'] ?? '').toString();
+    final fileId =
+        (item['fileId'] ?? item['driveFileId'] ?? '').toString().trim();
+
     final key = fileId.isNotEmpty
         ? fileId
         : (item['path'] ?? item['id'] ?? '').toString();
@@ -3953,35 +3955,62 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
       try {
         final localPath = (item['path'] ?? '').toString();
         if (localPath.isNotEmpty) {
+          final localFile = File(localPath);
+          if (await localFile.exists() && await localFile.length() > 0) {
+            return localPath;
+          }
+        }
+
+        if (fileId.isEmpty) return null;
+
+        final prefs = await SharedPreferences.getInstance();
+        final savedPaths = prefs.getString('galleryLocalPaths');
+
+        Map<String, dynamic> pathMap = {};
+        if (savedPaths != null && savedPaths.isNotEmpty) {
           try {
-            if (await File(localPath).exists()) {
-              return localPath;
+            final decoded = jsonDecode(savedPaths);
+            if (decoded is Map) {
+              pathMap = Map<String, dynamic>.from(decoded);
             }
           } catch (_) {}
         }
 
-        if (fileId.isEmpty) return null;
+        final savedPath = (pathMap[fileId] ?? '').toString();
+        if (savedPath.isNotEmpty) {
+          final savedFile = File(savedPath);
+          if (await savedFile.exists() && await savedFile.length() > 0) {
+            return savedPath;
+          }
+
+          pathMap.remove(fileId);
+          await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+        }
 
         final originalName =
             (item['driveFileName'] ?? item['name'] ?? 'memory').toString();
         final safeName = '${item['id'] ?? fileId}_$originalName';
 
-        final result = await SpaceSyncService.downloadMedia(
+        final downloadedPath = await SpaceSyncService.downloadMedia(
           fileId,
           saveAs: safeName,
         );
 
-        if (!await File(result).exists() &&
-            identical(_pathFutures[key], future)) {
-          _pathFutures.remove(key);
+        final downloadedFile = File(downloadedPath);
+        if (!await downloadedFile.exists() ||
+            await downloadedFile.length() == 0) {
+          throw Exception('ডাউনলোড করা ফাইল পাওয়া যায়নি।');
         }
-        return result;
+
+        pathMap[fileId] = downloadedPath;
+        await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+
+        return downloadedPath;
       } catch (error) {
-        if (identical(_pathFutures[key], future)) {
-          _pathFutures.remove(key);
-        }
         debugPrint('Gallery download error: $error');
         return null;
+      } finally {
+        _pathFutures.remove(key);
       }
     });
 
@@ -4983,6 +5012,8 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _pickProfilePhoto() async {
+    if (!mounted) return;
+
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
@@ -4997,12 +5028,19 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        imageQuality: 90,
-        maxWidth: 1200,
-        maxHeight: 1200,
+        imageQuality: 85,
+        maxWidth: 1000,
+        maxHeight: 1000,
       );
 
-      if (picked == null || !mounted) return;
+      if (!mounted || picked == null) return;
+
+      final sourceFile = File(picked.path);
+
+      if (!await sourceFile.exists() ||
+          await sourceFile.length() == 0) {
+        throw Exception('নির্বাচিত ছবিটি পাওয়া যায়নি।');
+      }
 
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
@@ -5013,7 +5051,7 @@ class _SettingsPageState extends State<SettingsPage> {
         maxWidth: 384,
         maxHeight: 384,
         compressFormat: ImageCompressFormat.jpg,
-        compressQuality: 72,
+        compressQuality: 70,
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: 'প্রোফাইল ছবি ঠিক করো',
@@ -5035,19 +5073,19 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       );
 
-      if (cropped == null || !mounted) return;
+      if (!mounted || cropped == null) return;
 
       final croppedFile = File(cropped.path);
 
       if (!await croppedFile.exists()) {
-        throw Exception('ক্রপ করা ছবি পাওয়া যায়নি।');
+        throw Exception('ক্রপ করা ছবিটি পাওয়া যায়নি।');
       }
 
       final bytes = await croppedFile.readAsBytes();
 
       if (bytes.isEmpty || bytes.length > 500 * 1024) {
         throw Exception(
-          'ছবির আকার গ্রহণযোগ্য নয়। আবার ক্রপ করে চেষ্টা করো।',
+          'ছবিটি ৫০০ KB-এর বেশি। ছোট ছবি দিয়ে আবার চেষ্টা করো।',
         );
       }
 
@@ -5067,12 +5105,17 @@ class _SettingsPageState extends State<SettingsPage> {
           content: Text('প্রোফাইল ছবি সংরক্ষণ হয়েছে।'),
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('Profile photo error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('প্রোফাইল ছবি সংরক্ষণ করা যায়নি: $error'),
+          content: Text(
+            'প্রোফাইল ছবি সংরক্ষণ করা যায়নি: $error',
+          ),
         ),
       );
     }
