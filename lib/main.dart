@@ -2461,7 +2461,27 @@ class _ChatPageState extends State<ChatPage> {
         _pendingMediaProgress = 1;
       });
 
-      await ChatSyncService.sendMessage(message);
+      Object? sendError;
+
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          await ChatSyncService.sendMessage(message);
+          sendError = null;
+          break;
+        } catch (error) {
+          sendError = error;
+
+          if (attempt < 2) {
+            await Future.delayed(
+              Duration(milliseconds: 500 * (attempt + 1)),
+            );
+          }
+        }
+      }
+
+      if (sendError != null) {
+        throw Exception('মেসেজ পাঠানো যায়নি। আবার চেষ্টা করো।');
+      }
       
       final taskId = uploaded['_uploadTaskId'] ?? '';
       if (taskId.isNotEmpty) {
@@ -3882,8 +3902,10 @@ class _GalleryPageState extends State<GalleryPage> {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Drive থেকে মুছতে সমস্যা হয়েছে: $error'),
+          const SnackBar(
+            content: Text(
+              'মুছতে সমস্যা হয়েছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+            ),
           ),
         );
         return;
