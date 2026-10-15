@@ -81,6 +81,37 @@ class SpaceSyncService {
     await prefs.setString(_pendingUploadsKey, jsonEncode(uploads));
   }
 
+  static Future<void> _upsertPendingUpload(
+    Map<String, dynamic> upload,
+  ) async {
+    final uploads = await _readPendingUploads();
+    final id = upload['id']?.toString() ?? '';
+
+    final index = uploads.indexWhere(
+      (item) => item['id']?.toString() == id,
+    );
+
+    if (index == -1) {
+      uploads.add(Map<String, dynamic>.from(upload));
+    } else {
+      uploads[index] = {
+        ...uploads[index],
+        ...upload,
+      };
+    }
+
+    await _savePendingUploads(uploads);
+  }
+
+  static Future<void> _removePendingUpload(String id) async {
+    final uploads = await _readPendingUploads()
+      ..removeWhere(
+        (item) => item['id']?.toString() == id,
+      );
+
+    await _savePendingUploads(uploads);
+  }
+
   static final ValueNotifier<List<UploadProgress>> uploadProgress =
       ValueNotifier<List<UploadProgress>>([]);
 
@@ -279,6 +310,7 @@ class SpaceSyncService {
     File file, {
     required bool shared,
     required String uploadId,
+    required Map<String, dynamic> pending,
   }) async {
     if (!await file.exists()) {
       throw Exception('ফাইলটি এই ফোনে পাওয়া যায়নি।');
@@ -294,52 +326,136 @@ class SpaceSyncService {
       throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
     }
 
-    final name = file.uri.pathSegments.isNotEmpty
-        ? file.uri.pathSegments.last
-        : 'media_${DateTime.now().millisecondsSinceEpoch}';
-
-    final mime = _mimeType(name);
-
-    final session = await _request(
-      shared ? 'beginUploadShared' : 'beginUploadPersonal',
-      data: {
-        'name': name,
-        'mimeType': mime,
-        'size': length,
-        'folderId': 'all',
-      },
-      needsSpace: shared,
-    );
-
-    final sessionUrl = session['sessionUrl']?.toString() ?? '';
-
-    if (sessionUrl.isEmpty) {
-      throw Exception('Google Drive upload session তৈরি হয়নি।');
-    }
-
-    final uri = Uri.parse(sessionUrl);
-
-    if (uri.scheme != 'https' ||
-        !(uri.host.endsWith('googleapis.com') ||
-            uri.host.endsWith('googleusercontent.com'))) {
-      throw Exception('Google Drive upload ঠিকানা যাচাই করা যায়নি।');
-    }
+    final name = pending['fileName']?.toString() ??
+        file.uri.pathSegments.last;
+    final mime = pending['mimeType']?.toString() ?? _mimeType(name);
 
     final client = http.Client();
 
     try {
-      final handle = await file.open(mode: FileMode.read);
-
+      var sessionUrl = pending['sessionUrl']?.toString() ?? '';
       var offset = 0;
       Map<String, dynamic>? uploaded;
       var retryCount = 0;
-      final uploadClock = Stopwatch()..start();
+
+      Future<void> createSession() async {
+        final session = await _request(
+          shared ? 'beginUploadShared' : 'beginUploadPersonal',
+          data: {
+            'name': name,
+            'mimeType': mime,
+            'size': length,
+            'folderId': 'all',
+          },
+          needsSpace: shared,
+        );
+
+        final url = session['sessionUrl']?.toString() ?? '';
+        if (url.isEmpty) {
+          throw Exception('Google Drive upload session তৈরি হয়নি।');
+        }
+
+        final uri = Uri.tryParse(url);
+        if (uri == null ||
+            uri.scheme != 'https' ||
+            !(uri.host.endsWith('googleapis.com') ||
+                uri.host.endsWith('googleusercontent.com'))) {
+          throw Exception('Google Drive upload ঠিকানা যাচাই করা যায়নি।');
+        }
+
+        sessionUrl = url;
+        offset = 0;
+
+        pending['sessionUrl'] = sessionUrl;
+        pending['offset'] = 0;
+        await _upsertPendingUpload(pending);
+      }
+
+      Future<int> queryServerOffset(Uri uri) async {
+        final request = http.Request('PUT', uri)
+          ..followRedirects = false
+          ..headers['Content-Length'] = '0'
+          ..headers['Content-Range'] = 'bytes */$length';
+
+        final streamed = await client
+            .send(request)
+            .timeout(const Duration(minutes: 2));
+
+        final response = await http.Response.fromStream(streamed)
+            .timeout(const Duration(minutes: 2));
+
+        if (response.statusCode == 200 ||
+            response.statusCode == 201) {
+          final decoded = jsonDecode(response.body);
+          if (decoded is! Map) {
+            throw Exception('Google Drive-এর চূড়ান্ত উত্তর সঠিক নয়।');
+          }
+
+          uploaded = Map<String, dynamic>.from(decoded);
+          return length;
+        }
+
+        if (response.statusCode == 308) {
+          final range = response.headers['range'];
+          if (range == null || range.isEmpty) return 0;
+
+          final match = RegExp(r'bytes=0-(\d+)').firstMatch(range);
+          if (match == null) {
+            throw Exception('আপলোডের অবস্থান যাচাই করা যায়নি।');
+          }
+
+          final confirmed = int.parse(match.group(1)!) + 1;
+          if (confirmed < 0 || confirmed > length) {
+            throw Exception('Google Drive-এর আপলোড অবস্থান সঠিক নয়।');
+          }
+
+          return confirmed;
+        }
+
+        if (response.statusCode == 404 ||
+            response.statusCode == 410) {
+          return -1;
+        }
+
+        throw Exception(
+          'Google Drive-এর সেশন যাচাই ব্যর্থ হয়েছে '
+          '(${response.statusCode})।',
+        );
+      }
+
+      final hadSession = sessionUrl.isNotEmpty;
+
+      if (!hadSession) {
+        await createSession();
+      } else {
+        final oldUri = Uri.tryParse(sessionUrl);
+
+        if (oldUri == null ||
+            oldUri.scheme != 'https' ||
+            !(oldUri.host.endsWith('googleapis.com') ||
+                oldUri.host.endsWith('googleusercontent.com'))) {
+          await createSession();
+        } else {
+          final confirmed = await queryServerOffset(oldUri);
+
+          if (confirmed == -1) {
+            await createSession();
+          } else {
+            offset = confirmed;
+            pending['offset'] = offset;
+            await _upsertPendingUpload(pending);
+          }
+        }
+      }
+
+      final handle = await file.open(mode: FileMode.read);
+      final clock = Stopwatch()..start();
 
       try {
-        while (offset < length) {
-          final remaining = length - offset;
-          final amount =
-              remaining < _chunkSize ? remaining : _chunkSize;
+        while (offset < length && uploaded == null) {
+          final amount = (length - offset) < _chunkSize
+              ? length - offset
+              : _chunkSize;
 
           await handle.setPosition(offset);
           final chunk = await handle.read(amount);
@@ -350,12 +466,11 @@ class SpaceSyncService {
 
           final end = offset + chunk.length - 1;
 
-          final request = http.Request('PUT', uri)
+          final request = http.Request('PUT', Uri.parse(sessionUrl))
             ..followRedirects = false
             ..headers['Content-Type'] = mime
             ..headers['Content-Length'] = '${chunk.length}'
-            ..headers['Content-Range'] =
-                'bytes $offset-$end/$length'
+            ..headers['Content-Range'] = 'bytes $offset-$end/$length'
             ..bodyBytes = chunk;
 
           final streamed = await client
@@ -369,39 +484,58 @@ class SpaceSyncService {
             final range = response.headers['range'];
 
             if (range == null || range.isEmpty) {
-              retryCount++;
+              final confirmed = await queryServerOffset(
+                Uri.parse(sessionUrl),
+              );
 
-              if (retryCount > 3) {
-                throw Exception(
-                  'Google Drive আপলোড এগোচ্ছে না। আবার চেষ্টা করো।',
-                );
+              if (confirmed == -1) {
+                await createSession();
+                retryCount = 0;
+                continue;
               }
 
-              continue;
+              if (confirmed == length) break;
+
+              if (confirmed <= offset) {
+                retryCount++;
+                if (retryCount > 3) {
+                  throw Exception(
+                    'Google Drive আপলোড এগোচ্ছে না। আবার চেষ্টা করো।',
+                  );
+                }
+              } else {
+                offset = confirmed;
+                retryCount = 0;
+              }
+            } else {
+              final match =
+                  RegExp(r'bytes=0-(\d+)').firstMatch(range);
+
+              if (match == null) {
+                throw Exception('আপলোডের অবস্থান যাচাই করা যায়নি।');
+              }
+
+              final confirmed = int.parse(match.group(1)!) + 1;
+
+              if (confirmed > length || confirmed < 0) {
+                throw Exception('Google Drive-এর আপলোড অবস্থান সঠিক নয়।');
+              }
+
+              if (confirmed <= offset) {
+                retryCount++;
+                if (retryCount > 3) {
+                  throw Exception('Google Drive আপলোড এগোচ্ছে না।');
+                }
+              } else {
+                offset = confirmed;
+                retryCount = 0;
+              }
             }
 
-            final match =
-                RegExp(r'bytes=0-(\d+)').firstMatch(range);
+            pending['offset'] = offset;
+            await _upsertPendingUpload(pending);
 
-            if (match == null) {
-              throw Exception(
-                'Google Drive-এর আপলোড অগ্রগতি যাচাই করা যায়নি।',
-              );
-            }
-
-            final lastReceived = int.parse(match.group(1)!);
-            final nextOffset = lastReceived + 1;
-
-            if (nextOffset <= offset || nextOffset > length) {
-              throw Exception(
-                'Google Drive-এর আপলোড অবস্থান সঠিক নয়।',
-              );
-            }
-
-            offset = nextOffset;
-            retryCount = 0;
-
-            final seconds = uploadClock.elapsedMilliseconds / 1000;
+            final seconds = clock.elapsedMilliseconds / 1000;
             _updateUpload(
               uploadId,
               progress: offset / length,
@@ -416,15 +550,15 @@ class SpaceSyncService {
             final decoded = jsonDecode(response.body);
 
             if (decoded is! Map) {
-              throw Exception(
-                'Google Drive-এর চূড়ান্ত উত্তর সঠিক নয়।',
-              );
+              throw Exception('Google Drive-এর চূড়ান্ত উত্তর সঠিক নয়।');
             }
 
             uploaded = Map<String, dynamic>.from(decoded);
             offset = length;
+            pending['offset'] = length;
+            await _upsertPendingUpload(pending);
 
-            final seconds = uploadClock.elapsedMilliseconds / 1000;
+            final seconds = clock.elapsedMilliseconds / 1000;
             _updateUpload(
               uploadId,
               progress: 1,
@@ -432,6 +566,12 @@ class SpaceSyncService {
             );
 
             break;
+          }
+
+          if (response.statusCode == 404 ||
+              response.statusCode == 410) {
+            await createSession();
+            continue;
           }
 
           throw Exception(
@@ -443,15 +583,24 @@ class SpaceSyncService {
         await handle.close();
       }
 
-      final fileId = uploaded?['id']?.toString();
+      if (uploaded == null) {
+        final confirmed = await queryServerOffset(Uri.parse(sessionUrl));
 
-      if (fileId == null || fileId.isEmpty) {
-        throw Exception(
-          'আপলোড সম্পূর্ণ হয়েছে কি না নিশ্চিত করা যায়নি।',
-        );
+        if (confirmed == -1) {
+          throw Exception('Google Drive upload session শেষ হয়ে গেছে।');
+        }
+
+        if (confirmed != length) {
+          throw Exception('আপলোড সম্পূর্ণ হয়েছে কি না নিশ্চিত করা যায়নি।');
+        }
       }
 
-      return {
+      final fileId = uploaded?['id']?.toString();
+      if (fileId == null || fileId.isEmpty) {
+        throw Exception('আপলোড সম্পূর্ণ হয়েছে, কিন্তু File ID পাওয়া যায়নি।');
+      }
+
+      final result = <String, String>{
         'fileId': fileId,
         'driveFileId': fileId,
         'driveFileName': uploaded?['name']?.toString() ?? name,
@@ -460,7 +609,15 @@ class SpaceSyncService {
         'size': uploaded?['size']?.toString() ?? '$length',
         'createdAt': uploaded?['createdTime']?.toString() ?? '',
         'storage': shared ? 'shared' : 'personal',
+        '_uploadTaskId': uploadId,
       };
+
+      pending['status'] = 'completed';
+      pending['result'] = result;
+      pending['offset'] = length;
+      await _upsertPendingUpload(pending);
+
+      return result;
     } on TimeoutException {
       throw Exception(
         'আপলোডে সময় বেশি লাগছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
@@ -473,19 +630,54 @@ class SpaceSyncService {
   static Future<Map<String, String>> _upload(
     File file, {
     required bool shared,
+    Map<String, dynamic>? metadata,
   }) async {
-    final id = DateTime.now().microsecondsSinceEpoch.toString() +
-        '_${uploadProgress.value.length}';
+    final id = '${DateTime.now().microsecondsSinceEpoch}_${uploadProgress.value.length}';
+
+    if (!await file.exists()) {
+      throw Exception('আপলোড করার ফাইলটি পাওয়া যায়নি।');
+    }
 
     final name = file.uri.pathSegments.isNotEmpty
         ? file.uri.pathSegments.last
         : 'media';
 
+    final length = await file.length();
+    if (length <= 0) throw Exception('ফাইলটি খালি।');
+    if (length > _maxUploadBytes) {
+      throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
+    }
+
+    final support = await getApplicationSupportDirectory();
+    final pendingDir = Directory('${support.path}/pending_drive_uploads');
+    await pendingDir.create(recursive: true);
+
+    final safeName = name.replaceAll(RegExp(r'[/\\\x00-\x1F]'), '_');
+    final durableFile = File('${pendingDir.path}/${id}_$safeName');
+
+    await file.copy(durableFile.path);
+
+    final pending = <String, dynamic>{
+      'id': id,
+      'filePath': durableFile.path,
+      'fileName': safeName,
+      'shared': shared,
+      'size': length,
+      'mimeType': _mimeType(safeName),
+      'sessionUrl': '',
+      'offset': 0,
+      'status': 'uploading',
+      'metadata': metadata ?? <String, dynamic>{},
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+
+    await _upsertPendingUpload(pending);
+
     uploadProgress.value = [
       ...uploadProgress.value,
       UploadProgress(
         id: id,
-        fileName: name,
+        fileName: safeName,
         progress: 0,
         bytesPerSecond: 0,
         isUploading: true,
@@ -494,9 +686,10 @@ class SpaceSyncService {
 
     try {
       return await _uploadFile(
-        file,
+        durableFile,
         shared: shared,
         uploadId: id,
+        pending: pending,
       );
     } finally {
       _updateUpload(id, isUploading: false);
@@ -507,11 +700,94 @@ class SpaceSyncService {
   static Future<Map<String, String>> uploadMedia(File file) =>
       _upload(file, shared: true);
 
-  static Future<Map<String, String>> uploadSharedMedia(File file) =>
-      _upload(file, shared: true);
+  static Future<Map<String, String>> uploadSharedMedia(
+    File file, {
+    Map<String, dynamic>? metadata,
+  }) =>
+      _upload(
+        file,
+        shared: true,
+        metadata: metadata,
+      );
 
   static Future<Map<String, String>> uploadPersonalMedia(File file) =>
       _upload(file, shared: false);
+
+  static Future<List<Map<String, dynamic>>> getPendingUploads() =>
+      _readPendingUploads();
+
+  static Future<void> acknowledgeUpload(String id) async {
+    final uploads = await _readPendingUploads();
+    final matches = uploads.where(
+      (item) => item['id']?.toString() == id,
+    );
+
+    for (final item in matches) {
+      final path = item['filePath']?.toString() ?? '';
+      if (path.isNotEmpty) {
+        try {
+          final file = File(path);
+          if (await file.exists()) await file.delete();
+        } catch (error) {
+          debugPrint('Pending upload cleanup error: $error');
+        }
+      }
+    }
+
+    await _removePendingUpload(id);
+  }
+
+  static Future<void> resumePendingUploads() async {
+    final uploads = await _readPendingUploads();
+
+    for (final item in uploads) {
+      if (item['status'] == 'completed') continue;
+
+      final id = item['id']?.toString() ?? '';
+      final path = item['filePath']?.toString() ?? '';
+      if (id.isEmpty || path.isEmpty) continue;
+
+      final file = File(path);
+      if (!await file.exists()) {
+        debugPrint('Pending upload file missing: $path');
+        continue;
+      }
+
+      final shared = item['shared'] == true;
+      final name = item['fileName']?.toString() ?? 'media';
+
+      uploadProgress.value = [
+        ...uploadProgress.value.where((u) => u.id != id),
+        UploadProgress(
+          id: id,
+          fileName: name,
+          progress: (item['offset'] is num &&
+                  (item['size'] is num) &&
+                  (item['size'] as num) > 0)
+              ? ((item['offset'] as num) / (item['size'] as num))
+                  .clamp(0.0, 1.0)
+                  .toDouble()
+              : 0,
+          bytesPerSecond: 0,
+          isUploading: true,
+        ),
+      ];
+
+      try {
+        await _uploadFile(
+          file,
+          shared: shared,
+          uploadId: id,
+          pending: item,
+        );
+      } catch (error) {
+        debugPrint('Resume upload failed ($id): $error');
+      } finally {
+        _updateUpload(id, isUploading: false);
+        _removeUpload(id);
+      }
+    }
+  }
 
   static Future<List<Map<String, dynamic>>> listSharedMedia() async {
     final result = await _request('listShared', needsSpace: true);
