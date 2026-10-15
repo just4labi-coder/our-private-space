@@ -1,4 +1,4 @@
-import 'dart:async';
+Import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -115,7 +115,7 @@ class EternalSpaceApp extends StatelessWidget {
         useMaterial3: true,
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.white.withOpacity(0.055),
+          fillColor: Colors.white.withValues(alpha: 0.055),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
@@ -545,8 +545,8 @@ class _GlowBackgroundState extends State<GlowBackground>
           gradient: RadialGradient(
             colors: [
               color,
-              color.withOpacity(0.55),
-              color.withOpacity(0),
+              color.withValues(alpha: 0.55),
+              color.withValues(alpha: 0),
             ],
             stops: const [0.0, 0.38, 1.0],
           ),
@@ -586,7 +586,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 left: -115 + (waveB * 48),
                 child: _glow(
                   340,
-                  const Color(0xFF8B1D62).withOpacity(0.34),
+                  const Color(0xFF8B1D62).withValues(alpha: 0.34),
                 ),
               ),
               Positioned(
@@ -594,7 +594,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 right: -120 + (waveC * 55),
                 child: _glow(
                   370,
-                  const Color(0xFF6826A8).withOpacity(0.34),
+                  const Color(0xFF6826A8).withValues(alpha: 0.34),
                 ),
               ),
               Positioned(
@@ -602,7 +602,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 right: -165 + (waveA * 55),
                 child: _glow(
                   310,
-                  const Color(0xFFB51E72).withOpacity(0.22),
+                  const Color(0xFFB51E72).withValues(alpha: 0.22),
                 ),
               ),
               Positioned(
@@ -610,7 +610,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                 left: -175 + (waveC * 65),
                 child: _glow(
                   300,
-                  const Color(0xFF5424B8).withOpacity(0.24),
+                  const Color(0xFF5424B8).withValues(alpha: 0.24),
                 ),
               ),
               SafeArea(
@@ -745,7 +745,7 @@ class UploadFloatingIndicator extends StatelessWidget {
                                   width: 42,
                                   height: 42,
                                   decoration: BoxDecoration(
-                                    color: purpleColor.withOpacity(0.18),
+                                    color: purpleColor.withValues(alpha: 0.18),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(
@@ -848,12 +848,12 @@ class UploadFloatingIndicator extends StatelessWidget {
                 color: surfaceColor,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: pinkColor.withOpacity(0.8),
+                  color: pinkColor.withValues(alpha: 0.8),
                   width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: pinkColor.withOpacity(0.25),
+                    color: pinkColor.withValues(alpha: 0.25),
                     blurRadius: 16,
                     spreadRadius: 2,
                   ),
@@ -1273,7 +1273,7 @@ class _MainScreenState extends State<MainScreen>
       ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: surfaceColor,
-        indicatorColor: blueColor.withOpacity(0.25),
+        indicatorColor: blueColor.withValues(alpha: 0.25),
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
           setState(() {
@@ -1335,7 +1335,7 @@ class ProfileAvatar extends StatelessWidget {
 
     return CircleAvatar(
       radius: radius,
-      backgroundColor: color.withOpacity(0.23),
+      backgroundColor: color.withValues(alpha: 0.23),
       child: Text(
         cleanName.isEmpty ? '?' : cleanName[0].toUpperCase(),
         style: TextStyle(
@@ -1683,12 +1683,12 @@ class _CoupleCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(25),
         gradient: LinearGradient(
           colors: [
-            blueColor.withOpacity(0.22),
-            pinkColor.withOpacity(0.16),
+            blueColor.withValues(alpha: 0.22),
+            pinkColor.withValues(alpha: 0.16),
           ],
         ),
         border: Border.all(
-          color: Colors.white.withOpacity(0.09),
+          color: Colors.white.withValues(alpha: 0.09),
         ),
       ),
       child: Row(
@@ -1900,9 +1900,9 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
       padding: const EdgeInsets.all(21),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: surfaceColor.withOpacity(0.86),
+        color: surfaceColor.withValues(alpha: 0.86),
         border: Border.all(
-          color: pinkColor.withOpacity(0.25),
+          color: pinkColor.withValues(alpha: 0.25),
         ),
       ),
       child: Column(
@@ -2069,7 +2069,7 @@ class FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: surfaceColor.withOpacity(0.82),
+      color: surfaceColor.withValues(alpha: 0.82),
       borderRadius: BorderRadius.circular(21),
       child: InkWell(
         onTap: onTap,
@@ -2079,7 +2079,7 @@ class FeatureCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(21),
             border: Border.all(
-              color: Colors.white.withOpacity(0.055),
+              color: Colors.white.withValues(alpha: 0.055),
             ),
           ),
           child: Column(
@@ -2810,7 +2810,7 @@ class _ChatPageState extends State<ChatPage> {
                     width: 210,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.06),
+                      color: Colors.white.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.white12),
                     ),
@@ -2916,7 +2916,7 @@ class _ChatPageState extends State<ChatPage> {
                     width: 210,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.06),
+                      color: Colors.white.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Column(
@@ -3026,7 +3026,7 @@ class _ChatPageState extends State<ChatPage> {
               decoration: BoxDecoration(
                 color: const Color(0xFF453078),
                 border: Border.all(
-                  color: pinkColor.withOpacity(0.35),
+                  color: pinkColor.withValues(alpha: 0.35),
                 ),
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -3143,7 +3143,7 @@ class _ChatPageState extends State<ChatPage> {
                           : surfaceColor,
                       border: Border.all(
                         color: mine
-                            ? pinkColor.withOpacity(0.25)
+                            ? pinkColor.withValues(alpha: 0.25)
                             : Colors.white10,
                       ),
                       borderRadius: BorderRadius.only(
@@ -3401,7 +3401,7 @@ class _ChatPageState extends State<ChatPage> {
               color: backgroundColor,
               border: Border(
                 top: BorderSide(
-                  color: Colors.white.withOpacity(0.08),
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
               ),
             ),
@@ -4616,7 +4616,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.65),
+                  color: Colors.black.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
@@ -5132,7 +5132,7 @@ class _LoveNotesPageState extends State<LoveNotesPage> {
                     color: surfaceColor,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: pinkColor.withOpacity(0.14),
+                      color: pinkColor.withValues(alpha: 0.14),
                     ),
                   ),
                   child: Row(
