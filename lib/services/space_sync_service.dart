@@ -594,6 +594,15 @@ class SpaceSyncService {
               confirmed = await queryServerOffset(Uri.parse(sessionUrl));
 
               if (confirmed == -1) {
+                sessionRestartCount++;
+
+                if (sessionRestartCount > 3) {
+                  throw Exception(
+                    'আপলোড সেশন বারবার বন্ধ হচ্ছে। '
+                    'ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+                  );
+                }
+
                 await createSession();
                 retryCount = 0;
                 continue;
