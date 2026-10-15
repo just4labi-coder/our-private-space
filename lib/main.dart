@@ -2366,7 +2366,9 @@ class _ChatPageState extends State<ChatPage> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('মেসেজ পাঠানো যায়নি: $error')),
+        const SnackBar(
+          content: Text('মেসেজ পাঠানো যায়নি। আবার চেষ্টা করুন।'),
+        ),
       );
     }
   }
@@ -2480,7 +2482,9 @@ class _ChatPageState extends State<ChatPage> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('মিডিয়া পাঠানো যায়নি: $error')),
+          const SnackBar(
+            content: Text('মিডিয়া পাঠানো যায়নি। আবার চেষ্টা করুন।'),
+          ),
         );
       }
     } finally {
@@ -2790,7 +2794,7 @@ class _ChatPageState extends State<ChatPage> {
       return ValueListenableBuilder<bool>(
         valueListenable: DataSaverSettings.enabled,
         builder: (context, dataSaverEnabled, _) {
-          final shouldDownload = dataSaverEnabled ||
+          final shouldDownload = !dataSaverEnabled ||
               _requestedMediaDownloads.contains(mediaKey);
 
           return FutureBuilder<String?>(
@@ -5393,8 +5397,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: const Text('Data Saver'),
                 subtitle: Text(
                   enabled
-                      ? 'ছবি ও ভিডিও স্বয়ংক্রিয়ভাবে ডাউনলোড হবে।'
-                      : 'ট্যাপ করে ডাউনলোড করো; ফাইলের সাইজ দেখা যাবে।',
+                      ? 'Disable auto-download for chat photos/videos'
+                      : 'Chat photos/videos will be downloaded automatically',
                 ),
                 value: enabled,
                 activeColor: pinkColor,
