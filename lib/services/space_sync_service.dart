@@ -400,6 +400,7 @@ class SpaceSyncService {
       var offset = 0;
       Map<String, dynamic>? uploaded;
       var retryCount = 0;
+      var sessionRestartCount = 0;
 
       Future<void> createSession() async {
         final session = await _request(
@@ -665,6 +666,15 @@ class SpaceSyncService {
 
           if (response.statusCode == 404 ||
               response.statusCode == 410) {
+            sessionRestartCount++;
+
+            if (sessionRestartCount > 3) {
+              throw Exception(
+                'আপলোড সেশন বারবার বন্ধ হচ্ছে। '
+                'ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+              );
+            }
+
             await createSession();
             retryCount = 0;
             continue;
@@ -958,50 +968,53 @@ class SpaceSyncService {
     );
     await directory.create(recursive: true);
 
-    // আগে সম্পূর্ণ ক্যাশে ফাইল খুঁজে দেখো।
+    // আগে সম্পূর্ণ ক্যাশে ফাইল খোঁজো।
     await for (final entity in directory.list()) {
       if (entity is! File) continue;
+
       final name = entity.uri.pathSegments.last;
-      if (!name.startsWith(prefix) || name.endsWith('.complete')) {
+
+      // অসম্পূর্ণ .part ফাইল মুছবে না।
+      if (!name.startsWith(prefix) ||
+          name.endsWith('.complete') ||
+          name.endsWith('.part')) {
         continue;
       }
 
       final marker = File('${entity.path}.complete');
+
       try {
         if (await entity.exists() &&
             await entity.length() > 0 &&
             await marker.exists()) {
+          final actualSize = await entity.length();
           final recordedSize = int.tryParse(
             (await marker.readAsString()).trim(),
           );
 
-          debugPrint(
-            '[MediaCache] validCandidate '
-            'bytes=${await entity.length()}',
-          );
-
-          if (recordedSize == await entity.length()) {
+          if (recordedSize == actualSize) {
+            debugPrint('[MediaCache] cacheHit bytes=$actualSize');
             return entity.path;
           }
         }
+
         if (await entity.exists()) await entity.delete();
         if (await marker.exists()) await marker.delete();
-      } catch (_) {}
+      } catch (error) {
+        debugPrint('[MediaCache] validation error: $error');
+      }
     }
 
-    debugPrint(
-      '[MediaCache] cacheMiss '
-      'shared=$shared fileId=$safeId',
-    );
+    debugPrint('[MediaCache] cacheMiss shared=$shared fileId=$safeId');
 
-    final needsSpace = shared;
     final info = await _request(
       shared ? 'downloadSharedInfo' : 'downloadPersonalInfo',
       data: {'fileId': fileId},
-      needsSpace: needsSpace,
+      needsSpace: shared,
     );
 
     final totalSize = int.tryParse('${info['size'] ?? ''}');
+
     if (totalSize == null || totalSize <= 0) {
       throw Exception('ফাইলের তথ্য পাওয়া যায়নি। আবার চেষ্টা করুন।');
     }
@@ -1014,6 +1027,7 @@ class SpaceSyncService {
 
     final lastDot = name.lastIndexOf('.');
     var extension = '';
+
     if (lastDot > 0 && name.length - lastDot <= 10) {
       extension = name.substring(lastDot).toLowerCase();
     }
@@ -1023,11 +1037,63 @@ class SpaceSyncService {
     final marker = File('${file.path}.complete');
 
     try {
-      if (await tempFile.exists()) await tempFile.delete();
-      if (await marker.exists()) await marker.delete();
+      if (await marker.exists()) {
+        await marker.delete();
+      }
+
+      // আগেরবারের অসম্পূর্ণ ডাউনলোড থাকলে সেখান থেকে চালিয়ে যাও।
+      var offset = 0;
+
+      if (await tempFile.exists()) {
+        final partialSize = await tempFile.length();
+
+        if (partialSize > 0 && partialSize <= totalSize) {
+          offset = partialSize;
+          debugPrint('[MediaDownload] resume offset=$offset/$totalSize');
+        } else {
+          await tempFile.delete();
+        }
+      }
+
+      Future<Map<String, dynamic>> fetchChunk({
+        required int start,
+        required int size,
+      }) async {
+        Object? lastError;
+
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            return await _request(
+              shared ? 'downloadSharedChunk' : 'downloadPersonalChunk',
+              data: {
+                'fileId': fileId,
+                'start': start,
+                'chunkSize': size,
+              },
+              needsSpace: shared,
+            );
+          } catch (error) {
+            lastError = error;
+
+            // শুধু সাময়িক HTTP ত্রুটিতে পুনরায় চেষ্টা।
+            final retryable = RegExp(
+              r'সার্ভার ত্রুটি: (404|500|502|503|504)',
+            ).hasMatch(error.toString());
+
+            if (!retryable || attempt == 2) {
+              rethrow;
+            }
+
+            await Future.delayed(
+              Duration(milliseconds: 500 * (attempt + 1)),
+            );
+          }
+        }
+
+        throw Exception('ডাউনলোড ব্যর্থ হয়েছে: $lastError');
+      }
 
       const chunkSize = 1024 * 1024;
-      var offset = 0;
       final stopwatch = Stopwatch()..start();
 
       while (offset < totalSize) {
@@ -1035,14 +1101,9 @@ class SpaceSyncService {
             ? totalSize - offset
             : chunkSize;
 
-        final chunk = await _request(
-          shared ? 'downloadSharedChunk' : 'downloadPersonalChunk',
-          data: {
-            'fileId': fileId,
-            'start': offset,
-            'chunkSize': requestedSize,
-          },
-          needsSpace: needsSpace,
+        final chunk = await fetchChunk(
+          start: offset,
+          size: requestedSize,
         );
 
         final returnedStart = int.tryParse('${chunk['start'] ?? ''}');
@@ -1074,34 +1135,40 @@ class SpaceSyncService {
 
         offset += bytes.length;
 
-        final elapsedSeconds = stopwatch.elapsedMilliseconds / 1000.0;
+        final elapsed = stopwatch.elapsedMilliseconds / 1000.0;
+
         _updateDownloadProgress(
           DownloadProgress(
             fileId: fileId,
             downloadedBytes: offset,
             totalBytes: totalSize,
-            bytesPerSecond: elapsedSeconds > 0 ? offset / elapsedSeconds : 0,
+            bytesPerSecond: elapsed > 0 ? offset / elapsed : 0,
           ),
         );
       }
 
-      if (!await tempFile.exists() || await tempFile.length() != totalSize) {
+      if (!await tempFile.exists() ||
+          await tempFile.length() != totalSize) {
         throw Exception('ডাউনলোড অসম্পূর্ণ হয়েছে। আবার চেষ্টা করুন।');
       }
 
       if (await file.exists()) await file.delete();
-      await tempFile.rename(file.path);
 
+      await tempFile.rename(file.path);
       await marker.writeAsString('$totalSize', flush: true);
+
+      debugPrint('[MediaDownload] complete bytes=$totalSize');
 
       return file.path;
     } catch (error) {
-      try {
-        if (await tempFile.exists()) await tempFile.delete();
-      } catch (_) {}
+      // গুরুত্বপূর্ণ: অসম্পূর্ণ .part ফাইল রেখে দাও,
+      // যাতে পরেরবার আবার শুরু থেকে নামাতে না হয়।
+      debugPrint('[MediaDownload] interrupted offset=$fileId error=$error');
+
       try {
         if (await marker.exists()) await marker.delete();
       } catch (_) {}
+
       rethrow;
     }
   }
