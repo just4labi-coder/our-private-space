@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -39,6 +40,24 @@ class UploadProgress {
       isUploading: isUploading ?? this.isUploading,
     );
   }
+}
+
+class DownloadProgress {
+  final String fileId;
+  final int downloadedBytes;
+  final int totalBytes;
+  final double bytesPerSecond;
+
+  const DownloadProgress({
+    required this.fileId,
+    required this.downloadedBytes,
+    required this.totalBytes,
+    required this.bytesPerSecond,
+  });
+
+  double get progress => totalBytes > 0
+      ? (downloadedBytes / totalBytes).clamp(0.0, 1.0)
+      : 0.0;
 }
 
 class SpaceSyncService {
@@ -144,6 +163,24 @@ class SpaceSyncService {
   }
 
   static final Map<String, Future<String>> _activeDownloads = {};
+
+  static final ValueNotifier<List<DownloadProgress>> downloadProgress =
+      ValueNotifier<List<DownloadProgress>>([]);
+
+  static void _updateDownloadProgress(DownloadProgress progress) {
+    downloadProgress.value = [
+      for (final item in downloadProgress.value)
+        if (item.fileId != progress.fileId) item,
+      progress,
+    ];
+  }
+
+  static void _removeDownloadProgress(String fileId) {
+    downloadProgress.value = [
+      for (final item in downloadProgress.value)
+        if (item.fileId != fileId) item,
+    ];
+  }
 
   static Future<User> _requireUser() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -864,6 +901,7 @@ class SpaceSyncService {
     try {
       return await future;
     } finally {
+      _removeDownloadProgress(id);
       if (identical(_activeDownloads[key], future)) {
         _activeDownloads.remove(key);
       }
@@ -884,38 +922,46 @@ class SpaceSyncService {
     );
     await directory.create(recursive: true);
 
+    // আগে সম্পূর্ণ ক্যাশে ফাইল খুঁজে দেখো।
     await for (final entity in directory.list()) {
       if (entity is! File) continue;
       final name = entity.uri.pathSegments.last;
-      if (!name.startsWith(prefix)) continue;
+      if (!name.startsWith(prefix) || name.endsWith('.complete')) {
+        continue;
+      }
 
+      final marker = File('${entity.path}.complete');
       try {
-        if (await entity.exists() && await entity.length() > 0) {
-          return entity.path;
+        if (await entity.exists() &&
+            await entity.length() > 0 &&
+            await marker.exists()) {
+          final recordedSize = int.tryParse(
+            (await marker.readAsString()).trim(),
+          );
+          if (recordedSize == await entity.length()) {
+            return entity.path;
+          }
         }
-        await entity.delete();
+        if (await entity.exists()) await entity.delete();
+        if (await marker.exists()) await marker.delete();
       } catch (_) {}
     }
 
-    final result = await _request(
-      shared ? 'downloadShared' : 'downloadPersonal',
+    final needsSpace = shared;
+    final info = await _request(
+      shared ? 'downloadSharedInfo' : 'downloadPersonalInfo',
       data: {'fileId': fileId},
-      needsSpace: shared,
+      needsSpace: needsSpace,
     );
 
-    final encoded = result['base64']?.toString() ?? '';
-    if (encoded.isEmpty) {
-      throw Exception('ডাউনলোড করার ফাইল পাওয়া যায়নি।');
-    }
-
-    final bytes = base64Decode(encoded);
-    if (bytes.isEmpty) {
-      throw Exception('ডাউনলোড করা ফাইল খালি।');
+    final totalSize = int.tryParse('${info['size'] ?? ''}');
+    if (totalSize == null || totalSize <= 0) {
+      throw Exception('ফাইলের তথ্য পাওয়া যায়নি। আবার চেষ্টা করুন।');
     }
 
     var name = saveAs?.trim().isNotEmpty == true
         ? saveAs!.trim()
-        : (result['name']?.toString() ?? 'media_$fileId');
+        : (info['name']?.toString() ?? 'media_$fileId');
 
     name = name.replaceAll(RegExp(r'[/\\\x00-\x1F]'), '_');
 
@@ -926,13 +972,91 @@ class SpaceSyncService {
     }
 
     final file = File('${directory.path}/$prefix$extension');
-    await file.writeAsBytes(bytes, flush: true);
+    final tempFile = File('${file.path}.part');
+    final marker = File('${file.path}.complete');
 
-    if (!await file.exists() || await file.length() == 0) {
-      throw Exception('ডাউনলোড করা ফাইল সংরক্ষণ করা যায়নি।');
+    try {
+      if (await tempFile.exists()) await tempFile.delete();
+      if (await marker.exists()) await marker.delete();
+
+      const chunkSize = 1024 * 1024;
+      var offset = 0;
+      final stopwatch = Stopwatch()..start();
+
+      while (offset < totalSize) {
+        final requestedSize = (totalSize - offset) < chunkSize
+            ? totalSize - offset
+            : chunkSize;
+
+        final chunk = await _request(
+          shared ? 'downloadSharedChunk' : 'downloadPersonalChunk',
+          data: {
+            'fileId': fileId,
+            'start': offset,
+            'chunkSize': requestedSize,
+          },
+          needsSpace: needsSpace,
+        );
+
+        final returnedStart = int.tryParse('${chunk['start'] ?? ''}');
+        final returnedEnd = int.tryParse('${chunk['end'] ?? ''}');
+        final returnedTotal = int.tryParse('${chunk['total'] ?? ''}');
+        final encoded = chunk['base64']?.toString() ?? '';
+
+        if (encoded.isEmpty ||
+            returnedStart != offset ||
+            returnedTotal != totalSize ||
+            returnedEnd == null) {
+          throw Exception('ডাউনলোডের অংশ যাচাই করা যায়নি।');
+        }
+
+        final bytes = base64Decode(encoded);
+        final expectedLength = returnedEnd - offset + 1;
+
+        if (expectedLength <= 0 ||
+            bytes.length != expectedLength ||
+            bytes.length > requestedSize) {
+          throw Exception('ডাউনলোড অসম্পূর্ণ হয়েছে। আবার চেষ্টা করুন।');
+        }
+
+        await tempFile.writeAsBytes(
+          bytes,
+          mode: offset == 0 ? FileMode.write : FileMode.append,
+          flush: true,
+        );
+
+        offset += bytes.length;
+
+        final elapsedSeconds = stopwatch.elapsedMilliseconds / 1000.0;
+        _updateDownloadProgress(
+          DownloadProgress(
+            fileId: fileId,
+            downloadedBytes: offset,
+            totalBytes: totalSize,
+            bytesPerSecond: elapsedSeconds > 0 ? offset / elapsedSeconds : 0,
+          ),
+        );
+      }
+
+      if (!await tempFile.exists() || await tempFile.length() != totalSize) {
+        throw Exception('ডাউনলোড অসম্পূর্ণ হয়েছে। আবার চেষ্টা করুন।');
+      }
+
+      if (await file.exists()) await file.delete();
+      await tempFile.rename(file.path);
+
+      await marker.writeAsString('$totalSize', flush: true);
+
+      return file.path;
+    } catch (error) {
+      try {
+        if (await tempFile.exists()) await tempFile.delete();
+      } catch (_) {}
+      try {
+        if (await marker.exists()) await marker.delete();
+      } catch (_) {}
+      rethrow;
     }
-
-    return file.path;
   }
 
   static Future<String> downloadMedia(
@@ -946,6 +1070,63 @@ class SpaceSyncService {
     String? saveAs,
   }) =>
       _download(fileId: fileId, shared: false, saveAs: saveAs);
+
+  static Future<String?> getCachedMediaPath(
+    String fileId, {
+    bool shared = true,
+  }) async {
+    final id = fileId.trim();
+    if (id.isEmpty) return null;
+
+    final safeId = id.replaceAll(
+      RegExp(r'[^A-Za-z0-9_-]'),
+      '_',
+    );
+
+    final prefix =
+        'media_${shared ? 'shared' : 'personal'}_${safeId}__';
+
+    final supportDirectory = await getApplicationSupportDirectory();
+    final directory = Directory(
+      '${supportDirectory.path}/eternal_space_media',
+    );
+
+    if (!await directory.exists()) return null;
+
+    await for (final entity in directory.list()) {
+      if (entity is! File) continue;
+
+      final name = entity.uri.pathSegments.last;
+
+      if (!name.startsWith(prefix) ||
+          name.endsWith('.complete') ||
+          name.endsWith('.part')) {
+        continue;
+      }
+
+      try {
+        if (!await entity.exists()) continue;
+
+        final length = await entity.length();
+        if (length <= 0) continue;
+
+        final marker = File('${entity.path}.complete');
+        if (!await marker.exists()) continue;
+
+        final expectedLength = int.tryParse(
+          (await marker.readAsString()).trim(),
+        );
+
+        if (expectedLength == length) {
+          return entity.path;
+        }
+      } catch (error) {
+        debugPrint('Media cache check error: $error');
+      }
+    }
+
+    return null;
+  }
 
   static Future<void> _clearCachedMedia(
     String fileId, {
