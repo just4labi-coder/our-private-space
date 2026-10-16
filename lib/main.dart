@@ -44,47 +44,87 @@ final GlobalKey<NavigatorState> rootNavigatorKey =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp();
-  await DataSaverSettings.load();
-  await NotificationPrivacySettings.load();
+  String? startupError;
+  var firebaseReady = false;
 
-  tz_data.initializeTimeZones();
+  // Firebase failure must not leave the app stuck on a blank white screen.
+  try {
+    await Firebase.initializeApp();
+    firebaseReady = true;
+  } catch (error, stackTrace) {
+    startupError = error.toString();
+    debugPrint('Firebase initialization failed: $error\n$stackTrace');
+  }
 
-  const androidSettings =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
+  try {
+    await DataSaverSettings.load();
+  } catch (error) {
+    debugPrint('Data saver settings load failed: $error');
+  }
 
-  const initializationSettings = InitializationSettings(
-    android: androidSettings,
-  );
+  try {
+    await NotificationPrivacySettings.load();
+  } catch (error) {
+    debugPrint('Notification privacy settings load failed: $error');
+  }
 
-  await notifications.initialize(initializationSettings);
+  try {
+    tz_data.initializeTimeZones();
+  } catch (error) {
+    debugPrint('Timezone initialization failed: $error');
+  }
 
-  await PushNotificationService.initialize();
-  FirebaseMessaging.onMessage.listen((message) {
-    final data = message.data;
-    final kind = data['kind']?.toString() ?? 'message';
-    unawaited(NotificationPrivacySettings.showPartnerNotification(
-      detailedTitle: data['detailedTitle']?.toString() ??
-          message.notification?.title ?? 'Orbit Two',
-      detailedBody: data['detailedBody']?.toString() ??
-          message.notification?.body ?? 'You have an update.',
-      privateTitle: kind == 'change' ? 'Check change' : 'Check message',
-      privateBody: kind == 'change'
-          ? 'Your partner changed shared data.'
-          : 'You have a new message.',
-      id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
-    ));
-  });
+  try {
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initializationSettings = InitializationSettings(
+      android: androidSettings,
+    );
+    await notifications.initialize(initializationSettings);
+  } catch (error) {
+    debugPrint('Local notification initialization failed: $error');
+  }
 
-  // Android 13+ এ অনুমতি না চাইলে লোকাল মেসেজ নোটিফিকেশন দেখাবে না।
-  final androidNotifications = notifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-  await androidNotifications?.requestNotificationsPermission();
+  if (firebaseReady) {
+    try {
+      await PushNotificationService.initialize();
+    } catch (error) {
+      debugPrint('Push notification initialization failed: $error');
+    }
 
-  await SpaceStore.init();
+    FirebaseMessaging.onMessage.listen((message) {
+      final data = message.data;
+      final kind = data['kind']?.toString() ?? 'message';
+      unawaited(NotificationPrivacySettings.showPartnerNotification(
+        detailedTitle: data['detailedTitle']?.toString() ??
+            message.notification?.title ?? 'Orbit Two',
+        detailedBody: data['detailedBody']?.toString() ??
+            message.notification?.body ?? 'You have an update.',
+        privateTitle: kind == 'change' ? 'Check change' : 'Check message',
+        privateBody: kind == 'change'
+            ? 'Your partner changed shared data.'
+            : 'You have a new message.',
+        id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
+      ));
+    });
 
-  runApp(const EternalSpaceApp());
+    try {
+      final androidNotifications = notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      await androidNotifications?.requestNotificationsPermission();
+    } catch (error) {
+      debugPrint('Notification permission request failed: $error');
+    }
+  }
+
+  try {
+    await SpaceStore.init();
+  } catch (error) {
+    debugPrint('Local storage initialization failed: $error');
+  }
+
+  runApp(EternalSpaceApp(startupError: startupError));
 }
 
 class DataSaverSettings {
@@ -189,7 +229,9 @@ class FirebaseServices {
 }
 
 class EternalSpaceApp extends StatelessWidget {
-  const EternalSpaceApp({super.key});
+  const EternalSpaceApp({super.key, this.startupError});
+
+  final String? startupError;
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +256,65 @@ class EternalSpaceApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const SplashScreen(),
+      home: startupError == null\n          ? const SplashScreen()\n          : StartupErrorScreen(message: startupError!),
+    );
+  }
+}
+
+class StartupErrorScreen extends StatelessWidget {
+  const StartupErrorScreen({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/branding/orbit_two_logo.jpg',
+                  width: 100,
+                  height: 100,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.favorite_rounded,
+                    color: pinkColor,
+                    size: 64,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Orbit Two চালু করা যায়নি',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Firebase সংযোগে সমস্যা হয়েছে। ইন্টারনেট সংযোগ পরীক্ষা করে অ্যাপটি আবার খুলুন।',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -614,7 +714,20 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.favorite_rounded, size: 64, color: pinkColor),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.asset(
+                  'assets/branding/orbit_two_logo.jpg',
+                  width: 104,
+                  height: 104,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.favorite_rounded,
+                    size: 64,
+                    color: pinkColor,
+                  ),
+                ),
+              ),
               SizedBox(height: 18),
               const AnimatedOrbitTitle(
                 fontSize: 30,
