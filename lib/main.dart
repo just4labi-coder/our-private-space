@@ -7877,62 +7877,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  bool _emailNotifications = false;
-  bool _loadingEmailNotifications = true;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadEmailNotificationPreference());
-  }
-
-  Future<void> _loadEmailNotificationPreference() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      if (mounted) setState(() => _loadingEmailNotifications = false);
-      return;
-    }
-
-    try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      final enabled = snapshot.data()?['emailNotifications'] == true;
-      if (mounted) {
-        setState(() {
-          _emailNotifications = enabled;
-          _loadingEmailNotifications = false;
-        });
-      }
-    } catch (error) {
-      if (mounted) setState(() => _loadingEmailNotifications = false);
-      debugPrint('Email notification preference read failed: $error');
-    }
-  }
-
-  Future<void> _setEmailNotificationPreference(bool value) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final previous = _emailNotifications;
-    setState(() => _emailNotifications = value);
-
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'emailNotifications': value,
-        'emailNotificationsUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (error) {
-      if (mounted) {
-        setState(() => _emailNotifications = previous);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ইমেইল নোটিফিকেশন সেটিং সংরক্ষণ করা যায়নি।'),
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -8053,25 +7997,6 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         const SizedBox(height: 10),
-        Card(
-          color: surfaceColor,
-          child: SwitchListTile(
-            secondary: const Icon(Icons.mark_email_unread_outlined, color: purpleColor),
-            title: const Text('Email notifications'),
-            subtitle: Text(
-              _loadingEmailNotifications
-                  ? 'সেটিং লোড হচ্ছে…'
-                  : _emailNotifications
-                      ? 'নতুন মেসেজের জন্য HTML ইমেইল চালু আছে।'
-                      : 'নতুন মেসেজের ইমেইল পেতে চালু করো।',
-            ),
-            value: _emailNotifications,
-            activeColor: pinkColor,
-            onChanged: _loadingEmailNotifications
-                ? null
-                : _setEmailNotificationPreference,
-          ),
-        ),
         const SizedBox(height: 20),
         const SectionHeading(title: 'App information'),
         const SizedBox(height: 10),
