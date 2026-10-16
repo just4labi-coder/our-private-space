@@ -995,6 +995,12 @@ class _MainScreenState extends State<MainScreen>
               'mimeType': uploaded['mimeType'] ?? '',
               'size': uploaded['size'] ?? '',
               'storage': 'shared',
+              if ('${metadata['replyToId'] ?? ''}'.isNotEmpty) ...{
+                'replyToId': metadata['replyToId'],
+                'replyToText': metadata['replyToText'] ?? '',
+                'replyToSenderUid': metadata['replyToSenderUid'] ?? '',
+                'replyToSenderName': metadata['replyToSenderName'] ?? '',
+              },
               'mine': true,
               'unsent': false,
               'time': metadata['createdAt'] ??
@@ -2136,6 +2142,7 @@ class _ChatPageState extends State<ChatPage> {
 
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
+  Map<String, dynamic>? _replyToMessage;
 
   String? _pendingMediaName;
   bool _pendingMediaVideo = false;
@@ -2391,11 +2398,23 @@ class _ChatPageState extends State<ChatPage> {
       return;
     }
 
+    final replyTo = _replyToMessage;
     final message = <String, dynamic>{
       'id': DateTime.now().microsecondsSinceEpoch.toString(),
       'senderUid': user.uid,
       'text': text,
       'type': 'text',
+      if (replyTo != null) ...{
+        'replyToId': '${replyTo['id'] ?? ''}',
+        'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
+            ? '${replyTo['text'] ?? ''}'
+            : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+        'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
+        'replyToSenderName': _profileNameForUid(
+          '${replyTo['senderUid'] ?? ''}',
+          _isMine(replyTo) ? 'তুমি' : 'সঙ্গী',
+        ),
+      },
       'mine': true,
       'unsent': false,
       'time': DateTime.now().toIso8601String(),
@@ -2405,6 +2424,13 @@ class _ChatPageState extends State<ChatPage> {
 
     try {
       await ChatSyncService.sendMessage(message);
+      if (mounted) {
+        setState(() {
+          if (_replyToMessage?['id'] == replyTo?['id']) {
+            _replyToMessage = null;
+          }
+        });
+      }
       _scrollToBottom();
     } catch (error) {
       if (!mounted) return;
@@ -2452,6 +2478,7 @@ class _ChatPageState extends State<ChatPage> {
     final messageId =
         DateTime.now().microsecondsSinceEpoch.toString();
     final uploadCreatedAt = DateTime.now().toIso8601String();
+    final replyTo = _replyToMessage;
 
     setState(() {
       _pendingMediaName = fileName;
@@ -2472,6 +2499,17 @@ class _ChatPageState extends State<ChatPage> {
           'type': video ? 'video' : 'image',
           'fileName': fileName,
           'createdAt': uploadCreatedAt,
+          if (replyTo != null) ...{
+            'replyToId': '${replyTo['id'] ?? ''}',
+            'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
+                ? '${replyTo['text'] ?? ''}'
+                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+            'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
+            'replyToSenderName': _profileNameForUid(
+              '${replyTo['senderUid'] ?? ''}',
+              _isMine(replyTo) ? 'তুমি' : 'সঙ্গী',
+            ),
+          },
         },
       );
 
@@ -2493,16 +2531,27 @@ class _ChatPageState extends State<ChatPage> {
         'mimeType': uploaded['mimeType'] ?? '',
         'size': uploaded['size'] ?? '',
         'storage': 'shared',
+        if (replyTo != null) ...{
+          'replyToId': '${replyTo['id'] ?? ''}',
+          'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
+              ? '${replyTo['text'] ?? ''}'
+              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+          'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
+          'replyToSenderName': _profileNameForUid(
+            '${replyTo['senderUid'] ?? ''}',
+            _isMine(replyTo) ? 'তুমি' : 'সঙ্গী',
+          ),
+        },
         'mine': true,
         'unsent': false,
         'time': uploadCreatedAt,
       };
 
-      if (!mounted) return;
-
-      setState(() {
-        _pendingMediaProgress = 1;
-      });
+      if (mounted) {
+        setState(() {
+          _pendingMediaProgress = 1;
+        });
+      }
 
       Object? sendError;
 
@@ -2526,6 +2575,14 @@ class _ChatPageState extends State<ChatPage> {
         throw Exception('মেসেজ পাঠানো যায়নি। আবার চেষ্টা করো।');
       }
       
+      if (mounted) {
+        setState(() {
+          if (_replyToMessage?['id'] == replyTo?['id']) {
+            _replyToMessage = null;
+          }
+        });
+      }
+
       final taskId = uploaded['_uploadTaskId'] ?? '';
       if (taskId.isNotEmpty) {
         await SpaceSyncService.acknowledgeUpload(taskId);
@@ -2590,11 +2647,55 @@ class _ChatPageState extends State<ChatPage> {
     if (date == null) return '';
 
     final local = date.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final messageDay = DateTime(local.year, local.month, local.day);
+    final yesterday = today.subtract(const Duration(days: 1));
     final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
     final period = local.hour >= 12 ? 'PM' : 'AM';
+    final time = '$hour:$minute $period';
 
-    return '$hour:$minute $period';
+    if (messageDay == today) return 'Today • $time';
+    if (messageDay == yesterday) return 'Yesterday • $time';
+
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${local.day} ${months[local.month - 1]} ${local.year} • $time';
+  }
+
+  void _setReplyTo(Map<String, dynamic> message) {
+    if (message['unsent'] == true) return;
+    setState(() => _replyToMessage = Map<String, dynamic>.from(message));
+  }
+
+  Widget _buildReplyQuote(Map<String, dynamic> message) {
+    final replyId = '${message['replyToId'] ?? ''}';
+    if (replyId.isEmpty) return const SizedBox.shrink();
+
+    final senderName = '${message['replyToSenderName'] ?? 'সঙ্গী'}';
+    final preview = '${message['replyToText'] ?? ''}';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.18),
+        border: const Border(left: BorderSide(color: pinkColor, width: 3)),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(senderName, style: const TextStyle(color: pinkColor, fontSize: 11, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        ],
+      ),
+    );
   }
 
   Future<void> _showMessageOptions(int index) async {
@@ -2617,6 +2718,14 @@ class _ChatPageState extends State<ChatPage> {
         return SafeArea(
           child: Wrap(
             children: [
+              ListTile(
+                leading: const Icon(Icons.reply_rounded, color: pinkColor),
+                title: const Text('Reply / উত্তর দাও'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _setReplyTo(message);
+                },
+              ),
               ListTile(
                 leading: const Icon(
                   Icons.info_outline,
@@ -3179,6 +3288,10 @@ class _ChatPageState extends State<ChatPage> {
 
     return GestureDetector(
       onLongPress: () => _showMessageOptions(index),
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity > 250) _setReplyTo(message);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
@@ -3221,7 +3334,14 @@ class _ChatPageState extends State<ChatPage> {
                         bottomRight: Radius.circular(mine ? 5 : 18),
                       ),
                     ),
-                    child: _messageContent(message),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildReplyQuote(message),
+                        _messageContent(message),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -3322,6 +3442,7 @@ class _ChatPageState extends State<ChatPage> {
             photoBase64: '',
             isOnline: false,
             isTyping: false,
+            lastSeen: null,
           );
         }
         return StreamBuilder<Map<String, dynamic>?>(
@@ -3338,6 +3459,7 @@ class _ChatPageState extends State<ChatPage> {
                   photoBase64: _photoBase64ForUid(partnerUid),
                   isOnline: isOnline,
                   isTyping: isTyping,
+                  lastSeen: presence?['lastSeen'],
                 );
               },
             );
@@ -3352,6 +3474,7 @@ class _ChatPageState extends State<ChatPage> {
     required String photoBase64,
     required bool isOnline,
     required bool isTyping,
+    dynamic lastSeen,
   }) {
     final avatar = ProfileAvatar(
       name: name,
@@ -3403,12 +3526,10 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  isTyping ? 'Typing...' : (isOnline ? 'Active now' : 'Offline'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isTyping ? pinkColor : (isOnline ? Colors.greenAccent : Colors.white54),
-                  ),
+                PresenceStatusLabel(
+                  isTyping: isTyping,
+                  isOnline: isOnline,
+                  lastSeen: lastSeen,
                 ),
               ],
             ),
@@ -3518,6 +3639,31 @@ class _ChatPageState extends State<ChatPage> {
             ),
             child: Row(
               children: [
+                if (_replyToMessage != null)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8, right: 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.reply_rounded, color: pinkColor, size: 18),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Reply: ${_replyToMessage!['type'] == 'text' ? (_replyToMessage!['text'] ?? '') : (_replyToMessage!['type'] == 'video' ? 'ভিডিও' : 'ছবি')}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Reply বাতিল',
+                            onPressed: () => setState(() => _replyToMessage = null),
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 IconButton(
                   tooltip: 'ছবি পাঠাও',
                   onPressed: () => _sendMedia(false),
@@ -6446,6 +6592,88 @@ class FirebaseComplaintStore {
 // TYPING DOTS INDICATOR WIDGET
 // ============================================================
 
+
+class PresenceStatusLabel extends StatefulWidget {
+  const PresenceStatusLabel({
+    super.key,
+    required this.isTyping,
+    required this.isOnline,
+    this.lastSeen,
+  });
+
+  final bool isTyping;
+  final bool isOnline;
+  final dynamic lastSeen;
+
+  @override
+  State<PresenceStatusLabel> createState() => _PresenceStatusLabelState();
+}
+
+class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
+  Timer? _clock;
+
+  @override
+  void initState() {
+    super.initState();
+    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && !widget.isOnline && !widget.isTyping) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant PresenceStatusLabel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lastSeen != widget.lastSeen ||
+        oldWidget.isOnline != widget.isOnline ||
+        oldWidget.isTyping != widget.isTyping) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
+
+  DateTime? _lastSeenDate() {
+    final value = widget.lastSeen;
+    if (value is Timestamp) return value.toDate().toLocal();
+    if (value is DateTime) return value.toLocal();
+    return DateTime.tryParse('${value ?? ''}')?.toLocal();
+  }
+
+  String _label() {
+    if (widget.isTyping) return 'Typing...';
+    if (widget.isOnline) return 'Active now';
+
+    final lastSeen = _lastSeenDate();
+    if (lastSeen == null) return 'Offline';
+
+    final seconds = DateTime.now().difference(lastSeen).inSeconds;
+    if (seconds < 60) return 'Active ${seconds < 0 ? 0 : seconds} sec ago';
+    final minutes = seconds ~/ 60;
+    if (minutes < 60) return 'Active ${minutes} min ago';
+    final hours = minutes ~/ 60;
+    if (hours < 24) return 'Active ${hours} hr ago';
+    final days = hours ~/ 24;
+    return 'Active ${days} day${days == 1 ? '' : 's'} ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      _label(),
+      style: TextStyle(
+        fontSize: 11,
+        color: widget.isTyping
+            ? pinkColor
+            : (widget.isOnline ? Colors.greenAccent : Colors.white54),
+      ),
+    );
+  }
+}
+
 class TypingDotsIndicator extends StatefulWidget {
   const TypingDotsIndicator({super.key});
 
@@ -6474,49 +6702,45 @@ class _TypingDotsIndicatorState extends State<TypingDotsIndicator>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 10,
-          ),
-          decoration: BoxDecoration(
-            color: surfaceColor,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(3, (index) {
-              final phase = (_controller.value * 3 - index).abs() % 3;
-              final active = phase < 1;
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 3,
-                ),
-                child: Transform.translate(
-                  offset: Offset(
-                    0,
-                    active ? -3 : 2,
-                  ),
-                  child: Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: pinkColor.withValues(
-                        alpha: active ? 1 : 0.45,
+    return RepaintBoundary(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: surfaceColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: AnimatedBuilder(
+          animation: _controller,
+          child: const SizedBox.shrink(),
+          builder: (context, _) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (index) {
+                final phase = _controller.value * 2 * pi - index * (2 * pi / 3);
+                final lift = (sin(phase) + 1) / 2;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Transform.translate(
+                    offset: Offset(0, -4 * lift),
+                    child: Opacity(
+                      opacity: 0.4 + 0.6 * lift,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: pinkColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
-              );
-            }),
-          ),
-        );
-      },
+                );
+              }),
+            );
+          },
+        ),
+      ),
     );
   }
 }
