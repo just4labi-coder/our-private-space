@@ -2133,7 +2133,7 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final TextEditingController controller = TextEditingController();
   final ScrollController scrollController = ScrollController();
 
@@ -2144,10 +2144,21 @@ class _ChatPageState extends State<ChatPage> {
 
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
+  Timer? _typingIdleTimer;
+  Timer? _draftSaveTimer;
   Map<String, dynamic>? _replyToMessage;
+  final Set<String> _expandedMessageTimes = <String>{};
+  final Map<String, double> _replyDragOffsets = <String, double>{};
   final AudioRecorder _voiceRecorder = AudioRecorder();
   bool _isRecordingVoice = false;
   bool _attachmentMenuOpen = false;
+  bool _appIsResumed = true;
+  bool _draftLoaded = false;
+  String? _recordingPath;
+  String? _recordedVoicePath;
+  DateTime? _recordingStartedAt;
+  Duration _recordingElapsed = Duration.zero;
+  Timer? _recordingTimer;
 
   String? _pendingMediaName;
   bool _pendingMediaVideo = false;
@@ -2189,6 +2200,9 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appIsResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    unawaited(_restoreDraft());
     SpaceSyncService.uploadProgress.addListener(
       _handleUploadProgressChanged,
     );
@@ -2232,55 +2246,106 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  String get _draftKey => 'chatDraft_${_currentUid.isEmpty ? 'guest' : _currentUid}';
+
+  Future<void> _restoreDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draft = prefs.getString(_draftKey) ?? '';
+      if (mounted && controller.text.isEmpty && draft.isNotEmpty) {
+        controller.value = TextEditingValue(
+          text: draft,
+          selection: TextSelection.collapsed(offset: draft.length),
+        );
+      }
+    } catch (error) {
+      debugPrint('Chat draft restore skipped: $error');
+    } finally {
+      _draftLoaded = true;
+    }
+  }
+
+  Future<void> _persistDraft(String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_draftKey, value);
+    } catch (error) {
+      debugPrint('Chat draft save skipped: $error');
+    }
+  }
+
+  void _scheduleDraftSave(String value) {
+    if (!_draftLoaded) return;
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 250), () {
+      unawaited(_persistDraft(value));
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsResumed = state == AppLifecycleState.resumed;
+    if (_appIsResumed && messages.isNotEmpty) {
+      unawaited(ChatSyncService.markMessagesSeen(messages).catchError(
+        (Object error) {
+          debugPrint('Mark seen after resume skipped: $error');
+        },
+      ));
+    } else if (!_appIsResumed) {
+      _typingIdleTimer?.cancel();
+      _typingIdleTimer = null;
+      unawaited(_stopTyping());
+    }
+  }
+
   void _handleTypingChanged(String value) {
+    _scheduleDraftSave(value);
     final shouldType = value.trim().isNotEmpty;
 
     if (shouldType) {
-      // প্রথম অক্ষর লেখার সঙ্গে সঙ্গেই Typing চালু হবে।
       if (!_isTypingSent) {
         _isTypingSent = true;
-
-        unawaited(
-          ChatSyncService.setTyping(isTyping: true).catchError(
-            (Object error) {
-              debugPrint('Typing status update failed: $error');
-            },
-          ),
-        );
+        unawaited(ChatSyncService.setTyping(isTyping: true).catchError(
+          (Object error) {
+            debugPrint('Typing status update failed: $error');
+          },
+        ));
       }
 
-      // লেখা চলাকালীন নিয়মিত heartbeat পাঠাবে।
+      _typingIdleTimer?.cancel();
+      _typingIdleTimer = Timer(const Duration(milliseconds: 1200), () {
+        if (!mounted) return;
+        unawaited(_stopTyping());
+      });
+
       _typingHeartbeatTimer ??= Timer.periodic(
         const Duration(seconds: 2),
         (_) {
-          if (!mounted || controller.text.trim().isEmpty) {
+          if (!mounted ||
+              !_appIsResumed ||
+              controller.text.trim().isEmpty ||
+              _typingIdleTimer == null) {
             return;
           }
-
-          unawaited(
-            ChatSyncService.setTyping(isTyping: true).catchError(
-              (Object error) {
-                debugPrint('Typing heartbeat failed: $error');
-              },
-            ),
-          );
+          unawaited(ChatSyncService.setTyping(isTyping: true).catchError(
+            (Object error) {
+              debugPrint('Typing heartbeat failed: $error');
+            },
+          ));
         },
       );
     } else {
-      // ইনপুট খালি হলে সঙ্গে সঙ্গে Typing বন্ধ করবে।
+      _typingIdleTimer?.cancel();
+      _typingIdleTimer = null;
       _typingHeartbeatTimer?.cancel();
       _typingHeartbeatTimer = null;
-
       if (_isTypingSent) {
         _isTypingSent = false;
-
-        unawaited(
-          ChatSyncService.clearTyping().catchError(
-            (Object error) {
-              debugPrint('Typing status clear failed: $error');
-            },
-          ),
-        );
+        unawaited(ChatSyncService.clearTyping().catchError(
+          (Object error) {
+            debugPrint('Typing status clear failed: $error');
+          },
+        ));
       }
     }
   }
@@ -2288,6 +2353,8 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _stopTyping() async {
     _typingHeartbeatTimer?.cancel();
     _typingHeartbeatTimer = null;
+    _typingIdleTimer?.cancel();
+    _typingIdleTimer = null;
     if (!_isTypingSent) return;
     _isTypingSent = false;
     try {
@@ -2317,13 +2384,15 @@ class _ChatPageState extends State<ChatPage> {
             messages = latestMessages;
           });
 
-          unawaited(
+          if (_appIsResumed) {
+            unawaited(
             ChatSyncService.markMessagesSeen(latestMessages).catchError(
               (Object error) {
                 debugPrint('Mark seen skipped: $error');
               },
             ),
-          );
+            );
+          }
 
           _scrollToBottom();
         },
@@ -2344,8 +2413,17 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _typingHeartbeatTimer?.cancel();
     _typingHeartbeatTimer = null;
+    _typingIdleTimer?.cancel();
+    _typingIdleTimer = null;
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = null;
+    unawaited(_persistDraft(controller.text));
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    if (_isRecordingVoice) unawaited(_voiceRecorder.stop());
 
     if (_isTypingSent) {
       _isTypingSent = false;
@@ -2427,6 +2505,8 @@ class _ChatPageState extends State<ChatPage> {
     };
 
     controller.clear();
+    _scheduleDraftSave('');
+    unawaited(_persistDraft(''));
 
     try {
       await ChatSyncService.sendMessage(message);
@@ -2627,8 +2707,15 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  String _formatRecordingDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   Future<void> _startVoiceRecording() async {
-    if (_isRecordingVoice) return;
+    if (_isRecordingVoice || _recordedVoicePath != null) return;
     if (FirebaseAuth.instance.currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('আগে Partner Space-এ যুক্ত হও।')),
@@ -2657,12 +2744,28 @@ class _ChatPageState extends State<ChatPage> {
       await _voiceRecorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
-          bitRate: 64000,
+          bitRate: 128000,
           sampleRate: 44100,
         ),
         path: path,
       );
-      if (mounted) setState(() => _isRecordingVoice = true);
+      if (mounted) {
+        setState(() {
+          _recordingPath = path;
+          _recordedVoicePath = null;
+          _recordingStartedAt = DateTime.now();
+          _recordingElapsed = Duration.zero;
+          _isRecordingVoice = true;
+        });
+      }
+      _recordingTimer?.cancel();
+      _recordingTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        final started = _recordingStartedAt;
+        if (!mounted || !_isRecordingVoice || started == null) return;
+        setState(() {
+          _recordingElapsed = DateTime.now().difference(started);
+        });
+      });
     } catch (error) {
       debugPrint('Voice recording start failed: $error');
       if (mounted) {
@@ -2677,19 +2780,31 @@ class _ChatPageState extends State<ChatPage> {
     if (!_isRecordingVoice) return;
     try {
       final path = await _voiceRecorder.stop();
-      if (mounted) setState(() => _isRecordingVoice = false);
-      if (path == null || path.isEmpty) return;
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+      if (path == null || path.isEmpty) {
+        if (mounted) setState(() => _isRecordingVoice = false);
+        return;
+      }
       final file = File(path);
       if (!await file.exists() || await file.length() == 0) {
         throw Exception('রেকর্ড করা ভয়েস পাওয়া যায়নি।');
       }
-      await _sendVoiceFile(file);
+      if (mounted) {
+        setState(() {
+          _isRecordingVoice = false;
+          _recordingPath = path;
+          _recordedVoicePath = path;
+        });
+      }
     } catch (error) {
       debugPrint('Voice recording stop failed: $error');
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
       if (mounted) {
         setState(() => _isRecordingVoice = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ভয়েস পাঠানো যায়নি: $error')),
+          SnackBar(content: Text('ভয়েস রেকর্ড বন্ধ হয়নি: $error')),
         );
       }
     }
@@ -2698,9 +2813,151 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _toggleVoiceRecording() async {
     if (_isRecordingVoice) {
       await _stopVoiceRecording();
-    } else {
+    } else if (_recordedVoicePath == null) {
       await _startVoiceRecording();
     }
+  }
+
+  Future<void> _resetVoiceRecording() async {
+    final oldPath = _recordedVoicePath ?? _recordingPath;
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    if (oldPath != null) {
+      try {
+        final oldFile = File(oldPath);
+        if (await oldFile.exists()) await oldFile.delete();
+      } catch (error) {
+        debugPrint('Old voice recording cleanup skipped: $error');
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _recordingPath = null;
+      _recordedVoicePath = null;
+      _recordingStartedAt = null;
+      _recordingElapsed = Duration.zero;
+      _isRecordingVoice = false;
+    });
+    await _startVoiceRecording();
+  }
+
+  Future<void> _deleteVoiceRecording() async {
+    String? path = _recordedVoicePath ?? _recordingPath;
+    if (_isRecordingVoice) {
+      try {
+        path = await _voiceRecorder.stop() ?? path;
+      } catch (_) {}
+    }
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    if (path != null) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (error) {
+        debugPrint('Voice recording delete skipped: $error');
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _isRecordingVoice = false;
+        _recordingPath = null;
+        _recordedVoicePath = null;
+        _recordingStartedAt = null;
+        _recordingElapsed = Duration.zero;
+      });
+    }
+  }
+
+  Future<void> _sendRecordedVoice() async {
+    final path = _recordedVoicePath;
+    if (path == null) return;
+    final file = File(path);
+    if (!await file.exists()) {
+      await _deleteVoiceRecording();
+      return;
+    }
+    await _sendVoiceFile(file);
+  }
+
+  Widget _buildVoiceRecordingPanel() {
+    if (!_isRecordingVoice && _recordedVoicePath == null) {
+      return const SizedBox.shrink();
+    }
+    final elapsed = _recordingElapsed;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: pinkColor.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isRecordingVoice ? Icons.fiber_manual_record_rounded : Icons.mic_rounded,
+            color: _isRecordingVoice ? Colors.redAccent : pinkColor,
+            size: 19,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _formatRecordingDuration(elapsed),
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SizedBox(
+              height: 28,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: List.generate(28, (index) {
+                  final phase = (elapsed.inMilliseconds ~/ 120 + index * 7) % 19;
+                  final height = 5.0 + (phase % 13);
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: 2.5,
+                    height: height,
+                    decoration: BoxDecoration(
+                      color: _isRecordingVoice ? pinkColor : Colors.white54,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
+          if (_isRecordingVoice)
+            IconButton(
+              tooltip: 'রেকর্ড বন্ধ',
+              visualDensity: VisualDensity.compact,
+              onPressed: _stopVoiceRecording,
+              icon: const Icon(Icons.stop_circle_rounded, color: Colors.redAccent),
+            )
+          else ...[
+            IconButton(
+              tooltip: 'আবার রেকর্ড',
+              visualDensity: VisualDensity.compact,
+              onPressed: _resetVoiceRecording,
+              icon: const Icon(Icons.replay_rounded, color: pinkColor),
+            ),
+            IconButton(
+              tooltip: 'ভয়েস মুছুন',
+              visualDensity: VisualDensity.compact,
+              onPressed: _deleteVoiceRecording,
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+            ),
+            IconButton(
+              tooltip: 'ভয়েস পাঠান',
+              visualDensity: VisualDensity.compact,
+              onPressed: _sendRecordedVoice,
+              icon: const Icon(Icons.send_rounded, color: pinkColor),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Future<void> _sendVoiceFile(File file) async {
@@ -2784,6 +3041,10 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) {
         setState(() {
           if (_replyToMessage?['id'] == replyTo?['id']) _replyToMessage = null;
+          _recordedVoicePath = null;
+          _recordingPath = null;
+          _recordingStartedAt = null;
+          _recordingElapsed = Duration.zero;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ভয়েস মেসেজ পাঠানো হয়েছে।')),
@@ -3504,141 +3765,203 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  DateTime? _messageDate(dynamic value) {
+    if (value is Timestamp) return value.toDate().toLocal();
+    if (value is DateTime) return value.toLocal();
+    return DateTime.tryParse('${value ?? ''}')?.toLocal();
+  }
+
+  bool _shouldShowTimeDivider(int index) {
+    if (index <= 0 || index >= messages.length) return false;
+    final previous = messages[index - 1];
+    final current = messages[index];
+    if ('${previous['senderUid'] ?? ''}' == '${current['senderUid'] ?? ''}') return false;
+    final previousDate = _messageDate(previous['time']);
+    final currentDate = _messageDate(current['time']);
+    if (previousDate == null || currentDate == null) return false;
+    return currentDate.difference(previousDate) > const Duration(minutes: 10);
+  }
+
   Widget _buildMessage(Map<String, dynamic> message, int index) {
     final mine = _isMine(message);
     final senderUid = '${message['senderUid'] ?? ''}';
+    final messageId = '${message['id'] ?? index}';
+    final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 76.0);
+    final expanded = _expandedMessageTimes.contains(messageId);
 
-    return GestureDetector(
-      onLongPress: () => _showMessageOptions(index),
-      onHorizontalDragEnd: (details) {
-        final velocity = details.primaryVelocity ?? 0;
-        if (velocity > 250) _setReplyTo(message);
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          mainAxisAlignment:
-              mine ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!mine) ...[
-              ProfileAvatar(
-                name: _profileNameForUid(senderUid, 'Partner'),
-                photoBase64: _photoBase64ForUid(senderUid),
-                radius: 16,
-                color: purpleColor,
+    final row = Row(
+      mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (!mine) ...[
+          ProfileAvatar(
+            name: _profileNameForUid(senderUid, 'Partner'),
+            photoBase64: _photoBase64ForUid(senderUid),
+            radius: 16,
+            color: purpleColor,
+          ),
+          const SizedBox(width: 7),
+        ],
+        Flexible(
+          child: Column(
+            crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Container(
+                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: mine ? const Color(0xFF453078) : surfaceColor,
+                  border: Border.all(
+                    color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(18),
+                    topRight: const Radius.circular(18),
+                    bottomLeft: Radius.circular(mine ? 18 : 5),
+                    bottomRight: Radius.circular(mine ? 5 : 18),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildReplyQuote(message),
+                    _messageContent(message),
+                  ],
+                ),
               ),
-              const SizedBox(width: 7),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: expanded
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _formatTime(message['time']),
+                              style: const TextStyle(fontSize: 10, color: Colors.white54),
+                            ),
+                            if (mine && index == _lastOwnMessageIndex) ...[
+                              const SizedBox(width: 6),
+                              Builder(
+                                builder: (context) {
+                                  final rawSeenBy = message['seenBy'];
+                                  final wasSeen = rawSeenBy is Map &&
+                                      rawSeenBy.entries.any((entry) =>
+                                          '${entry.key}' != _currentUid && entry.value == true);
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        wasSeen ? Icons.done_all_rounded : Icons.done_rounded,
+                                        size: 13,
+                                        color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        wasSeen ? 'Seen' : 'Sent',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ],
-            Flexible(
-              child: Column(
-                crossAxisAlignment:
-                    mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.sizeOf(context).width * 0.72,
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: mine
-                          ? const Color(0xFF453078)
-                          : surfaceColor,
-                      border: Border.all(
-                        color: mine
-                            ? pinkColor.withValues(alpha: 0.25)
-                            : Colors.white10,
-                      ),
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(18),
-                        topRight: const Radius.circular(18),
-                        bottomLeft: Radius.circular(mine ? 18 : 5),
-                        bottomRight: Radius.circular(mine ? 5 : 18),
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildReplyQuote(message),
-                        _messageContent(message),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _formatTime(message['time']),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white54,
-                        ),
-                      ),
-                      if (mine && index == _lastOwnMessageIndex) ...[
-                        const SizedBox(width: 6),
-                        Builder(
-                          builder: (context) {
-                            final rawSeenBy = message['seenBy'];
-                            final wasSeen = rawSeenBy is Map &&
-                                rawSeenBy.entries.any(
-                                  (entry) =>
-                                      '${entry.key}' != _currentUid &&
-                                      entry.value == true,
-                                );
+          ),
+        ),
+        if (mine) ...[
+          const SizedBox(width: 7),
+          ProfileAvatar(
+            name: _profileNameForUid(
+              _currentUid,
+              FirebaseAuth.instance.currentUser?.displayName ??
+                  FirebaseAuth.instance.currentUser?.email?.split('@').first ??
+                  'You',
+            ),
+            photoBase64: _photoBase64ForUid(_currentUid),
+            radius: 16,
+            color: pinkColor,
+          ),
+        ],
+      ],
+    );
 
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  wasSeen
-                                      ? Icons.done_all_rounded
-                                      : Icons.done_rounded,
-                                  size: 13,
-                                  color: wasSeen
-                                      ? const Color(0xFF53D9FF)
-                                      : Colors.white54,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  wasSeen ? 'Seen' : 'Sent',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: wasSeen
-                                        ? const Color(0xFF53D9FF)
-                                        : Colors.white54,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
+    return Column(
+      children: [
+        if (_shouldShowTimeDivider(index))
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 5),
+            child: Center(
+              child: Text(
+                _formatTime(message['time']),
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            if (mine) ...[
-              const SizedBox(width: 7),
-              ProfileAvatar(
-                name: _profileNameForUid(
-                  _currentUid,
-                  FirebaseAuth.instance.currentUser?.displayName ??
-                      FirebaseAuth.instance.currentUser?.email
-                          ?.split('@')
-                          .first ??
-                      'You',
+          ),
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              if (expanded) {
+                _expandedMessageTimes.remove(messageId);
+              } else {
+                _expandedMessageTimes.add(messageId);
+              }
+            });
+          },
+          onLongPress: () => _showMessageOptions(index),
+          onHorizontalDragUpdate: (details) {
+            if (details.delta.dx <= 0 && (_replyDragOffsets[messageId] ?? 0) <= 0) return;
+            setState(() {
+              _replyDragOffsets[messageId] =
+                  ((_replyDragOffsets[messageId] ?? 0) + details.delta.dx).clamp(0.0, 76.0);
+            });
+          },
+          onHorizontalDragEnd: (_) {
+            final offset = _replyDragOffsets[messageId] ?? 0;
+            if (offset >= 42) _setReplyTo(message);
+            setState(() => _replyDragOffsets[messageId] = 0);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 2,
+                  child: AnimatedOpacity(
+                    opacity: dragOffset >= 8 ? 1 : 0,
+                    duration: const Duration(milliseconds: 100),
+                    child: const Icon(Icons.reply_rounded, color: pinkColor, size: 22),
+                  ),
                 ),
-                photoBase64: _photoBase64ForUid(_currentUid),
-                radius: 16,
-                color: pinkColor,
-              ),
-            ],
-          ],
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 90),
+                  curve: Curves.easeOut,
+                  transform: Matrix4.translationValues(dragOffset, 0, 0),
+                  child: row,
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -3885,6 +4208,7 @@ class _ChatPageState extends State<ChatPage> {
                       ],
                     ),
                   ),
+                _buildVoiceRecordingPanel(),
                 Row(
                   children: [
                     PopupMenuButton<String>(
@@ -3948,7 +4272,7 @@ class _ChatPageState extends State<ChatPage> {
                       ),
                     ),
                     IconButton(
-                      tooltip: _isRecordingVoice ? 'রেকর্ডিং বন্ধ করে পাঠাও' : 'ভয়েস রেকর্ড',
+                      tooltip: _isRecordingVoice ? 'রেকর্ড বন্ধ' : 'ভয়েস রেকর্ড',
                       onPressed: _toggleVoiceRecording,
                       icon: Icon(
                         _isRecordingVoice ? Icons.stop_circle_rounded : Icons.mic_none_rounded,
@@ -5843,6 +6167,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   void initState() {
     super.initState();
     _player = AudioPlayer();
+    unawaited(_player.setVolume(1.0));
     _stateSubscription = _player.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
       setState(() => _isPlaying = state == PlayerState.playing);
@@ -5856,6 +6181,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
       } else if (_player.state == PlayerState.paused) {
         await _player.resume();
       } else {
+        await _player.setVolume(1.0);
         await _player.play(DeviceFileSource(widget.path));
       }
     } catch (error) {
