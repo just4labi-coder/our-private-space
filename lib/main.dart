@@ -3905,9 +3905,66 @@ class _GalleryPageState extends State<GalleryPage> {
       return null;
     }
 
+    // Upload সফল হলে picker-এর অস্থায়ী path-এর ওপর নির্ভর না করে
+    // একই ফাইলকে স্থায়ী media cache-এ রাখো।
+    var galleryLocalPath = picked.path;
+    try {
+      final fileId = (
+        uploaded['fileId'] ??
+        uploaded['driveFileId'] ??
+        ''
+      ).toString().trim();
+
+      final sourceFile = File(picked.path);
+
+      if (fileId.isNotEmpty &&
+          await sourceFile.exists() &&
+          await sourceFile.length() > 0) {
+        final size = await sourceFile.length();
+        final support = await getApplicationSupportDirectory();
+        final cacheDirectory = Directory(
+          '${support.path}/eternal_space_media',
+        );
+        await cacheDirectory.create(recursive: true);
+
+        final safeId = fileId.replaceAll(
+          RegExp(r'[^A-Za-z0-9_-]'),
+          '_',
+        );
+        final dot = picked.name.lastIndexOf('.');
+        final extension = dot > 0 && picked.name.length - dot <= 10
+            ? picked.name.substring(dot).toLowerCase()
+            : '';
+
+        final cachedFile = File(
+          '${cacheDirectory.path}/media_shared_${safeId}__${extension}',
+        );
+        final tempFile = File('${cachedFile.path}.part');
+        final marker = File('${cachedFile.path}.complete');
+
+        if (await marker.exists()) await marker.delete();
+        if (await tempFile.exists()) await tempFile.delete();
+
+        await sourceFile.copy(tempFile.path);
+
+        if (await tempFile.length() != size) {
+          throw Exception('লোকাল ক্যাশ যাচাই করা যায়নি।');
+        }
+
+        if (await cachedFile.exists()) await cachedFile.delete();
+        await tempFile.rename(cachedFile.path);
+        await marker.writeAsString('$size', flush: true);
+
+        galleryLocalPath = cachedFile.path;
+      }
+    } catch (error) {
+      // লোকাল ক্যাশে ব্যর্থ হলেও সফল Drive upload নষ্ট করবে না।
+      debugPrint('Gallery local cache copy failed: $error');
+    }
+
     final item = <String, dynamic>{
       'id': itemId,
-      'path': picked.path,
+      'path': galleryLocalPath,
       'type': video ? 'video' : 'image',
       'folderId': folderId,
       'createdAt': uploadCreatedAt,
