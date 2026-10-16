@@ -62,7 +62,8 @@ class AuthService {
 
       if (value is String &&
           value.trim().isNotEmpty &&
-          value.trim() != 'Eternal Space User') {
+          value.trim() != 'Orbit Two User' &&
+          value.trim() != 'Orbit Two User') {
         return value.trim();
       }
     } catch (error) {
@@ -180,14 +181,15 @@ class AuthService {
     final String name;
 
     if (oldName.isNotEmpty &&
-        oldName != 'Eternal Space User') {
+        oldName != 'Orbit Two User' &&
+        oldName != 'Orbit Two User') {
       name = oldName;
     } else if (displayName.isNotEmpty) {
       name = displayName;
     } else if (emailPrefix.isNotEmpty) {
       name = emailPrefix;
     } else {
-      name = 'Eternal Space User';
+      name = 'Orbit Two User';
     }
 
     await doc.set({
