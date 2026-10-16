@@ -2148,6 +2148,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _hasLoadedInitialMessages = false;
   bool _isNearChatBottom = true;
   bool _showJumpToBottom = false;
+  bool _userHasScrolledAwayFromBottom = false;
   bool _userIsScrolling = false;
   int _scrollRequestToken = 0;
 
@@ -2399,8 +2400,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               : '${latestMessages.last['id'] ?? ''}';
           final hasNewTailMessage = latestMessages.length > previousCount ||
               (latestMessages.isNotEmpty && nextLastId != previousLastId);
-          final shouldFollowTail =
-              firstSnapshot || (_isNearChatBottom && hasNewTailMessage);
+          final shouldFollowTail = firstSnapshot ||
+              (!_userHasScrolledAwayFromBottom &&
+                  _isNearChatBottom &&
+                  hasNewTailMessage);
 
           setState(() {
             messages = latestMessages;
@@ -4547,9 +4550,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     } else if (notification is ScrollEndNotification) {
                       _userIsScrolling = false;
                     }
+                    if (notification is ScrollUpdateNotification) {
+                      final delta = notification.scrollDelta ?? 0;
+                      // Upward manual scrolling disables auto-follow so new
+                      // snapshots cannot keep dragging the user back down.
+                      if (notification.dragDetails != null && delta < 0) {
+                        _userHasScrolledAwayFromBottom = true;
+                      }
+                    }
                     if (notification is ScrollUpdateNotification ||
                         notification is ScrollEndNotification) {
                       _updateChatScrollPosition();
+                      if (_isNearChatBottom) {
+                        _userHasScrolledAwayFromBottom = false;
+                      }
                       final shouldShow = !_isNearChatBottom;
                       if (shouldShow != _showJumpToBottom && mounted) {
                         setState(() => _showJumpToBottom = shouldShow);
@@ -4590,7 +4604,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                             shape: const CircleBorder(),
                             child: InkWell(
                               customBorder: const CircleBorder(),
-                              onTap: () => _scrollToBottom(),
+                              onTap: () {
+                                  _userHasScrolledAwayFromBottom = false;
+                                  _scrollToBottom();
+                                },
                               child: const SizedBox(
                                 width: 48,
                                 height: 48,
