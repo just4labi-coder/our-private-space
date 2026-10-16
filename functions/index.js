@@ -91,6 +91,18 @@ async function getRecipients(spaceId, senderUid) {
   return members.filter((uid) => typeof uid === "string" && uid && uid !== senderUid);
 }
 
+async function getSenderName(spaceId, senderUid) {
+  const space = await db.collection("privateSpaces").doc(spaceId).get();
+  const names = space.exists ? space.get("memberNames") : null;
+  if (names && typeof names[senderUid] === "string" && names[senderUid].trim()) {
+    return names[senderUid].trim();
+  }
+
+  const profile = await db.collection("users").doc(senderUid).get();
+  const name = profile.exists ? stringValue(profile.get("name")).trim() : "";
+  return name || "Your partner";
+}
+
 exports.notifyNewChatMessage = onDocumentCreated(
   "privateSpaces/{spaceId}/chatMessages/{messageId}",
   async (event) => {
@@ -105,7 +117,7 @@ exports.notifyNewChatMessage = onDocumentCreated(
       (type === "voice" ? "Sent a voice message" :
        type === "image" ? "Sent a photo" :
        type === "video" ? "Sent a video" : "Sent a media file");
-    const sender = stringValue(message.senderName, "Your partner");
+    const sender = await getSenderName(event.params.spaceId, senderUid);
     const notification = {
       kind: "message",
       detailedTitle: sender,
@@ -133,7 +145,7 @@ exports.notifyChangedChatMessage = onDocumentUpdated(
     const recipients = await getRecipients(event.params.spaceId, senderUid);
     const notification = {
       kind: "change",
-      detailedTitle: stringValue(after.senderName, "Your partner"),
+      detailedTitle: await getSenderName(event.params.spaceId, senderUid),
       detailedBody: becameUnsent ? "A message was removed." : "A message was edited.",
       privateTitle: "Check change",
       privateBody: "Your partner changed a message.",
@@ -153,7 +165,7 @@ exports.notifyDeletedChatMessage = onDocumentDeleted(
     const recipients = await getRecipients(event.params.spaceId, senderUid);
     const notification = {
       kind: "change",
-      detailedTitle: stringValue(message.senderName, "Your partner"),
+      detailedTitle: await getSenderName(event.params.spaceId, senderUid),
       detailedBody: "A message was removed.",
       privateTitle: "Check change",
       privateBody: "Your partner changed a message.",
@@ -184,7 +196,7 @@ exports.notifySharedSpaceChanges = onDocumentWritten(
     const uniqueReadable = [...new Set(readable)].join(", ");
     const notification = {
       kind: "change",
-      detailedTitle: "Partner update",
+      detailedTitle: await getSenderName(event.params.spaceId, senderUid),
       detailedBody: "Changed: " + uniqueReadable,
       privateTitle: "Check change",
       privateBody: "Your partner changed shared data.",
