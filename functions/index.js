@@ -186,6 +186,58 @@ exports.notifyDeletedChatMessage = onDocumentDeleted(
   },
 );
 
+exports.notifySpaceDocumentChanges = onDocumentUpdated(
+  "privateSpaces/{spaceId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    const members = after.memberUids;
+    if (!Array.isArray(members) || members.length !== 2 ||
+        !Array.isArray(before.memberUids) || before.memberUids.length !== 2 ||
+        after.connectionStatus === "disconnected") {
+      return;
+    }
+
+    const changed = [];
+    let inferredActor = "";
+    const beforeNames = before.memberNames && typeof before.memberNames === "object"
+      ? before.memberNames : {};
+    const afterNames = after.memberNames && typeof after.memberNames === "object"
+      ? after.memberNames : {};
+
+    if (JSON.stringify(beforeNames) !== JSON.stringify(afterNames)) {
+      changed.push("Partner profile");
+      const nameUids = new Set([...Object.keys(beforeNames), ...Object.keys(afterNames)]);
+      for (const uid of nameUids) {
+        if (beforeNames[uid] !== afterNames[uid] && members.includes(uid)) {
+          inferredActor = uid;
+        }
+      }
+    }
+
+    if (JSON.stringify(before.relationshipStartAt ?? null) !==
+        JSON.stringify(after.relationshipStartAt ?? null)) {
+      changed.push("Together For date");
+    }
+
+    if (!changed.length) return;
+    const senderUid = stringValue(after.updatedBy, inferredActor);
+    if (!members.includes(senderUid)) return;
+
+    const notification = {
+      kind: "change",
+      detailedTitle: await getSenderName(event.params.spaceId, senderUid),
+      detailedBody: "Changed: " + [...new Set(changed)].join(", "),
+      privateTitle: "Check change",
+      privateBody: "Your partner changed shared data.",
+    };
+    const recipients = await getRecipients(event.params.spaceId, senderUid);
+    await Promise.all(recipients.map((uid) => sendToUser(uid, notification)));
+  },
+);
+
 exports.notifySharedSpaceChanges = onDocumentWritten(
   "privateSpaces/{spaceId}/syncData/appState",
   async (event) => {
