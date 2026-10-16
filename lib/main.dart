@@ -3637,33 +3637,34 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               ),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 if (_replyToMessage != null)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8, right: 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.reply_rounded, color: pinkColor, size: 18),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Reply: ${_replyToMessage!['type'] == 'text' ? (_replyToMessage!['text'] ?? '') : (_replyToMessage!['type'] == 'video' ? 'ভিডিও' : 'ছবি')}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white70, fontSize: 12),
-                            ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.reply_rounded, color: pinkColor, size: 18),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Reply: ${_replyToMessage!['type'] == 'text' ? (_replyToMessage!['text'] ?? '') : (_replyToMessage!['type'] == 'video' ? 'ভিডিও' : 'ছবি')}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
                           ),
-                          IconButton(
-                            tooltip: 'Reply বাতিল',
-                            onPressed: () => setState(() => _replyToMessage = null),
-                            icon: const Icon(Icons.close_rounded, size: 18),
-                          ),
-                        ],
-                      ),
+                        ),
+                        IconButton(
+                          tooltip: 'Reply বাতিল',
+                          onPressed: () => setState(() => _replyToMessage = null),
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                        ),
+                      ],
                     ),
                   ),
+                Row(
+                  children: [
                 IconButton(
                   tooltip: 'ছবি পাঠাও',
                   onPressed: () => _sendMedia(false),
@@ -3711,6 +3712,8 @@ class _ChatPageState extends State<ChatPage> {
                     backgroundColor: pinkColor,
                   ),
                   icon: const Icon(Icons.send_rounded),
+                ),
+                  ],
                 ),
               ],
             ),
