@@ -62,10 +62,9 @@ jobs:
       - name: Check Java environment
         run: java -version
 
-      - name: Restore Orbit Two logo asset
+      - name: Verify Orbit Two logo asset
         run: |
-          mkdir -p assets/branding
-          base64 --decode assets/branding/orbit_two_logo.jpg.base64 > assets/branding/orbit_two_logo.jpg
+          test -s assets/branding/orbit_two_logo.jpg
           file assets/branding/orbit_two_logo.jpg
 
       - name: Install dependencies
