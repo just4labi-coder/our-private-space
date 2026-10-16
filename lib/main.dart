@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -2143,6 +2145,9 @@ class _ChatPageState extends State<ChatPage> {
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
   Map<String, dynamic>? _replyToMessage;
+  final AudioRecorder _voiceRecorder = AudioRecorder();
+  bool _isRecordingVoice = false;
+  bool _attachmentMenuOpen = false;
 
   String? _pendingMediaName;
   bool _pendingMediaVideo = false;
@@ -2360,6 +2365,7 @@ class _ChatPageState extends State<ChatPage> {
     _chatSubscription?.cancel();
     controller.dispose();
     scrollController.dispose();
+    unawaited(_voiceRecorder.dispose());
     super.dispose();
   }
 
@@ -2442,7 +2448,10 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _sendMedia(bool video) async {
+  Future<void> _sendMedia(
+    bool video, {
+    ImageSource source = ImageSource.gallery,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
@@ -2465,8 +2474,8 @@ class _ChatPageState extends State<ChatPage> {
 
     final picker = ImagePicker();
     final picked = video
-        ? await picker.pickVideo(source: ImageSource.gallery)
-        : await picker.pickImage(source: ImageSource.gallery);
+        ? await picker.pickVideo(source: source)
+        : await picker.pickImage(source: source);
 
     if (picked == null || !mounted) return;
 
@@ -2605,6 +2614,187 @@ class _ChatPageState extends State<ChatPage> {
           const SnackBar(
             content: Text('মিডিয়া পাঠানো যায়নি। আবার চেষ্টা করুন।'),
           ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingMediaName = null;
+          _pendingMediaProgress = 0;
+          _pendingMediaSpeed = 0;
+        });
+      }
+    }
+  }
+
+  Future<void> _startVoiceRecording() async {
+    if (_isRecordingVoice) return;
+    if (FirebaseAuth.instance.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('আগে Partner Space-এ যুক্ত হও।')),
+      );
+      return;
+    }
+    if (_pendingMediaName != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('আগের ফাইলটির আপলোড শেষ হলে আবার চেষ্টা করো।')),
+      );
+      return;
+    }
+    try {
+      if (!await _voiceRecorder.hasPermission()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ভয়েস পাঠাতে Microphone permission দিতে হবে।')),
+          );
+        }
+        return;
+      }
+      final support = await getApplicationSupportDirectory();
+      final voiceDirectory = Directory('${support.path}/chat_voice');
+      await voiceDirectory.create(recursive: true);
+      final path = '${voiceDirectory.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+      await _voiceRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 64000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+      if (mounted) setState(() => _isRecordingVoice = true);
+    } catch (error) {
+      debugPrint('Voice recording start failed: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ভয়েস রেকর্ড শুরু হয়নি: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopVoiceRecording() async {
+    if (!_isRecordingVoice) return;
+    try {
+      final path = await _voiceRecorder.stop();
+      if (mounted) setState(() => _isRecordingVoice = false);
+      if (path == null || path.isEmpty) return;
+      final file = File(path);
+      if (!await file.exists() || await file.length() == 0) {
+        throw Exception('রেকর্ড করা ভয়েস পাওয়া যায়নি।');
+      }
+      await _sendVoiceFile(file);
+    } catch (error) {
+      debugPrint('Voice recording stop failed: $error');
+      if (mounted) {
+        setState(() => _isRecordingVoice = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ভয়েস পাঠানো যায়নি: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleVoiceRecording() async {
+    if (_isRecordingVoice) {
+      await _stopVoiceRecording();
+    } else {
+      await _startVoiceRecording();
+    }
+  }
+
+  Future<void> _sendVoiceFile(File file) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    if (_pendingMediaName != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('আগের ফাইলটির আপলোড শেষ হলে আবার চেষ্টা করো।')),
+        );
+      }
+      return;
+    }
+    final fileName = file.uri.pathSegments.last;
+    final messageId = DateTime.now().microsecondsSinceEpoch.toString();
+    final createdAt = DateTime.now().toIso8601String();
+    final replyTo = _replyToMessage;
+    if (mounted) {
+      setState(() {
+        _pendingMediaName = 'Voice message';
+        _pendingMediaVideo = false;
+        _pendingMediaProgress = 0;
+        _pendingMediaSpeed = 0;
+      });
+    }
+    try {
+      final uploaded = await SpaceSyncService.uploadSharedMedia(
+        file,
+        metadata: {
+          'purpose': 'chat',
+          'messageId': messageId,
+          'senderUid': user.uid,
+          'type': 'voice',
+          'fileName': fileName,
+          'createdAt': createdAt,
+          if (replyTo != null) ...{
+            'replyToId': '${replyTo['id'] ?? ''}',
+            'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
+                ? '${replyTo['text'] ?? ''}'
+                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+            'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
+            'replyToSenderName': _profileNameForUid(
+              '${replyTo['senderUid'] ?? ''}',
+              _isMine(replyTo) ? 'তুমি' : 'সঙ্গী',
+            ),
+          },
+        },
+      );
+      final fileId = '${uploaded['fileId'] ?? uploaded['driveFileId'] ?? ''}'.trim();
+      if (fileId.isEmpty) throw Exception('ভয়েস ফাইলের ID পাওয়া যায়নি।');
+      await ChatSyncService.sendMessage({
+        'id': messageId,
+        'senderUid': user.uid,
+        'text': file.path,
+        'type': 'voice',
+        'fileId': fileId,
+        'driveFileId': fileId,
+        'driveFileName': uploaded['driveFileName'] ?? fileName,
+        'mimeType': uploaded['mimeType'] ?? 'audio/mp4',
+        'size': uploaded['size'] ?? await file.length(),
+        'storage': 'shared',
+        if (replyTo != null) ...{
+          'replyToId': '${replyTo['id'] ?? ''}',
+          'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
+              ? '${replyTo['text'] ?? ''}'
+              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+          'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
+          'replyToSenderName': _profileNameForUid(
+            '${replyTo['senderUid'] ?? ''}',
+            _isMine(replyTo) ? 'তুমি' : 'সঙ্গী',
+          ),
+        },
+        'mine': true,
+        'unsent': false,
+        'time': createdAt,
+      });
+      final taskId = uploaded['_uploadTaskId'] ?? '';
+      if (taskId.toString().isNotEmpty) {
+        await SpaceSyncService.acknowledgeUpload(taskId.toString());
+      }
+      if (mounted) {
+        setState(() {
+          if (_replyToMessage?['id'] == replyTo?['id']) _replyToMessage = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ভয়েস মেসেজ পাঠানো হয়েছে।')),
+        );
+      }
+      _scrollToBottom();
+    } catch (error) {
+      debugPrint('Voice upload failed: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ভয়েস পাঠানো যায়নি: $error')),
         );
       }
     } finally {
@@ -2978,7 +3168,7 @@ class _ChatPageState extends State<ChatPage> {
     final type = '${message['type'] ?? 'text'}';
     final path = '${message['text'] ?? ''}';
 
-    if (type == 'image' || type == 'video') {
+    if (type == 'image' || type == 'video' || type == 'voice') {
       final fileId =
           '${message['fileId'] ?? message['driveFileId'] ?? ''}'.trim();
 
@@ -3134,6 +3324,10 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ),
                 );
+              }
+
+              if (type == 'voice') {
+                return ChatVoicePlayer(path: resolvedPath);
               }
 
               if (type == 'image') {
@@ -3693,22 +3887,74 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 Row(
                   children: [
-                IconButton(
-                  tooltip: 'ছবি পাঠাও',
-                  onPressed: () => _sendMedia(false),
-                  icon: const Icon(
-                    Icons.image_outlined,
-                    color: pinkColor,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'ভিডিও পাঠাও',
-                  onPressed: () => _sendMedia(true),
-                  icon: const Icon(
-                    Icons.videocam_outlined,
-                    color: purpleColor,
-                  ),
-                ),
+                    PopupMenuButton<String>(
+                      tooltip: 'ছবি, ভিডিও বা ক্যামেরা',
+                      onOpened: () {
+                        if (mounted) setState(() => _attachmentMenuOpen = true);
+                      },
+                      onCanceled: () {
+                        if (mounted) setState(() => _attachmentMenuOpen = false);
+                      },
+                      onSelected: (choice) {
+                        setState(() => _attachmentMenuOpen = false);
+                        if (choice == 'image') {
+                          _sendMedia(false);
+                        } else if (choice == 'video') {
+                          _sendMedia(true);
+                        } else if (choice == 'camera') {
+                          _sendMedia(false, source: ImageSource.camera);
+                        } else if (choice == 'voice') {
+                          _startVoiceRecording();
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'image',
+                          child: ListTile(
+                            leading: Icon(Icons.image_outlined),
+                            title: Text('ছবি'),
+                            dense: true,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'video',
+                          child: ListTile(
+                            leading: Icon(Icons.video_library_outlined),
+                            title: Text('ভিডিও'),
+                            dense: true,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'camera',
+                          child: ListTile(
+                            leading: Icon(Icons.camera_alt_outlined),
+                            title: Text('ক্যামেরা'),
+                            dense: true,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'voice',
+                          child: ListTile(
+                            leading: Icon(Icons.mic_none_rounded),
+                            title: Text('ভয়েস রেকর্ড'),
+                            dense: true,
+                          ),
+                        ),
+                      ],
+                      icon: AnimatedRotation(
+                        turns: _attachmentMenuOpen ? 0.125 : 0,
+                        duration: const Duration(milliseconds: 160),
+                        child: const Icon(Icons.add_rounded, color: pinkColor),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: _isRecordingVoice ? 'রেকর্ডিং বন্ধ করে পাঠাও' : 'ভয়েস রেকর্ড',
+                      onPressed: _toggleVoiceRecording,
+                      icon: Icon(
+                        _isRecordingVoice ? Icons.stop_circle_rounded : Icons.mic_none_rounded,
+                        color: _isRecordingVoice ? Colors.redAccent : pinkColor,
+                      ),
+                    ),
                 Expanded(
                   child: TextField(
                     controller: controller,
@@ -5573,6 +5819,90 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+class ChatVoicePlayer extends StatefulWidget {
+  const ChatVoicePlayer({super.key, required this.path});
+
+  final String path;
+
+  @override
+  State<ChatVoicePlayer> createState() => _ChatVoicePlayerState();
+}
+
+class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
+  late final AudioPlayer _player;
+  StreamSubscription<PlayerState>? _stateSubscription;
+  bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = AudioPlayer();
+    _stateSubscription = _player.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() => _isPlaying = state == PlayerState.playing);
+    });
+  }
+
+  Future<void> _togglePlayback() async {
+    try {
+      if (_player.state == PlayerState.playing) {
+        await _player.pause();
+      } else if (_player.state == PlayerState.paused) {
+        await _player.resume();
+      } else {
+        await _player.play(DeviceFileSource(widget.path));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ভয়েস চালানো যায়নি: $error')),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _stateSubscription?.cancel();
+    unawaited(_player.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: _togglePlayback,
+            icon: Icon(
+              _isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+              color: pinkColor,
+              size: 34,
+            ),
+          ),
+          const Expanded(
+            child: Text(
+              'Voice message',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }
