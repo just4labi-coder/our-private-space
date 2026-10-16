@@ -2962,7 +2962,7 @@ class _ChatPageState extends State<ChatPage> {
                         ''
                       ).toString().trim();
 
-                      if ((mediaType == 'image' || mediaType == 'video') &&
+                      if ((mediaType == 'image' || mediaType == 'video' || mediaType == 'voice') &&
                           fileId.isNotEmpty) {
                         // গ্যালারিতে একই Drive ফাইল রেফারেন্স থাকলে সেটি অকারণে ভাঙবে না।
                         final linkedInGallery = SpaceStore
