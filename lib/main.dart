@@ -2135,7 +2135,6 @@ class _ChatPageState extends State<ChatPage> {
   final Set<String> _requestedMediaDownloads = {};
 
   bool _isTypingSent = false;
-  int _typingRequestId = 0;
   Timer? _typingHeartbeatTimer;
 
   String? _pendingMediaName;
