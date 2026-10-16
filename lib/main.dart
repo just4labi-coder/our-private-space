@@ -418,7 +418,6 @@ class SpaceStore {
         'galleryMedia': 'Gallery',
         'galleryFolders': 'Gallery folders',
         'relationshipStartAt': 'Together For',
-        'spaceComplaints': 'Complaints Box',
       };
       final readable = changedKeys.map((key) => labels[key] ?? 'Shared data').toSet().join(', ');
       NotificationPrivacySettings.showPartnerNotification(
@@ -1547,6 +1546,16 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final hasUnreadComplaint = SpaceStore.readList('spaceComplaints').any((item) {
+      final authorUid = '${item['authorUid'] ?? ''}';
+      final readBy = item['readBy'];
+      final hasRead = readBy is List && readBy.contains(currentUid);
+      return currentUid.isNotEmpty &&
+          authorUid.isNotEmpty &&
+          authorUid != currentUid &&
+          !hasRead;
+    });
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
       children: [
@@ -5761,16 +5770,6 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final hasUnreadComplaint = SpaceStore.readList('spaceComplaints').any((item) {
-      final authorUid = '${item['authorUid'] ?? ''}';
-      final readBy = item['readBy'];
-      final hasRead = readBy is List && readBy.contains(currentUid);
-      return currentUid.isNotEmpty &&
-          authorUid.isNotEmpty &&
-          authorUid != currentUid &&
-          !hasRead;
-    });
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
