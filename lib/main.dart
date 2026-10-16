@@ -2140,7 +2140,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> messages = [];
   StreamSubscription<List<Map<String, dynamic>>>? _chatSubscription;
   final Map<String, Future<String?>> _mediaPathFutures = {};
+  final Map<String, Future<String?>> _chatVideoThumbnailFutures = {};
+  final Map<String, GlobalKey> _messageKeys = {};
   final Set<String> _requestedMediaDownloads = {};
+  String? _highlightedMessageId;
 
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
@@ -3122,29 +3125,82 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     setState(() => _replyToMessage = Map<String, dynamic>.from(message));
   }
 
+  Future<void> _jumpToMessage(String targetId) async {
+    final targetIndex = messages.indexWhere((item) => '${item['id'] ?? ''}' == targetId);
+    if (targetIndex < 0 || !scrollController.hasClients) return;
+    final key = _messageKeys.putIfAbsent(targetId, () => GlobalKey());
+    var targetContext = key.currentContext;
+    if (targetContext == null) {
+      final position = scrollController.position;
+      final offset = position.maxScrollExtent * (targetIndex / (messages.isEmpty ? 1 : messages.length));
+      await scrollController.animateTo(offset.clamp(0.0, position.maxScrollExtent).toDouble(), duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      targetContext = key.currentContext;
+    }
+    if (targetContext != null) {
+      await Scrollable.ensureVisible(targetContext, duration: const Duration(milliseconds: 320), curve: Curves.easeInOutCubic, alignment: 0.45);
+    }
+    if (!mounted) return;
+    setState(() => _highlightedMessageId = targetId);
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (mounted && _highlightedMessageId == targetId) setState(() => _highlightedMessageId = null);
+  }
+
+  Future<String?> _resolveChatVideoThumbnail(Map<String, dynamic> message, String videoPath) {
+    final key = '${message['fileId'] ?? message['driveFileId'] ?? videoPath}';
+    final existing = _chatVideoThumbnailFutures[key];
+    if (existing != null) return existing;
+    final future = Future<String?>.microtask(() async {
+      try {
+        if (!await File(videoPath).exists()) return null;
+        final support = await getApplicationSupportDirectory();
+        final directory = Directory('${support.path}/chat_video_thumbnails');
+        await directory.create(recursive: true);
+        final safeId = key.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+        final thumbnail = File('${directory.path}/chat_thumb_$safeId.jpg');
+        if (await thumbnail.exists() && await thumbnail.length() > 0) return thumbnail.path;
+        final generated = await VideoThumbnail.thumbnailFile(video: videoPath, thumbnailPath: thumbnail.path, imageFormat: ImageFormat.JPEG, maxHeight: 320, quality: 75);
+        if (generated != null && generated.isNotEmpty) {
+          final generatedFile = File(generated);
+          if (await generatedFile.exists() && await generatedFile.length() > 0) return generatedFile.path;
+        }
+      } catch (error) {
+        debugPrint('Chat video thumbnail error: $error');
+      }
+      return null;
+    });
+    _chatVideoThumbnailFutures[key] = future;
+    future.then((path) {
+      if (path == null && identical(_chatVideoThumbnailFutures[key], future)) _chatVideoThumbnailFutures.remove(key);
+    });
+    return future;
+  }
+
   Widget _buildReplyQuote(Map<String, dynamic> message) {
     final replyId = '${message['replyToId'] ?? ''}';
     if (replyId.isEmpty) return const SizedBox.shrink();
-
     final senderName = '${message['replyToSenderName'] ?? 'সঙ্গী'}';
     final preview = '${message['replyToText'] ?? ''}';
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.18),
-        border: const Border(left: BorderSide(color: pinkColor, width: 3)),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(senderName, style: const TextStyle(color: pinkColor, fontSize: 11, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 2),
-          Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        ],
+    return InkWell(
+      onTap: () => _jumpToMessage(replyId),
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.18),
+          border: const Border(left: BorderSide(color: pinkColor, width: 3)),
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(senderName, style: const TextStyle(color: pinkColor, fontSize: 11, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }
@@ -3622,31 +3678,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
               return GestureDetector(
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => VideoViewerPage(path: resolvedPath),
-                    ),
-                  );
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => VideoViewerPage(path: resolvedPath)));
                 },
-                child: Container(
-                  width: 210,
-                  height: 130,
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.play_circle_fill_rounded,
-                        size: 45,
-                        color: pinkColor,
-                      ),
-                      SizedBox(height: 6),
-                      Text('ভিডিও চালাও'),
-                    ],
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 210,
+                    height: 130,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        FutureBuilder<String?>(
+                          future: _resolveChatVideoThumbnail(message, resolvedPath),
+                          builder: (context, snapshot) {
+                            final thumbnailPath = snapshot.data;
+                            if (thumbnailPath != null && File(thumbnailPath).existsSync()) {
+                              return Image.file(File(thumbnailPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26));
+                            }
+                            return const ColoredBox(color: Colors.black26);
+                          },
+                        ),
+                        const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Color(0x99000000)]))),
+                        const Center(child: Icon(Icons.play_circle_fill_rounded, size: 48, color: Colors.white)),
+                        const Positioned(left: 8, bottom: 7, child: Text('ভিডিও', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600))),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -3898,8 +3954,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ],
     );
 
-    return Column(
-      children: [
+    return KeyedSubtree(
+      key: _messageKeys.putIfAbsent(messageId, () => GlobalKey()),
+      child: Column(
+        children: [
         if (_shouldShowTimeDivider(index))
           Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 5),
@@ -3937,9 +3995,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (offset >= 42) _setReplyTo(message);
             setState(() => _replyDragOffsets[messageId] = 0);
           },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
-            child: Stack(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            transform: Matrix4.identity()..scale(_highlightedMessageId == messageId ? 1.025 : 1.0),
+            transformAlignment: Alignment.center,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: _highlightedMessageId == messageId ? pinkColor.withValues(alpha: 0.13) : Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Stack(
               alignment: Alignment.centerLeft,
               clipBehavior: Clip.none,
               children: [
@@ -3958,10 +4026,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   child: row,
                 ),
               ],
+              ),
             ),
           ),
         ),
       ],
+      ),
     );
   }
 
