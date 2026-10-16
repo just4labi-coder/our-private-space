@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -171,12 +170,9 @@ class AuthService {
       );
     }
 
-    // Use the server-side SMTP template so the email can include Orbit Two
-    // branding and its hosted logo without exposing SMTP credentials in the app.
-    final callable = FirebaseFunctions.instance.httpsCallable(
-      'sendBrandedPasswordResetEmail',
-    );
-    await callable.call<void>({'email': normalizedEmail});
+    // Use Firebase Authentication's built-in password reset email.
+    // This does not require deploying Cloud Functions or configuring SMTP.
+    await _auth.sendPasswordResetEmail(email: normalizedEmail);
   }
 
   static Future<void> _saveProfile(User? user) async {
