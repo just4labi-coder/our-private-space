@@ -2423,7 +2423,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     unawaited(_persistDraft(controller.text));
     _recordingTimer?.cancel();
     _recordingTimer = null;
-    if (_isRecordingVoice) unawaited(_voiceRecorder.stop());
+    if (_isRecordingVoice) unawaited(_voiceRecorder.stop().then<void>((_) {}));
 
     if (_isTypingSent) {
       _isTypingSent = false;
