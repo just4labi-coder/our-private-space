@@ -232,7 +232,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                       const Text(
-                        'Couple Zone',
+                        'Orbit Two',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white,
@@ -405,7 +405,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           Text(
                             _isCreateAccount
                                 ? 'Already have an account? '
-                                : 'New to Couple Zone? ',
+                                : 'New to Orbit Two? ',
                             style: const TextStyle(
                               color: Colors.white60,
                               fontSize: 13,
