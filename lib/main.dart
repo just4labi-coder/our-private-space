@@ -56,6 +56,13 @@ Future<void> main() async {
   );
 
   await notifications.initialize(initializationSettings);
+
+  // Android 13+ এ অনুমতি না চাইলে লোকাল মেসেজ নোটিফিকেশন দেখাবে না।
+  final androidNotifications = notifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+  await androidNotifications?.requestNotificationsPermission();
+
   await SpaceStore.init();
 
   runApp(const EternalSpaceApp());
