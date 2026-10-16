@@ -235,7 +235,7 @@ class ChatSyncService {
     });
   }
 
-  /// নির্দিষ্ট সদস্যের Typing Status রিয়েল-টাইমে শোনে।
+  /// অন্য সদস্যের Typing Status রিয়েল-টাইমে শোনে।
   static Stream<Map<String, dynamic>?> watchMemberTyping(
     String uid,
   ) async* {
@@ -247,26 +247,27 @@ class ChatSyncService {
     final ref = await _membersRef();
 
     yield* ref.doc(uid).snapshots().map((snapshot) {
-      if (!snapshot.exists) return null;
-      final data = snapshot.data();
-      if (data == null) return null;
-
-      final isTyping = data['isTyping'] == true;
-      final updatedAt = data['typingUpdatedAt'];
-
-      if (!isTyping) {
+      if (!snapshot.exists) {
         return <String, dynamic>{'isTyping': false};
       }
 
+      final data = snapshot.data();
+      if (data == null || data['isTyping'] != true) {
+        return <String, dynamic>{'isTyping': false};
+      }
+
+      final updatedAt = data['typingUpdatedAt'];
+
+      // Timestamp না থাকলে পুরোনো বা অসম্পূর্ণ স্ট্যাটাস দেখাবে না।
       if (updatedAt is! Timestamp) {
         return <String, dynamic>{'isTyping': false};
       }
 
-      final age = DateTime.now().difference(
-        updatedAt.toDate(),
-      );
+      final age = DateTime.now().difference(updatedAt.toDate());
 
-      if (age.isNegative || age.inSeconds > 8) {
+      // ফোনের ঘড়ির সামান্য পার্থক্যের কারণে Typing লুকাবে না।
+      // ৮ সেকেন্ডের বেশি আপডেট না এলে পুরোনো স্ট্যাটাস বন্ধ হবে।
+      if (age > const Duration(seconds: 8)) {
         return <String, dynamic>{'isTyping': false};
       }
 
