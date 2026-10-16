@@ -14,7 +14,6 @@ class PushNotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static StreamSubscription<String>? _tokenSubscription;
   static StreamSubscription<User?>? _authSubscription;
-  static String? _registeredToken;
   static bool _hideDetails = false;
   static const String _privacyKey = 'hideNotificationDetails';
 
@@ -32,7 +31,6 @@ class PushNotificationService {
     _authSubscription ??= FirebaseAuth.instance.authStateChanges().listen(
       (user) {
         if (user == null) {
-          _registeredToken = null;
           return;
         }
         unawaited(_registerCurrentToken());
@@ -82,7 +80,6 @@ class PushNotificationService {
         'platform': defaultTargetPlatform.name,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      _registeredToken = token;
     } catch (error) {
       debugPrint('FCM token save failed: $error');
     }

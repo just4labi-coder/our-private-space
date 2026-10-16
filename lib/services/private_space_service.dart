@@ -40,17 +40,40 @@ class PrivateSpaceService {
   /// আগে থেকে সংরক্ষিত Space ID
   static Future<String?> getSavedSpaceId() async {
     final prefs = await _prefs;
-    final savedId = prefs.getString(_spaceIdKey);
-
-    if (savedId != null && savedId.isNotEmpty) {
-      return savedId;
-    }
-
-    // অ্যাপ পুনরায় ইনস্টল হলে লোকাল Space ID থাকে না।
-    // একই Firebase অ্যাকাউন্টের সদস্যপদ দিয়ে পুরোনো Space খুঁজবে।
     final user = _auth.currentUser;
+
+    // A cached Space ID must never be trusted without checking the signed-in
+    // Firebase UID. This prevents one account inheriting another account's
+    // local chat, gallery, notes, and complaints after logout/account switch.
     if (user == null) return null;
 
+    final savedId = prefs.getString(_spaceIdKey);
+    if (savedId != null && savedId.isNotEmpty) {
+      try {
+        final savedSpace = await _spaces.doc(savedId).get();
+        final data = savedSpace.data();
+        final members = List<String>.from(data?['memberUids'] ?? const []);
+
+        if (savedSpace.exists && members.contains(user.uid)) {
+          // Keep disconnected Spaces for the same members so their original
+          // cloud data can be restored if those same accounts reconnect.
+          return savedId;
+        }
+
+        // The cached Space belongs to a different account or no longer exists.
+        await _clearSpaceScopedLocalData(prefs);
+        await prefs.remove(_spaceIdKey);
+        await prefs.remove(_inviteCodeKey);
+      } catch (error) {
+        // If the network is temporarily unavailable, fail closed instead of
+        // using an unverified Space ID. Keep local cache for a later retry.
+        debugPrint('Cached Space membership check failed: $error');
+        return null;
+      }
+    }
+
+    // If the local ID is missing, recover only a Space that explicitly lists
+    // the currently signed-in UID as a member.
     try {
       final result = await _spaces
           .where('memberUids', arrayContains: user.uid)
@@ -78,8 +101,8 @@ class PrivateSpaceService {
         }
       }
 
-      // কোনো সক্রিয় Space না থাকলে পুরোনো বিচ্ছিন্ন Space দেখাই,
-      // যাতে দুজন চাইলে একই Space-এ পুনরায় যুক্ত হতে পারে।
+      // Same two accounts can reconnect to their old Space and recover its
+      // cloud data. A different account cannot pass the membership check above.
       if (disconnectedSpace != null) {
         final data = disconnectedSpace.data();
         await _saveConnection(

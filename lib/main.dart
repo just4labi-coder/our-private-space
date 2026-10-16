@@ -1492,7 +1492,7 @@ class _MainScreenState extends State<MainScreen>
 
     return PopScope(
       canPop: selectedIndex == 0,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop || selectedIndex == 0 || !mounted) return;
         setState(() => selectedIndex = 0);
       },
