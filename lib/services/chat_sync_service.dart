@@ -137,7 +137,36 @@ class ChatSyncService {
     });
   }
 
-  /// চ্যাট খোলা থাকলে অপর পক্ষের মেসেজ Seen হিসেবে চিহ্নিত করে।
+  /// একটি মেসেজে নিজের রিঅ্যাকশন যোগ, পরিবর্তন বা সরায়।
+  /// ফাঁকা emoji দিলে শুধু বর্তমান ব্যবহারকারীর রিঅ্যাকশন মুছে যায়।
+  static Future<void> setMessageReaction({
+    required String messageId,
+    required String emoji,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('আগে সাইন ইন করো।');
+    }
+
+    final cleanId = messageId.trim();
+    if (cleanId.isEmpty) {
+      throw Exception('মেসেজ ID পাওয়া যায়নি।');
+    }
+
+    final cleanEmoji = emoji.trim();
+    if (cleanEmoji.runes.length > 16) {
+      throw Exception('একটি ছোট ইমোজি বেছে নাও।');
+    }
+
+    final ref = await _messagesRef();
+    await ref.doc(cleanId).update({
+      'reactions.${user.uid}': cleanEmoji.isEmpty
+          ? FieldValue.delete()
+          : cleanEmoji,
+    });
+  }
+
+  /// চ্যাট খোলা থাকলে অপর পক্ষের মেসেজ Seen হিসেবে চিহ্নিত করে.
   static Future<void> markMessagesSeen(
     List<Map<String, dynamic>> messages,
   ) async {
