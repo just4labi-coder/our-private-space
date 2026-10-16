@@ -1,4 +1,4 @@
-import 'dart:async';
+Import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -4539,59 +4539,106 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
     if (existing != null) return existing;
 
     late final Future<String?> future;
+
     future = Future<String?>.microtask(() async {
       try {
-        final localPath = (item['path'] ?? '').toString();
+        // ১. আগে item-এর নিজের local path পরীক্ষা করো।
+        final localPath = (item['path'] ?? '').toString().trim();
+
         if (localPath.isNotEmpty) {
-          final localFile = File(localPath);
-          if (await localFile.exists() && await localFile.length() > 0) {
+          final file = File(localPath);
+
+          if (await file.exists() && await file.length() > 0) {
             return localPath;
           }
         }
 
         if (fileId.isEmpty) return null;
 
+        final isPersonal = item['storage'] == 'personal';
+        final isShared = !isPersonal;
+
         final prefs = await SharedPreferences.getInstance();
         final savedPaths = prefs.getString('galleryLocalPaths');
 
         Map<String, dynamic> pathMap = {};
+
         if (savedPaths != null && savedPaths.isNotEmpty) {
           try {
             final decoded = jsonDecode(savedPaths);
+
             if (decoded is Map) {
               pathMap = Map<String, dynamic>.from(decoded);
             }
           } catch (_) {}
         }
 
-        final savedPath = (pathMap[fileId] ?? '').toString();
+        // ২. SharedPreferences-এ সংরক্ষিত path পরীক্ষা করো।
+        final savedPath = (pathMap[fileId] ?? '').toString().trim();
+
         if (savedPath.isNotEmpty) {
           final savedFile = File(savedPath);
-          if (await savedFile.exists() && await savedFile.length() > 0) {
+
+          if (await savedFile.exists() &&
+              await savedFile.length() > 0) {
             return savedPath;
           }
 
           pathMap.remove(fileId);
-          await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
         }
 
-        final originalName =
-            (item['driveFileName'] ?? item['name'] ?? 'memory').toString();
-        final safeName = '${item['id'] ?? fileId}_$originalName';
-
-        final downloadedPath = await SpaceSyncService.downloadMedia(
+        // ৩. আগের ডাউনলোডের স্থায়ী cache খোঁজো।
+        final cachedPath = await SpaceSyncService.getCachedMediaPath(
           fileId,
-          saveAs: safeName,
+          shared: isShared,
         );
 
+        if (cachedPath != null && cachedPath.isNotEmpty) {
+          final cachedFile = File(cachedPath);
+
+          if (await cachedFile.exists() &&
+              await cachedFile.length() > 0) {
+            pathMap[fileId] = cachedPath;
+            await prefs.setString(
+              'galleryLocalPaths',
+              jsonEncode(pathMap),
+            );
+
+            return cachedPath;
+          }
+        }
+
+        // ৪. Cache না থাকলেই শুধু ডাউনলোড করো।
+        final originalName =
+            (item['driveFileName'] ?? item['name'] ?? 'memory')
+                .toString();
+
+        final safeName = '${item['id'] ?? fileId}_$originalName';
+
+        final downloadedPath = isPersonal
+            ? await SpaceSyncService.downloadPersonalMedia(
+                fileId,
+                saveAs: safeName,
+              )
+            : await SpaceSyncService.downloadMedia(
+                fileId,
+                saveAs: safeName,
+              );
+
         final downloadedFile = File(downloadedPath);
+
         if (!await downloadedFile.exists() ||
             await downloadedFile.length() == 0) {
           throw Exception('ডাউনলোড করা ফাইল পাওয়া যায়নি।');
         }
 
+        // ৫. ভবিষ্যতে পুনরায় ব্যবহার করার জন্য path সংরক্ষণ করো।
         pathMap[fileId] = downloadedPath;
-        await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+
+        await prefs.setString(
+          'galleryLocalPaths',
+          jsonEncode(pathMap),
+        );
 
         return downloadedPath;
       } catch (error) {
