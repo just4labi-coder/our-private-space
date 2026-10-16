@@ -2775,64 +2775,57 @@ class _ChatPageState extends State<ChatPage> {
   Future<String?> _resolveMediaPath(
     Map<String, dynamic> media,
   ) {
+    final isMine = _isMine(media);
     final localPath = '${media['text'] ?? media['path'] ?? ''}'.trim();
-    final fileId =
-        '${media['fileId'] ?? media['driveFileId'] ?? ''}'.trim();
-
-    final key = fileId.isNotEmpty ? fileId : localPath;
-
+    final fileId = '${media['fileId'] ?? media['driveFileId'] ?? ''}'.trim();
+    // নিজের ফোনের লোকাল পথ শুধু নিজের পাঠানো মেসেজে ব্যবহার হবে।
+    final usableLocalPath = isMine ? localPath : '';
+    final key = fileId.isNotEmpty ? fileId : usableLocalPath;
     final existing = _mediaPathFutures[key];
     if (existing != null) return existing;
-
     late final Future<String?> future;
-
     future = Future<String?>.microtask(() async {
       try {
-        if (localPath.isNotEmpty) {
+        if (usableLocalPath.isNotEmpty) {
           try {
-            if (await File(localPath).exists()) {
-              return localPath;
+            if (await File(usableLocalPath).exists()) {
+              return usableLocalPath;
             }
           } catch (_) {}
         }
-
         if (fileId.isEmpty) return null;
-
+        // আগে ডাউনলোড করা ফাইল থাকলে সেটিই ব্যবহার করবে।
         final cachedPath = await SpaceSyncService.getCachedMediaPath(
           fileId,
           shared: true,
         );
-
         if (cachedPath != null) {
-          return cachedPath;
+          try {
+            if (await File(cachedPath).exists()) {
+              return cachedPath;
+            }
+          } catch (_) {}
         }
-
         final name = '${media['driveFileName'] ?? 'chat_media'}';
-
         final result = await SpaceSyncService.downloadMedia(
           fileId,
           saveAs: '${fileId}_$name',
         );
-
         if (await File(result).exists()) {
           return result;
         }
-
         return null;
       } catch (error) {
         debugPrint('Chat media download error: $error');
         return null;
       }
     });
-
     _mediaPathFutures[key] = future;
-
     future.then((path) {
       if (path == null && identical(_mediaPathFutures[key], future)) {
         _mediaPathFutures.remove(key);
       }
     });
-
     return future;
   }
 
@@ -2862,7 +2855,8 @@ class _ChatPageState extends State<ChatPage> {
           final localMediaPath =
               '${message['text'] ?? message['path'] ?? ''}'.trim();
 
-          final senderHasLocalFile = localMediaPath.isNotEmpty &&
+          final senderHasLocalFile = _isMine(message) &&
+              localMediaPath.isNotEmpty &&
               File(localMediaPath).existsSync();
 
           final shouldDownload = senderHasLocalFile ||
