@@ -190,9 +190,9 @@ function escapeHtml(value) {
   })[char]);
 }
 
-function emailHtml(sender, messagePreview) {
-  const safeSender = escapeHtml(sender);
-  const safePreview = escapeHtml(messagePreview);
+function emailHtml() {
+  // Keep email content intentionally generic so private chat text never lands
+  // in an email inbox, even when a user enables email notifications.
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f0fa;font-family:Arial,Helvetica,sans-serif;color:#211b31">
@@ -206,9 +206,9 @@ function emailHtml(sender, messagePreview) {
 <tr><td style="padding:30px 26px 24px">
 <div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#8b5cf6;font-weight:700">A little update</div>
 <h1 style="font-size:24px;line-height:1.3;margin:12px 0;color:#211b31">A new message is waiting</h1>
-<p style="font-size:16px;line-height:1.7;margin:0 0 18px"> <strong>${safeSender}</strong> sent you a message in Orbit Two.</p>
-<div style="padding:16px 18px;border-radius:14px;background:#faf7ff;border:1px solid #eee5ff;color:#50465f;font-size:15px;line-height:1.7">${safePreview}</div>
-<p style="font-size:13px;line-height:1.7;color:#786f87;margin:22px 0 0">Open Orbit Two to reply. If you prefer not to receive email updates, turn them off in Settings.</p>
+<p style="font-size:16px;line-height:1.7;margin:0 0 18px">You have a new message in Orbit Two.</p>
+<div style="padding:16px 18px;border-radius:14px;background:#faf7ff;border:1px solid #eee5ff;color:#50465f;font-size:15px;line-height:1.7">Open the app to read and reply privately.</div>
+<p style="font-size:13px;line-height:1.7;color:#786f87;margin:22px 0 0">If you prefer not to receive email updates, turn them off in Orbit Two Settings.</p>
 </td></tr><tr><td style="padding:18px 24px;text-align:center;background:#faf9fc;border-top:1px solid #eeeaf4;color:#8a8298;font-size:12px">Orbit Two · Made with care for your private space</td></tr>
 </table></td></tr></table></body></html>`;
 }
@@ -357,7 +357,7 @@ export default {
             to: partnerProfile.email,
             subject: "A new message in Orbit Two",
             text: senderName + " sent you a message in Orbit Two. Open the app to reply.",
-            html: emailHtml(senderName, preview),
+            html: emailHtml(),
           });
           emailSent = true;
         } catch (error) {
