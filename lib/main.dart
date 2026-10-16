@@ -134,11 +134,14 @@ class NotificationPrivacySettings {
     int id = 7001,
   }) async {
     final hidden = hideDetails.value;
+    final title = hidden ? privateTitle : detailedTitle;
+    final body = hidden ? privateBody : detailedBody;
+
     await notifications.show(
       id,
-      hidden ? privateTitle : detailedTitle,
-      hidden ? privateBody : detailedBody,
-      const NotificationDetails(
+      title,
+      body,
+      NotificationDetails(
         android: AndroidNotificationDetails(
           'partner_updates',
           'Partner updates',
@@ -146,6 +149,19 @@ class NotificationPrivacySettings {
           importance: Importance.high,
           priority: Priority.high,
           playSound: true,
+          enableVibration: true,
+          category: AndroidNotificationCategory.message,
+          visibility: hidden
+              ? NotificationVisibility.private
+              : NotificationVisibility.public,
+          styleInformation: BigTextStyleInformation(
+            body,
+            contentTitle: title,
+            summaryText: 'Orbit Two',
+          ),
+          groupKey: 'com.privatespace.ourspace.PARTNER_UPDATES',
+          setAsGroupSummary: false,
+          onlyAlertOnce: true,
         ),
       ),
     );
