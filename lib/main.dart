@@ -4596,6 +4596,33 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
     super.dispose();
   }
 
+  Future<bool> _isUsableGalleryPath(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return false;
+
+      final length = await file.length();
+      if (length <= 0) return false;
+
+      // App-এর স্থায়ী media cache হলে .complete marker-ও যাচাই করো।
+      // পুরোনো picker path-এ marker না থাকলেও সেটি গ্রহণযোগ্য।
+      if (path.contains('/eternal_space_media/')) {
+        final marker = File('$path.complete');
+        if (!await marker.exists()) return false;
+
+        final recordedLength = int.tryParse(
+          (await marker.readAsString()).trim(),
+        );
+
+        return recordedLength == length;
+      }
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<String?> _resolveLocalPath(
     Map<String, dynamic> item,
   ) {
@@ -4616,12 +4643,9 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
         // ১. আগে item-এর নিজের local path পরীক্ষা করো।
         final localPath = (item['path'] ?? '').toString().trim();
 
-        if (localPath.isNotEmpty) {
-          final file = File(localPath);
-
-          if (await file.exists() && await file.length() > 0) {
-            return localPath;
-          }
+        if (localPath.isNotEmpty &&
+            await _isUsableGalleryPath(localPath)) {
+          return localPath;
         }
 
         if (fileId.isEmpty) return null;
@@ -4647,14 +4671,12 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
         // ২. SharedPreferences-এ সংরক্ষিত path পরীক্ষা করো।
         final savedPath = (pathMap[fileId] ?? '').toString().trim();
 
+        if (savedPath.isNotEmpty &&
+            await _isUsableGalleryPath(savedPath)) {
+          return savedPath;
+        }
+
         if (savedPath.isNotEmpty) {
-          final savedFile = File(savedPath);
-
-          if (await savedFile.exists() &&
-              await savedFile.length() > 0) {
-            return savedPath;
-          }
-
           pathMap.remove(fileId);
         }
 
