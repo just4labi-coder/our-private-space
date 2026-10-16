@@ -4266,7 +4266,10 @@ class _GalleryPageState extends State<GalleryPage> {
     await _save();
   }
 
-  Future<void> _showMediaMenu(Map<String, dynamic> item) async {
+  Future<void> _showMediaMenu(
+    Map<String, dynamic> item, {
+    bool fromFavorites = false,
+  }) async {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: surfaceColor,
@@ -4327,7 +4330,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 );
 
                 if (confirmed == true) {
-                  await _deleteMediaItem(item);
+                  await _deleteMediaItem(item, fromFavorites: fromFavorites);
                 }
               },
             ),
@@ -4382,7 +4385,10 @@ class _GalleryPageState extends State<GalleryPage> {
           },
           onDetails: _showMediaDetails,
           onFavorite: _toggleFavorite,
-          onLongPress: _showMediaMenu,
+          onLongPress: (item) => _showMediaMenu(
+            item,
+            fromFavorites: id == 'favorites',
+          ),
         ),
       ),
     );
@@ -5311,7 +5317,10 @@ class _GalleryMediaViewerPageState
             tooltip: widget.items[currentIndex]['favorite'] == true
                 ? 'Remove from Favorites'
                 : 'Add to Favorites',
-            onPressed: () => widget.onFavorite(widget.items[currentIndex]),
+            onPressed: () async {
+              await widget.onFavorite(widget.items[currentIndex]);
+              if (mounted) setState(() {});
+            },
             icon: Icon(
               widget.items[currentIndex]['favorite'] == true
                   ? Icons.favorite_rounded
@@ -5327,8 +5336,28 @@ class _GalleryMediaViewerPageState
               if (action == 'details') {
                 widget.onDetails(item);
               } else if (action == 'delete') {
-                await widget.onDelete(item);
-                if (mounted) Navigator.pop(context);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    backgroundColor: surfaceColor,
+                    title: const Text('Delete memory?'),
+                    content: const Text('This item will be removed from the gallery.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await widget.onDelete(item);
+                  if (mounted) Navigator.pop(context);
+                }
               }
             },
             itemBuilder: (context) => const [
