@@ -61,6 +61,11 @@
 
         </receiver>
 
+        <!-- FCM remote notifications should use the same channel as in-app notifications. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="partner_updates" />
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
