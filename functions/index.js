@@ -260,9 +260,9 @@ exports.sendBrandedPasswordResetEmail = onCall(
         to: email,
         subject: "Reset your Orbit Two password",
         text:
-          "Orbit Two password reset\\n\\n" +
-          "We received a request to reset your Orbit Two password. Use this link to choose a new password:\\n\\n" +
-          resetLink + "\\n\\n" +
+          "Orbit Two password reset\n\n" +
+          "We received a request to reset your Orbit Two password. Use this link to choose a new password:\n\n" +
+          resetLink + "\n\n" +
           "If you did not request this, you can ignore this email.",
         html: `<!doctype html>
 <html lang="en">
