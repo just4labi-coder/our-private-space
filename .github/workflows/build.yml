@@ -104,6 +104,9 @@ jobs:
         if: ${{ steps.logo_conversion.outputs.valid == 'true' && hashFiles('assets/branding/orbit_two_logo_monochrome.png') != '' }}
         run: dart run flutter_launcher_icons -f flutter_launcher_icons_monochrome.yaml
 
+      - name: Check Cloudflare Worker JavaScript syntax
+        run: node --check cloudflare-worker/src/index.js
+
       - name: Analyze project
         run: flutter analyze
 
