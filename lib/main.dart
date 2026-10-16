@@ -4322,12 +4322,9 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
     try {
       final localPath = '${item['path'] ?? ''}'.trim();
 
-      if (localPath.isNotEmpty) {
-        final file = File(localPath);
-
-        if (await file.exists() && await file.length() > 0) {
-          return localPath;
-        }
+      if (localPath.isNotEmpty &&
+          await _isUsableGalleryPath(localPath)) {
+        return localPath;
       }
 
       final fileId = (
@@ -4348,12 +4345,9 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
           if (decoded is Map) {
             final savedPath = '${decoded[fileId] ?? ''}'.trim();
 
-            if (savedPath.isNotEmpty) {
-              final file = File(savedPath);
-
-              if (await file.exists() && await file.length() > 0) {
-                return savedPath;
-              }
+            if (savedPath.isNotEmpty &&
+                await _isUsableGalleryPath(savedPath)) {
+              return savedPath;
             }
           }
         } catch (_) {}
