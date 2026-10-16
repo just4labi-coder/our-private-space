@@ -403,28 +403,56 @@ class SpaceSyncService {
       var sessionRestartCount = 0;
 
       Future<void> createSession() async {
-        final session = await _request(
-          shared ? 'beginUploadShared' : 'beginUploadPersonal',
-          data: {
-            'name': name,
-            'mimeType': mime,
-            'size': length,
-            'folderId': 'all',
-          },
-          needsSpace: shared,
-        );
+        Map<String, dynamic>? session;
+        Object? lastError;
+
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            session = await _request(
+              shared ? 'beginUploadShared' : 'beginUploadPersonal',
+              data: {
+                'name': name,
+                'mimeType': mime,
+                'size': length,
+                'folderId': 'all',
+              },
+              needsSpace: shared,
+            );
+            break;
+          } catch (error) {
+            lastError = error;
+
+            final retryable = RegExp(
+              r'সার্ভার ত্রুটি: (404|500|502|503|504)',
+            ).hasMatch(error.toString());
+
+            if (!retryable || attempt == 2) {
+              rethrow;
+            }
+
+            await Future.delayed(
+              Duration(milliseconds: 600 * (attempt + 1)),
+            );
+          }
+        }
+
+        if (session == null) {
+          throw Exception('আপলোড সেশন তৈরি করা যায়নি: $lastError');
+        }
 
         final url = session['sessionUrl']?.toString() ?? '';
+
         if (url.isEmpty) {
-          throw Exception('Google Drive upload session তৈরি হয়নি।');
+          throw Exception('আপলোড সেশন তৈরি করা যায়নি।');
         }
 
         final uri = Uri.tryParse(url);
+
         if (uri == null ||
             uri.scheme != 'https' ||
             !(uri.host.endsWith('googleapis.com') ||
                 uri.host.endsWith('googleusercontent.com'))) {
-          throw Exception('Google Drive upload ঠিকানা যাচাই করা যায়নি।');
+          throw Exception('আপলোড ঠিকানা যাচাই করা যায়নি।');
         }
 
         sessionUrl = url;
@@ -806,6 +834,14 @@ class SpaceSyncService {
         uploadId: id,
         pending: pending,
       );
+    } catch (error) {
+      try {
+        await acknowledgeUpload(id);
+      } catch (cleanupError) {
+        debugPrint('Upload cleanup failed: $cleanupError');
+      }
+
+      rethrow;
     } finally {
       _updateUpload(id, isUploading: false);
       _removeUpload(id);
@@ -897,6 +933,12 @@ class SpaceSyncService {
         );
       } catch (error) {
         debugPrint('Resume upload failed ($id): $error');
+
+        try {
+          await acknowledgeUpload(id);
+        } catch (cleanupError) {
+          debugPrint('Resume cleanup failed: $cleanupError');
+        }
       } finally {
         _updateUpload(id, isUploading: false);
         _removeUpload(id);
