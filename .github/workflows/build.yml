@@ -94,8 +94,13 @@ jobs:
             echo "::warning::Skipping launcher icon generation because the logo image is invalid. APK build will continue using the existing launcher icon."
           fi
 
+      - name: Use safe Android launcher icon if logo conversion fails
+        if: ${{ steps.logo_conversion.outputs.valid != 'true' }}
+        run: |
+          sed -i 's#android:icon="@mipmap/ic_launcher"#android:icon="@android:drawable/sym_def_app_icon"#' android/app/src/main/AndroidManifest.xml
+
       - name: Generate custom launcher icon when logo is valid
-        if: ${{ hashFiles('assets/branding/orbit_two_logo_icon.png') != '' }}
+        if: ${{ steps.logo_conversion.outputs.valid == 'true' }}
         run: |
           dart run flutter_launcher_icons
           sed -i 's#android:icon="@android:drawable/sym_def_app_icon"#android:icon="@mipmap/ic_launcher"#' android/app/src/main/AndroidManifest.xml
