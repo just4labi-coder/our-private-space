@@ -1,4 +1,4 @@
-import 'dart:async';
+Import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -2225,6 +2225,7 @@ class _ChatPageState extends State<ChatPage> {
     final shouldType = value.trim().isNotEmpty;
 
     if (shouldType) {
+      // প্রথম অক্ষর লেখার সঙ্গে সঙ্গেই Typing চালু হবে।
       if (!_isTypingSent) {
         _isTypingSent = true;
 
@@ -2237,8 +2238,9 @@ class _ChatPageState extends State<ChatPage> {
         );
       }
 
+      // লেখা চলাকালীন নিয়মিত heartbeat পাঠাবে।
       _typingHeartbeatTimer ??= Timer.periodic(
-        const Duration(seconds: 3),
+        const Duration(seconds: 2),
         (_) {
           if (!mounted || controller.text.trim().isEmpty) {
             return;
@@ -2254,6 +2256,7 @@ class _ChatPageState extends State<ChatPage> {
         },
       );
     } else {
+      // ইনপুট খালি হলে সঙ্গে সঙ্গে Typing বন্ধ করবে।
       _typingHeartbeatTimer?.cancel();
       _typingHeartbeatTimer = null;
 
@@ -2332,6 +2335,19 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void dispose() {
     _typingHeartbeatTimer?.cancel();
+    _typingHeartbeatTimer = null;
+
+    if (_isTypingSent) {
+      _isTypingSent = false;
+      unawaited(
+        ChatSyncService.clearTyping().catchError(
+          (Object error) {
+            debugPrint('Typing status clear on dispose failed: $error');
+          },
+        ),
+      );
+    }
+
     SpaceSyncService.uploadProgress.removeListener(
       _handleUploadProgressChanged,
     );
