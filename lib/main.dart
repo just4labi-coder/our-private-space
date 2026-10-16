@@ -2148,6 +2148,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Timer? _messageHighlightTimer;
   bool _hasLoadedInitialMessages = false;
   bool _isNearChatBottom = true;
+  bool _userIsScrolling = false;
   int _scrollRequestToken = 0;
 
   bool _isTypingSent = false;
@@ -3139,7 +3140,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       }
       if (!mounted ||
           !scrollController.hasClients ||
-          requestToken != _scrollRequestToken) {
+          requestToken != _scrollRequestToken ||
+          _userIsScrolling ||
+          scrollController.position.isScrollingNotifier.value) {
         return;
       }
 
@@ -3160,7 +3163,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await Future<void>.delayed(const Duration(milliseconds: 120));
         if (!mounted ||
             !scrollController.hasClients ||
-            requestToken != _scrollRequestToken) {
+            requestToken != _scrollRequestToken ||
+            _userIsScrolling ||
+            scrollController.position.isScrollingNotifier.value) {
           return;
         }
         final latestPosition = scrollController.position;
@@ -3209,7 +3214,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _jumpToMessage(String targetId) async {
     final targetIndex =
         messages.indexWhere((item) => '${item['id'] ?? ''}' == targetId);
-    if (targetIndex < 0 || messages.isEmpty || !scrollController.hasClients) {
+    if (targetIndex < 0 ||
+        messages.isEmpty ||
+        messages[targetIndex]['unsent'] == true ||
+        !scrollController.hasClients) {
       return;
     }
 
@@ -3217,22 +3225,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (mounted) setState(() => _highlightedMessageId = targetId);
 
     final key = _messageKeys.putIfAbsent(targetId, () => GlobalKey());
-    final denominator = messages.length > 1 ? messages.length - 1 : 1;
 
-    // Variable-height messages mean one guessed offset is not accurate enough.
-    // Scroll in viewport-sized steps until ListView builds the target widget.
-    for (var attempt = 0; attempt < 14; attempt++) {
+    // Index-এর অনুপাত দিয়ে offset আন্দাজ করা যাবে না—মেসেজের উচ্চতা একেক রকম।
+    // বর্তমানে তৈরি হওয়া row-গুলোর index দেখে এক viewport করে সঠিক দিকে যাই।
+    for (var attempt = 0; attempt < 60; attempt++) {
       if (!mounted || !scrollController.hasClients) return;
 
       final targetContext = key.currentContext;
       if (targetContext != null) {
         await Scrollable.ensureVisible(
           targetContext,
-          duration: const Duration(milliseconds: 320),
+          duration: const Duration(milliseconds: 360),
           curve: Curves.easeInOutCubic,
           alignment: 0.45,
         );
-        _messageHighlightTimer = Timer(const Duration(milliseconds: 1500), () {
+        _messageHighlightTimer = Timer(const Duration(milliseconds: 1600), () {
           if (mounted && _highlightedMessageId == targetId) {
             setState(() => _highlightedMessageId = null);
           }
@@ -3240,30 +3247,49 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return;
       }
 
+      var minVisibleIndex = messages.length;
+      var maxVisibleIndex = -1;
+      for (var i = 0; i < messages.length; i++) {
+        final id = '${messages[i]['id'] ?? i}';
+        final context = _messageKeys[id]?.currentContext;
+        final renderObject = context?.findRenderObject();
+        if (renderObject is RenderBox && renderObject.attached) {
+          minVisibleIndex = i < minVisibleIndex ? i : minVisibleIndex;
+          maxVisibleIndex = i > maxVisibleIndex ? i : maxVisibleIndex;
+        }
+      }
+
       final position = scrollController.position;
       final maxExtent = position.maxScrollExtent;
-      if (maxExtent <= 0) {
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (maxExtent <= 0 || position.viewportDimension <= 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
         continue;
       }
 
-      final targetFraction = targetIndex / denominator;
-      final currentFraction =
-          (position.pixels / maxExtent).clamp(0.0, 1.0).toDouble();
-      final direction = targetFraction >= currentFraction ? 1.0 : -1.0;
-      final nextOffset = attempt == 0
-          ? maxExtent * targetFraction
-          : position.pixels + direction * position.viewportDimension * 0.72;
+      final double nextOffset;
+      if (maxVisibleIndex < 0) {
+        nextOffset = targetIndex < messages.length / 2 ? 0 : maxExtent;
+      } else if (targetIndex < minVisibleIndex) {
+        nextOffset = position.pixels - position.viewportDimension * 0.72;
+      } else if (targetIndex > maxVisibleIndex) {
+        nextOffset = position.pixels + position.viewportDimension * 0.72;
+      } else {
+        nextOffset = targetIndex < (minVisibleIndex + maxVisibleIndex) / 2
+            ? position.pixels - position.viewportDimension * 0.45
+            : position.pixels + position.viewportDimension * 0.45;
+      }
 
+      final clampedOffset = nextOffset.clamp(0.0, maxExtent).toDouble();
+      if ((clampedOffset - position.pixels).abs() < 1) break;
       await scrollController.animateTo(
-        nextOffset.clamp(0.0, maxExtent).toDouble(),
-        duration: Duration(milliseconds: attempt == 0 ? 220 : 150),
-        curve: Curves.easeOutCubic,
+        clampedOffset,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.linear,
       );
-      await Future<void>.delayed(const Duration(milliseconds: 70));
+      await Future<void>.delayed(const Duration(milliseconds: 35));
     }
 
-    if (!mounted) return;
+    if (!mounted || !scrollController.hasClients) return;
     final finalContext = key.currentContext;
     if (finalContext != null) {
       await Scrollable.ensureVisible(
@@ -3273,7 +3299,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         alignment: 0.45,
       );
     }
-    _messageHighlightTimer = Timer(const Duration(milliseconds: 1500), () {
+    _messageHighlightTimer = Timer(const Duration(milliseconds: 1600), () {
       if (mounted && _highlightedMessageId == targetId) {
         setState(() => _highlightedMessageId = null);
       }
@@ -3360,12 +3386,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           child: Wrap(
             children: [
               ListTile(
-                leading: const Icon(Icons.reply_rounded, color: pinkColor),
-                title: const Text('Reply / উত্তর দাও'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _setReplyTo(message);
-                },
+                enabled: !unsent,
+                leading: Icon(
+                  Icons.reply_rounded,
+                  color: unsent ? Colors.white24 : pinkColor,
+                ),
+                title: Text(
+                  unsent ? 'পাঠানো হয়নি—Reply করা যাবে না' : 'Reply / উত্তর দাও',
+                  style: TextStyle(
+                    color: unsent ? Colors.white38 : Colors.white,
+                  ),
+                ),
+                onTap: unsent
+                    ? null
+                    : () {
+                        Navigator.pop(sheetContext);
+                        _setReplyTo(message);
+                      },
               ),
               ListTile(
                 leading: const Icon(
@@ -4269,7 +4306,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           },
           onHorizontalDragEnd: (_) {
             final offset = _replyDragOffsets[messageId] ?? 0;
-            if (offset >= 42) _setReplyTo(message);
+            if (offset >= 42 && message['unsent'] != true) {
+              _setReplyTo(message);
+            }
             setState(() => _replyDragOffsets[messageId] = 0);
           },
           child: AnimatedContainer(
@@ -4502,16 +4541,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ],
                   ),
                 )
-              : NotificationListener<UserScrollNotification>(
+              : NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
-                    if (notification.direction != ScrollDirection.idle) {
-                      // ব্যবহারকারী নিজে স্ক্রল করলে পুরোনো auto-scroll কাজটি বাতিল হবে।
+                    if (notification is ScrollStartNotification &&
+                        notification.dragDetails != null) {
+                      _userIsScrolling = true;
                       _scrollRequestToken++;
+                    } else if (notification is ScrollEndNotification) {
+                      _userIsScrolling = false;
                     }
                     return false;
                   },
                   child: ListView.builder(
+                    key: const PageStorageKey<String>('couple-zone-chat-list'),
                     controller: scrollController,
+                    physics: const ClampingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                     itemCount:
                         messages.length + (_pendingMediaName != null ? 1 : 0),
