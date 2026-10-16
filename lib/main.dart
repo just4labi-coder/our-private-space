@@ -8202,6 +8202,8 @@ class _SettingsPageState extends State<SettingsPage> {
               if (shouldLogout != true || !context.mounted) return;
               try {
                 await SpaceStore.stopRealtimeSync();
+                await PushNotificationService.unregisterCurrentToken();
+                await PrivateSpaceService.clearCachedSpaceData();
                 await AuthService.signOut();
                 if (!context.mounted) return;
                 rootNavigatorKey.currentState?.pushAndRemoveUntil(
