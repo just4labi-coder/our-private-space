@@ -51,6 +51,25 @@ class PushNotificationService {
     await _registerCurrentToken();
   }
 
+  static Future<void> unregisterCurrentToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final token = await _messaging.getToken();
+      if (token == null || token.isEmpty) return;
+      final safeId = token.replaceAll('/', '_').replaceAll('.', '_');
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('pushTokens')
+          .doc(safeId)
+          .delete();
+    } catch (error) {
+      debugPrint('FCM token removal failed: $error');
+    }
+  }
+
   static Future<void> _registerCurrentToken() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
