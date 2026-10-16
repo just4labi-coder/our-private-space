@@ -4164,7 +4164,10 @@ class _GalleryPageState extends State<GalleryPage> {
     return item;
   }
 
-  Future<void> _deleteMediaItem(Map<String, dynamic> item) async {
+  Future<void> _deleteMediaItem(
+    Map<String, dynamic> item, {
+    bool fromFavorites = false,
+  }) async {
     final driveId = (
       item['fileId'] ??
       item['driveFileId'] ??
@@ -4181,6 +4184,21 @@ class _GalleryPageState extends State<GalleryPage> {
     final removedItem = Map<String, dynamic>.from(
       media[originalIndex],
     );
+
+    // পছন্দের ছবি অন্য ফোল্ডার থেকে সরালে Drive ফাইল মুছবে না;
+    // সেটি Favorites-এ রেখে দেবে।
+    if (removedItem['favorite'] == true && !fromFavorites) {
+      setState(() {
+        media[originalIndex]['folderId'] = 'favorites';
+      });
+      await _save();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ছবিটি Favorites-এ রাখা হয়েছে।')),
+        );
+      }
+      return;
+    }
 
     // আগে গ্যালারি থেকে সরিয়ে দাও।
     setState(() {
@@ -4233,6 +4251,21 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  Future<void> _toggleFavorite(Map<String, dynamic> item) async {
+    final id = '${item['id'] ?? ''}';
+    final index = media.indexWhere((entry) => '${entry['id'] ?? ''}' == id);
+    if (index < 0) return;
+
+    final wasFavorite = media[index]['favorite'] == true;
+    setState(() {
+      media[index]['favorite'] = !wasFavorite;
+      if (wasFavorite && media[index]['folderId'] == 'favorites') {
+        media[index]['folderId'] = 'all';
+      }
+    });
+    await _save();
+  }
+
   Future<void> _showMediaMenu(Map<String, dynamic> item) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -4240,6 +4273,17 @@ class _GalleryPageState extends State<GalleryPage> {
       builder: (sheetContext) => SafeArea(
         child: Wrap(
           children: [
+            ListTile(
+              leading: Icon(
+                item['favorite'] == true ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                color: Colors.redAccent,
+              ),
+              title: Text(item['favorite'] == true ? 'Remove from Favorites' : 'Add to Favorites'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await _toggleFavorite(item);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('Details'),
@@ -4334,9 +4378,10 @@ class _GalleryPageState extends State<GalleryPage> {
           initialItems: _itemsForFolder(id),
           onAdd: (video) => _addMedia(id, video),
           onDelete: (item) async {
-            await _deleteMediaItem(item);
+            await _deleteMediaItem(item, fromFavorites: id == 'favorites');
           },
           onDetails: _showMediaDetails,
+          onFavorite: _toggleFavorite,
           onLongPress: _showMediaMenu,
         ),
       ),
@@ -4346,10 +4391,17 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   List<Map<String, dynamic>> _itemsForFolder(String id) {
-    if (id == 'all') return List<Map<String, dynamic>>.from(media);
+    if (id == 'all') {
+      return media
+          .where((item) => item['folderId'] != 'favorites')
+          .toList();
+    }
 
     if (id == 'favorites') {
-      return media.where((item) => item['favorite'] == true).toList();
+      return media
+          .where((item) =>
+              item['favorite'] == true || item['folderId'] == 'favorites')
+          .toList();
     }
 
     return media.where((item) => item['folderId'] == id).toList();
@@ -4468,6 +4520,7 @@ class GalleryFolderPage extends StatefulWidget {
   final Future<Map<String, dynamic>?> Function(bool video) onAdd;
   final Future<void> Function(Map<String, dynamic>) onDelete;
   final void Function(Map<String, dynamic>) onDetails;
+  final Future<void> Function(Map<String, dynamic>) onFavorite;
   final Future<void> Function(Map<String, dynamic>) onLongPress;
 
   const GalleryFolderPage({
@@ -4478,6 +4531,7 @@ class GalleryFolderPage extends StatefulWidget {
     required this.onAdd,
     required this.onDelete,
     required this.onDetails,
+    required this.onFavorite,
     required this.onLongPress,
   });
 
@@ -4745,10 +4799,13 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
     final List<Map<String, dynamic>> updatedItems;
 
     if (widget.folderId == 'all') {
-      updatedItems = latestMedia;
+      updatedItems = latestMedia
+          .where((item) => item['folderId'] != 'favorites')
+          .toList();
     } else if (widget.folderId == 'favorites') {
       updatedItems = latestMedia
-          .where((item) => item['favorite'] == true)
+          .where((item) =>
+              item['favorite'] == true || item['folderId'] == 'favorites')
           .toList();
     } else {
       updatedItems = latestMedia
@@ -5013,6 +5070,9 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                               items: List<Map<String, dynamic>>.from(items),
                               initialIndex: index,
                               resolvePath: _resolveLocalPath,
+                              onFavorite: widget.onFavorite,
+                              onDelete: widget.onDelete,
+                              onDetails: widget.onDetails,
                             ),
                           ),
                         );
@@ -5177,12 +5237,18 @@ class GalleryMediaViewerPage extends StatefulWidget {
   final List<Map<String, dynamic>> items;
   final int initialIndex;
   final Future<String?> Function(Map<String, dynamic>) resolvePath;
+  final Future<void> Function(Map<String, dynamic>) onFavorite;
+  final Future<void> Function(Map<String, dynamic>) onDelete;
+  final void Function(Map<String, dynamic>) onDetails;
 
   const GalleryMediaViewerPage({
     super.key,
     required this.items,
     required this.initialIndex,
     required this.resolvePath,
+    required this.onFavorite,
+    required this.onDelete,
+    required this.onDetails,
   });
 
   @override
@@ -5240,6 +5306,37 @@ class _GalleryMediaViewerPageState
         backgroundColor: Colors.black,
         title: Text('${currentIndex + 1} / ${widget.items.length}'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: widget.items[currentIndex]['favorite'] == true
+                ? 'Remove from Favorites'
+                : 'Add to Favorites',
+            onPressed: () => widget.onFavorite(widget.items[currentIndex]),
+            icon: Icon(
+              widget.items[currentIndex]['favorite'] == true
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              color: widget.items[currentIndex]['favorite'] == true
+                  ? Colors.redAccent
+                  : Colors.white,
+            ),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (action) async {
+              final item = widget.items[currentIndex];
+              if (action == 'details') {
+                widget.onDetails(item);
+              } else if (action == 'delete') {
+                await widget.onDelete(item);
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'details', child: Text('Details')),
+              PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
+        ],
       ),
       body: PageView.builder(
         controller: _pageController,
