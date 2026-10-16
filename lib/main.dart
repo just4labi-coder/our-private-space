@@ -256,7 +256,7 @@ class EternalSpaceApp extends StatelessWidget {
           ),
         ),
       ),
-      home: startupError == null\n          ? const SplashScreen()\n          : StartupErrorScreen(message: startupError!),
+      home: startupError == null ? const SplashScreen() : StartupErrorScreen(message: startupError!),
     );
   }
 }
