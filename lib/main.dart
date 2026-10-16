@@ -11,10 +11,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import 'screens/partner_connection_page.dart';
 import 'services/space_sync_service.dart';
 import 'services/chat_sync_service.dart';
@@ -4247,6 +4249,176 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
   final Set<String> _selectedIds = <String>{};
   bool _selectionMode = false;
 
+  final Map<String, Future<String?>> _videoThumbnailFutures = {};
+
+  Future<String?> _resolveCachedVideoPath(
+    Map<String, dynamic> item,
+  ) async {
+    try {
+      final localPath = '${item['path'] ?? ''}'.trim();
+
+      if (localPath.isNotEmpty) {
+        final file = File(localPath);
+
+        if (await file.exists() && await file.length() > 0) {
+          return localPath;
+        }
+      }
+
+      final fileId = (
+        item['fileId'] ??
+        item['driveFileId'] ??
+        ''
+      ).toString().trim();
+
+      if (fileId.isEmpty) return null;
+
+      final prefs = await SharedPreferences.getInstance();
+      final savedPaths = prefs.getString('galleryLocalPaths');
+
+      if (savedPaths != null && savedPaths.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(savedPaths);
+
+          if (decoded is Map) {
+            final savedPath = '${decoded[fileId] ?? ''}'.trim();
+
+            if (savedPath.isNotEmpty) {
+              final file = File(savedPath);
+
+              if (await file.exists() && await file.length() > 0) {
+                return savedPath;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      final safeId = fileId.replaceAll(
+        RegExp(r'[^A-Za-z0-9_-]'),
+        '_',
+      );
+
+      final isPersonal = item['storage'] == 'personal';
+      final prefix =
+          'media_${isPersonal ? 'personal' : 'shared'}_${safeId}__';
+
+      final support = await getApplicationSupportDirectory();
+      final directory = Directory(
+        '${support.path}/eternal_space_media',
+      );
+
+      if (!await directory.exists()) return null;
+
+      await for (final entity in directory.list()) {
+        if (entity is! File) continue;
+
+        final name = entity.uri.pathSegments.last;
+
+        if (!name.startsWith(prefix) ||
+            name.endsWith('.part') ||
+            name.endsWith('.complete')) {
+          continue;
+        }
+
+        final marker = File('${entity.path}.complete');
+
+        try {
+          if (!await marker.exists()) continue;
+
+          final length = await entity.length();
+          final recordedLength = int.tryParse(
+            (await marker.readAsString()).trim(),
+          );
+
+          if (length > 0 && recordedLength == length) {
+            return entity.path;
+          }
+        } catch (_) {}
+      }
+    } catch (error) {
+      debugPrint('Cached video lookup error: $error');
+    }
+
+    // ক্যাশে না থাকলে ডাউনলোড শুরু করবে না।
+    return null;
+  }
+
+  Future<String?> _resolveVideoThumbnailPath(
+    Map<String, dynamic> item,
+  ) {
+    final fileId = (
+      item['fileId'] ??
+      item['driveFileId'] ??
+      item['id'] ??
+      ''
+    ).toString().trim();
+
+    final existing = _videoThumbnailFutures[fileId];
+    if (existing != null) return existing;
+
+    late final Future<String?> future;
+
+    future = Future<String?>.microtask(() async {
+      try {
+        final videoPath = await _resolveCachedVideoPath(item);
+        if (videoPath == null) return null;
+
+        final videoFile = File(videoPath);
+        if (!await videoFile.exists()) return null;
+
+        final temp = await getTemporaryDirectory();
+        final safeId = fileId.replaceAll(
+          RegExp(r'[^A-Za-z0-9_-]'),
+          '_',
+        );
+
+        final thumbnailFile = File(
+          '${temp.path}/video_thumb_$safeId.jpg',
+        );
+
+        if (await thumbnailFile.exists() &&
+            await thumbnailFile.length() > 0) {
+          return thumbnailFile.path;
+        }
+
+        final generatedPath = await VideoThumbnail.thumbnailFile(
+          video: videoPath,
+          thumbnailPath: thumbnailFile.path,
+          imageFormat: ImageFormat.JPEG,
+          maxHeight: 320,
+          quality: 70,
+        );
+
+        if (generatedPath == null || generatedPath.isEmpty) {
+          return null;
+        }
+
+        final generatedFile = File(generatedPath);
+
+        if (await generatedFile.exists() &&
+            await generatedFile.length() > 0) {
+          return generatedFile.path;
+        }
+      } catch (error) {
+        debugPrint('Video thumbnail error: $error');
+      }
+
+      return null;
+    });
+
+    _videoThumbnailFutures[fileId] = future;
+
+    future.then((path) {
+      if (path == null &&
+          identical(_videoThumbnailFutures[fileId], future)) {
+        _videoThumbnailFutures.remove(fileId);
+      }
+    });
+
+    return future;
+  }
+
   String _mediaKey(Map<String, dynamic> item) {
     return '${item['id'] ?? item['fileId'] ?? item['driveFileId'] ?? ''}';
   }
@@ -4524,12 +4696,50 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                           fit: StackFit.expand,
                           children: [
                             if (video)
-                              Container(
-                                color: surfaceColor,
-                                child: const Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  size: 50,
-                                ),
+                              FutureBuilder<String?>(
+                                future: _resolveVideoThumbnailPath(item),
+                                builder: (context, snapshot) {
+                                  final thumbnailPath = snapshot.data;
+
+                                  return Container(
+                                    color: surfaceColor,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      alignment: Alignment.center,
+                                      children: [
+                                        if (thumbnailPath != null)
+                                          Image.file(
+                                            File(thumbnailPath),
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) {
+                                              return const ColoredBox(
+                                                color: surfaceColor,
+                                                child: Icon(
+                                                  Icons.videocam_rounded,
+                                                  size: 42,
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        else
+                                          const Center(
+                                            child: Icon(
+                                              Icons.videocam_rounded,
+                                              size: 42,
+                                              color: Colors.white54,
+                                            ),
+                                          ),
+                                        const Center(
+                                          child: Icon(
+                                            Icons.play_circle_fill_rounded,
+                                            size: 50,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
                               )
                             else if (path == null)
                               Container(
