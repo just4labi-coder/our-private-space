@@ -835,12 +835,19 @@ class SpaceSyncService {
         pending: pending,
       );
     } catch (error) {
+      // ব্যর্থ আপলোডের durable ফাইল মুছে ফেলো না।
+      // নেটওয়ার্ক বা session সমস্যা হলে পরে আবার resume করা যাবে।
+      pending['status'] = 'pending';
+      pending['lastError'] = error.toString();
+      pending['updatedAt'] = DateTime.now().toIso8601String();
+
       try {
-        await acknowledgeUpload(id);
-      } catch (cleanupError) {
-        debugPrint('Upload cleanup failed: $cleanupError');
+        await _upsertPendingUpload(pending);
+      } catch (saveError) {
+        debugPrint('Failed to preserve pending upload: $saveError');
       }
 
+      debugPrint('Upload kept for retry ($id): $error');
       rethrow;
     } finally {
       _updateUpload(id, isUploading: false);
@@ -934,10 +941,15 @@ class SpaceSyncService {
       } catch (error) {
         debugPrint('Resume upload failed ($id): $error');
 
+        // Resume ব্যর্থ হলেও ফাইল ও session তথ্য রেখে দাও।
+        item['status'] = 'pending';
+        item['lastError'] = error.toString();
+        item['updatedAt'] = DateTime.now().toIso8601String();
+
         try {
-          await acknowledgeUpload(id);
-        } catch (cleanupError) {
-          debugPrint('Resume cleanup failed: $cleanupError');
+          await _upsertPendingUpload(item);
+        } catch (saveError) {
+          debugPrint('Failed to preserve resumed upload: $saveError');
         }
       } finally {
         _updateUpload(id, isUploading: false);
