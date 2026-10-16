@@ -1,4 +1,9 @@
-const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentUpdated,
+  onDocumentDeleted,
+  onDocumentWritten,
+} = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
@@ -79,6 +84,8 @@ async function sendToUser(uid, notification) {
 async function getRecipients(spaceId, senderUid) {
   const space = await db.collection("privateSpaces").doc(spaceId).get();
   if (!space.exists) return [];
+  // Do not send old-space notifications after either partner disconnects.
+  if (space.get("connectionStatus") === "disconnected") return [];
   const members = space.get("memberUids");
   if (!Array.isArray(members)) return [];
   return members.filter((uid) => typeof uid === "string" && uid && uid !== senderUid);
@@ -135,12 +142,32 @@ exports.notifyChangedChatMessage = onDocumentUpdated(
   },
 );
 
+exports.notifyDeletedChatMessage = onDocumentDeleted(
+  "privateSpaces/{spaceId}/chatMessages/{messageId}",
+  async (event) => {
+    const message = event.data?.data();
+    if (!message || message.unsent === true) return;
+    const senderUid = stringValue(message.senderUid);
+    if (!senderUid) return;
+
+    const recipients = await getRecipients(event.params.spaceId, senderUid);
+    const notification = {
+      kind: "change",
+      detailedTitle: stringValue(message.senderName, "Your partner"),
+      detailedBody: "A message was removed.",
+      privateTitle: "Check change",
+      privateBody: "Your partner changed a message.",
+    };
+    await Promise.all(recipients.map((uid) => sendToUser(uid, notification)));
+  },
+);
+
 exports.notifySharedSpaceChanges = onDocumentWritten(
   "privateSpaces/{spaceId}/syncData/appState",
   async (event) => {
-    const before = event.data?.before.exists ? event.data.before.data() : null;
+    const before = event.data?.before.exists ? event.data.before.data() : {};
     const after = event.data?.after.exists ? event.data.after.data() : null;
-    if (!before || !after) return;
+    if (!after) return;
 
     const senderUid = stringValue(after.updatedBy);
     if (!senderUid) return;
