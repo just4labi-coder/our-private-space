@@ -223,7 +223,9 @@ exports.notifySpaceDocumentChanges = onDocumentUpdated(
     }
 
     if (!changed.length) return;
-    const senderUid = stringValue(after.updatedBy, inferredActor);
+    const senderUid = after.updatedBy !== before.updatedBy
+      ? stringValue(after.updatedBy, inferredActor)
+      : inferredActor;
     if (!members.includes(senderUid)) return;
 
     const notification = {
