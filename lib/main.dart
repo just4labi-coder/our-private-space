@@ -23,6 +23,7 @@ import 'screens/partner_connection_page.dart';
 import 'services/space_sync_service.dart';
 import 'services/chat_sync_service.dart';
 import 'screens/auth_screen.dart';
+import 'services/auth_service.dart';
 import 'services/relationship_service.dart';
 import 'services/private_space_service.dart';
 
@@ -43,6 +44,7 @@ Future<void> main() async {
 
   await Firebase.initializeApp();
   await DataSaverSettings.load();
+  await NotificationPrivacySettings.load();
 
   tz_data.initializeTimeZones();
 
@@ -77,6 +79,49 @@ class DataSaverSettings {
 
     await prefs.setBool(_key, value);
     enabled.value = value;
+  }
+}
+
+class NotificationPrivacySettings {
+  NotificationPrivacySettings._();
+
+  static const String _key = 'hideNotificationDetails';
+  static final ValueNotifier<bool> hideDetails = ValueNotifier<bool>(false);
+
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    hideDetails.value = prefs.getBool(_key) ?? false;
+  }
+
+  static Future<void> setHideDetails(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+    hideDetails.value = value;
+  }
+
+  static Future<void> showPartnerNotification({
+    required String detailedTitle,
+    required String detailedBody,
+    required String privateTitle,
+    required String privateBody,
+    int id = 7001,
+  }) async {
+    final hidden = hideDetails.value;
+    await notifications.show(
+      id,
+      hidden ? privateTitle : detailedTitle,
+      hidden ? privateBody : detailedBody,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'partner_updates',
+          'Partner updates',
+          channelDescription: 'Messages and changes from your partner',
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+        ),
+      ),
+    );
   }
 }
 
@@ -1155,9 +1200,47 @@ class _MainScreenState extends State<MainScreen>
   void _startUnreadWatcher() {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
+    var receivedInitialSnapshot = false;
+    final knownMessageIds = <String>{};
 
     _unreadSubscription = ChatSyncService.watchMessages().listen(
       (messages) {
+        final incoming = <Map<String, dynamic>>[];
+        for (final message in messages) {
+          final id = '${message['id'] ?? ''}';
+          if (id.isNotEmpty && !knownMessageIds.contains(id)) {
+            final senderUid = '${message['senderUid'] ?? ''}';
+            if (receivedInitialSnapshot &&
+                senderUid.isNotEmpty &&
+                senderUid != uid &&
+                message['unsent'] != true) {
+              incoming.add(message);
+            }
+            knownMessageIds.add(id);
+          }
+        }
+        receivedInitialSnapshot = true;
+
+        if (selectedIndex != 1) {
+          for (final message in incoming) {
+            final text = '${message['text'] ?? ''}'.trim();
+            final type = '${message['type'] ?? 'text'}';
+            final sender = '${message['senderName'] ?? 'Partner'}';
+            final content = text.isNotEmpty
+                ? text
+                : (type == 'voice' ? 'Voice message' : 'Sent a media file');
+            NotificationPrivacySettings.showPartnerNotification(
+              detailedTitle: sender,
+              detailedBody: content,
+              privateTitle: 'Check message',
+              privateBody: 'You have a new message.',
+              id: (('${message['id'] ?? ''}').hashCode & 0x7fffffff),
+            ).catchError((Object error) {
+              debugPrint('Message notification error: $error');
+            });
+          }
+        }
+
         final unread = messages.any((message) {
           final senderUid = '${message['senderUid'] ?? ''}';
           final seenBy = message['seenBy'];
@@ -1265,7 +1348,13 @@ class _MainScreenState extends State<MainScreen>
       ),
     ];
 
-    return Scaffold(
+    return PopScope(
+      canPop: selectedIndex == 0,
+      onPopInvoked: (didPop) {
+        if (didPop || selectedIndex == 0 || !mounted) return;
+        setState(() => selectedIndex = 0);
+      },
+      child: Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
@@ -1317,6 +1406,7 @@ class _MainScreenState extends State<MainScreen>
             label: 'Settings',
           ),
         ],
+      ),
       ),
     );
   }
@@ -7613,6 +7703,45 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         const SizedBox(height: 20),
+        const SectionHeading(title: 'Notifications'),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: NotificationPrivacySettings.hideDetails,
+          builder: (context, hideDetails, _) {
+            return Card(
+              color: surfaceColor,
+              child: SwitchListTile(
+                secondary: Icon(
+                  hideDetails
+                      ? Icons.notifications_off_outlined
+                      : Icons.notifications_active_outlined,
+                  color: pinkColor,
+                ),
+                title: const Text('Hide Notification Details'),
+                subtitle: Text(
+                  hideDetails
+                      ? 'Messages show “Check message”; changes show “Check change”.'
+                      : 'Show partner name, message text and change details.',
+                ),
+                value: hideDetails,
+                activeColor: pinkColor,
+                onChanged: (value) async {
+                  try {
+                    await NotificationPrivacySettings.setHideDetails(value);
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Notification setting could not be saved.'),
+                      ),
+                    );
+                  }
+                },
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'App information'),
         const SizedBox(height: 10),
         const Card(
@@ -7646,6 +7775,50 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle: Text(
               'Reminders can be scheduled for dates you add.',
             ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            onPressed: () async {
+              final shouldLogout = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  backgroundColor: surfaceColor,
+                  title: const Text('Log out?'),
+                  content: const Text('You can sign in again with the same account.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                      child: const Text('Log out'),
+                    ),
+                  ],
+                ),
+              );
+              if (shouldLogout != true || !context.mounted) return;
+              try {
+                await SpaceStore.stopRealtimeSync();
+                await AuthService.signOut();
+                if (!context.mounted) return;
+                rootNavigatorKey.currentState?.pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const SplashScreen()),
+                  (route) => false,
+                );
+              } catch (error) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Log out failed: $error')),
+                );
+              }
+            },
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            label: const Text('Log out', style: TextStyle(color: Colors.redAccent)),
           ),
         ),
         const SizedBox(height: 20),
@@ -7768,26 +7941,12 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<String>(
-                      value: author,
-                      decoration: const InputDecoration(
-                        labelText: 'Complaint by',
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'This complaint will be marked as yours automatically.',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
                       ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'You',
-                          child: Text('You'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Partner',
-                          child: Text('Partner'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setDialogState(() => author = value);
-                        }
-                      },
                     ),
                     const SizedBox(height: 12),
                     TextField(
