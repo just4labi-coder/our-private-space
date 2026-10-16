@@ -65,6 +65,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate custom launcher icon when logo is provided
+        if: ${{ hashFiles('assets/branding/couple_zone_logo.png') != '' }}
+        run: |
+          dart run flutter_launcher_icons
+          sed -i 's#android:icon="@android:drawable/sym_def_app_icon"#android:icon="@mipmap/ic_launcher"#' android/app/src/main/AndroidManifest.xml
+
+      - name: Generate themed launcher icon when monochrome logo is provided
+        if: ${{ hashFiles('assets/branding/couple_zone_logo.png') != '' && hashFiles('assets/branding/couple_zone_logo_monochrome.png') != '' }}
+        run: dart run flutter_launcher_icons -f flutter_launcher_icons_monochrome.yaml
+
       - name: Analyze project
         run: flutter analyze
 
