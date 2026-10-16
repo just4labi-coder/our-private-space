@@ -2305,13 +2305,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appIsResumed = state == AppLifecycleState.resumed;
-    if (_appIsResumed && messages.isNotEmpty) {
-      unawaited(ChatSyncService.markMessagesSeen(messages).catchError(
-        (Object error) {
-          debugPrint('Mark seen after resume skipped: $error');
-        },
-      ));
-    } else if (!_appIsResumed) {
+    if (_appIsResumed) {
+      // অ্যাপ Recents/background থেকে ফিরলে ব্যর্থ মিডিয়া FutureBuilder-গুলো
+      // আবার চেষ্টা করতে পারবে; চলমান ডাউনলোড সার্ভিসে deduplicate হয়।
+      if (mounted) setState(() {});
+      if (messages.isNotEmpty) {
+        unawaited(ChatSyncService.markMessagesSeen(messages).catchError(
+          (Object error) {
+            debugPrint('Mark seen after resume skipped: $error');
+          },
+        ));
+      }
+    } else {
       _typingIdleTimer?.cancel();
       _typingIdleTimer = null;
       unawaited(_stopTyping());
@@ -3034,26 +3039,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               icon: const Icon(Icons.stop_circle_rounded, color: Colors.redAccent),
             ),
             IconButton(
-              tooltip: 'রেকর্ড থামিয়ে সরাসরি পাঠান',
+              tooltip: 'শুনে পরীক্ষা না করেই সরাসরি পাঠান',
               visualDensity: VisualDensity.compact,
               onPressed: _isSendingRecordedVoice ? null : _sendVoiceImmediately,
               icon: const Icon(Icons.send_rounded, color: pinkColor),
             ),
           ] else ...[
             IconButton(
-              tooltip: _isVoicePreviewPlaying ? 'শোনা থামাও' : 'পাঠানোর আগে শুনুন',
+              tooltip: _isVoicePreviewPlaying ? 'শোনা থামাও / Pause' : 'পাঠানোর আগে Play করে শুনুন',
               visualDensity: VisualDensity.compact,
               onPressed: _toggleVoicePreview,
               icon: Icon(_isVoicePreviewPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: pinkColor),
             ),
             IconButton(
-              tooltip: 'আবার রেকর্ড',
+              tooltip: 'রিসেট করে নতুন করে রেকর্ড',
               visualDensity: VisualDensity.compact,
               onPressed: _resetVoiceRecording,
               icon: const Icon(Icons.replay_rounded, color: pinkColor),
             ),
             IconButton(
-              tooltip: 'ভয়েস মুছুন',
+              tooltip: 'রেকর্ড করা ভয়েস ডিলিট',
               visualDensity: VisualDensity.compact,
               onPressed: _deleteVoiceRecording,
               icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
@@ -3679,14 +3684,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           } catch (_) {}
         }
         final name = '${media['driveFileName'] ?? 'chat_media'}';
-        final result = await SpaceSyncService.downloadMedia(
-          fileId,
-          saveAs: '${fileId}_$name',
-        );
-        if (await File(result).exists()) {
-          return result;
+        Object? lastDownloadError;
+        // অ্যাপ Recents-এ গেলে বা দুর্বল নেটওয়ার্কে সাময়িক ব্যর্থ হলে retry।
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            final result = await SpaceSyncService.downloadMedia(
+              fileId,
+              saveAs: '${fileId}_$name',
+            );
+            if (await File(result).exists()) {
+              return result;
+            }
+            lastDownloadError = Exception('ডাউনলোডের ফাইল পাওয়া যায়নি।');
+          } catch (error) {
+            lastDownloadError = error;
+            final message = error.toString();
+            final permanentError = RegExp(
+              r'সার্ভার ত্রুটি: (400|401|403|404)',
+            ).hasMatch(message);
+            if (permanentError || attempt == 2) rethrow;
+          }
+          await Future<void>.delayed(
+            Duration(milliseconds: 700 * (attempt + 1)),
+          );
         }
-        return null;
+        throw Exception('ডাউনলোড ব্যর্থ: $lastDownloadError');
       } catch (error) {
         debugPrint('Chat media download error: $error');
         return null;
