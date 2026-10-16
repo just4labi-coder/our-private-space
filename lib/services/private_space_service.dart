@@ -86,11 +86,38 @@ class PrivateSpaceService {
   }
 
   /// Space ID ও Invite Code ফোনে সংরক্ষণ
+  static const List<String> _spaceScopedLocalKeys = [
+    'loveNotes',
+    'specialDates',
+    'galleryMedia',
+    'galleryFolders',
+    'spaceComplaints',
+    'relationshipStartAt',
+    'chatDraft',
+    'chatMessages',
+  ];
+
+  static Future<void> _clearSpaceScopedLocalData(
+    SharedPreferences prefs,
+  ) async {
+    for (final key in _spaceScopedLocalKeys) {
+      await prefs.remove(key);
+    }
+    // Upload queue from an old space must never be replayed into a new one.
+    await prefs.remove('pendingDriveUploads');
+  }
+
   static Future<void> _saveConnection(
     String spaceId,
     String inviteCode,
   ) async {
     final prefs = await _prefs;
+    final previousSpaceId = prefs.getString(_spaceIdKey);
+    if (previousSpaceId != null &&
+        previousSpaceId.isNotEmpty &&
+        previousSpaceId != spaceId) {
+      await _clearSpaceScopedLocalData(prefs);
+    }
     await prefs.setString(_spaceIdKey, spaceId);
     await prefs.setString(_inviteCodeKey, inviteCode);
   }
@@ -128,7 +155,9 @@ class PrivateSpaceService {
         if (existingSpace.exists &&
             (existingSpace.data()?['memberUids'] as List?)
                     ?.contains(user.uid) ==
-                true) {
+                true &&
+            (existingSpace.data()?['connectionStatus'] ?? 'connected') ==
+                'connected') {
           return savedCode;
         }
       }
