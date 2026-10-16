@@ -440,6 +440,11 @@ class SpaceSyncService {
                 'mimeType': mime,
                 'size': length,
                 'folderId': 'all',
+                'metadata': Map<String, dynamic>.from(
+                  pending['metadata'] is Map
+                      ? pending['metadata'] as Map
+                      : const <String, dynamic>{},
+                ),
               },
               needsSpace: shared,
             );
