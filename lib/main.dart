@@ -3145,6 +3145,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           !scrollController.hasClients ||
           requestToken != _scrollRequestToken ||
           _userIsScrolling ||
+          _userHasScrolledAwayFromBottom ||
           scrollController.position.isScrollingNotifier.value) {
         return;
       }
@@ -3168,6 +3169,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             !scrollController.hasClients ||
             requestToken != _scrollRequestToken ||
             _userIsScrolling ||
+            _userHasScrolledAwayFromBottom ||
             scrollController.position.isScrollingNotifier.value) {
           return;
         }
@@ -4156,7 +4158,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final mine = _isMine(message);
     final senderUid = '${message['senderUid'] ?? ''}';
     final messageId = '${message['id'] ?? index}';
-    final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 76.0).toDouble();
+    final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 104.0).toDouble();
     final expanded = _expandedMessageTimes.contains(messageId);
 
     final row = Row(
@@ -4298,15 +4300,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           },
           onLongPress: () => _showMessageOptions(index),
           onHorizontalDragUpdate: (details) {
-            if (details.delta.dx <= 0 && (_replyDragOffsets[messageId] ?? 0) <= 0) return;
+            final currentOffset = _replyDragOffsets[messageId] ?? 0;
+            // Messenger-এর মতো reply করতে স্পষ্টভাবে ডানদিকে টানতে হবে;
+            // অল্প/তির্যক swipe-এ মেসেজ সরবে না।
+            if (details.delta.dx <= 0 && currentOffset <= 0) return;
+            if (details.delta.dx.abs() < details.delta.dy.abs() * 1.15 &&
+                currentOffset < 18) {
+              return;
+            }
             setState(() {
               _replyDragOffsets[messageId] =
-                  ((_replyDragOffsets[messageId] ?? 0) + details.delta.dx).clamp(0.0, 76.0).toDouble();
+                  (currentOffset + details.delta.dx).clamp(0.0, 104.0).toDouble();
             });
           },
           onHorizontalDragEnd: (_) {
             final offset = _replyDragOffsets[messageId] ?? 0;
-            if (offset >= 42 && message['unsent'] != true) {
+            if (offset >= 78 && message['unsent'] != true) {
               _setReplyTo(message);
             }
             setState(() => _replyDragOffsets[messageId] = 0);
@@ -4330,7 +4339,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 Positioned(
                   left: 2,
                   child: AnimatedOpacity(
-                    opacity: dragOffset >= 8 ? 1 : 0,
+                    opacity: dragOffset >= 22 ? 1 : 0,
                     duration: const Duration(milliseconds: 100),
                     child: const Icon(Icons.reply_rounded, color: pinkColor, size: 22),
                   ),
