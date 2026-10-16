@@ -1,0 +1,6 @@
+name = "orbit-two-notifications"
+main = "src/index.js"
+compatibility_date = "2026-10-16"
+
+[[send_email]]
+name = "EMAIL"
