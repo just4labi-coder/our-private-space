@@ -177,7 +177,11 @@ service cloud.firestore {
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.inviteCode == resource.data.inviteCode
         && request.resource.data.createdAt == resource.data.createdAt
-        && changed.hasOnly(['memberNames', 'relationshipStartAt'])
+        && changed.hasOnly(['memberNames', 'relationshipStartAt', 'updatedBy'])
+        && (
+          !changed.hasAny(['updatedBy'])
+          || request.resource.data.updatedBy == uid
+        )
         && (
           !changed.hasAny(['memberNames'])
           || (
