@@ -1157,9 +1157,9 @@ class SpaceSyncService {
       }) async {
         Object? lastError;
 
-        for (var attempt = 0; attempt < 3; attempt++) {
+        for (var attempt = 0; attempt < 4; attempt++) {
           try {
-            return await _request(
+            final chunk = await _request(
               shared ? 'downloadSharedChunk' : 'downloadPersonalChunk',
               data: {
                 'fileId': fileId,
@@ -1168,20 +1168,42 @@ class SpaceSyncService {
               },
               needsSpace: shared,
             );
-          } catch (error) {
-            lastError = error;
 
-            // শুধু সাময়িক HTTP ত্রুটিতে পুনরায় চেষ্টা।
-            final retryable = RegExp(
-              r'সার্ভার ত্রুটি: (404|500|502|503|504)',
-            ).hasMatch(error.toString());
-
-            if (!retryable || attempt == 2) {
-              rethrow;
+            final returnedStart = int.tryParse('${chunk['start'] ?? ''}');
+            final returnedEnd = int.tryParse('${chunk['end'] ?? ''}');
+            final returnedTotal = int.tryParse('${chunk['total'] ?? ''}');
+            final encoded = chunk['base64']?.toString() ?? '';
+            if (encoded.isEmpty ||
+                returnedStart != start ||
+                returnedTotal != totalSize ||
+                returnedEnd == null) {
+              throw const FormatException('ডাউনলোডের অংশের তথ্য অসম্পূর্ণ');
             }
 
-            await Future.delayed(
-              Duration(milliseconds: 500 * (attempt + 1)),
+            final bytes = base64Decode(encoded);
+            final expectedLength = returnedEnd - start + 1;
+            if (expectedLength <= 0 ||
+                bytes.length != expectedLength ||
+                bytes.length > size) {
+              throw const FormatException('ডাউনলোডের অংশের দৈর্ঘ্য মেলেনি');
+            }
+            return chunk;
+          } catch (error) {
+            lastError = error;
+            final errorText = error.toString();
+            final retryable = error is FormatException ||
+                RegExp(
+                  r'সার্ভার ত্রুটি: (408|429|500|502|503|504)|'
+                  r'সার্ভারে উত্তর পেতে দেরি হচ্ছে|'
+                  r'SocketException|HttpException|TimeoutException|'
+                  r'Connection reset|Connection closed|Network is unreachable|'
+                  r'Failed host lookup|Software caused connection abort',
+                  caseSensitive: false,
+                ).hasMatch(errorText);
+
+            if (!retryable || attempt == 3) rethrow;
+            await Future<void>.delayed(
+              Duration(milliseconds: 700 * (attempt + 1)),
             );
           }
         }

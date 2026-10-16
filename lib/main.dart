@@ -3034,7 +3034,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               icon: const Icon(Icons.stop_circle_rounded, color: Colors.redAccent),
             ),
             IconButton(
-              tooltip: 'এখনই পাঠান',
+              tooltip: 'রেকর্ড থামিয়ে সরাসরি পাঠান',
               visualDensity: VisualDensity.compact,
               onPressed: _isSendingRecordedVoice ? null : _sendVoiceImmediately,
               icon: const Icon(Icons.send_rounded, color: pinkColor),
@@ -3059,7 +3059,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
             ),
             IconButton(
-              tooltip: 'ভয়েস পাঠান',
+              tooltip: _isVoicePreviewPlaying ? 'শোনা চললেও পাঠানো যাবে' : 'ভয়েস পাঠান',
               visualDensity: VisualDensity.compact,
               onPressed: _isSendingRecordedVoice ? null : _sendRecordedVoice,
               icon: _isSendingRecordedVoice ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: pinkColor)) : const Icon(Icons.send_rounded, color: pinkColor),
