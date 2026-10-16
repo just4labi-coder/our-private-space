@@ -133,6 +133,26 @@ class SpaceSyncService {
     await _savePendingUploads(uploads);
   }
 
+  static void _markUploadFailed(
+    Map<String, dynamic> pending,
+    Object error,
+  ) {
+    final previousCount =
+        int.tryParse('${pending['retryCount'] ?? 0}') ?? 0;
+    final retryCount = previousCount + 1;
+    final delayMinutes = retryCount >= 10
+        ? 360
+        : (1 << (retryCount - 1));
+
+    pending['status'] = 'pending';
+    pending['retryCount'] = retryCount;
+    pending['lastError'] = error.toString();
+    pending['updatedAt'] = DateTime.now().toIso8601String();
+    pending['nextRetryAt'] = DateTime.now()
+        .add(Duration(minutes: delayMinutes))
+        .toIso8601String();
+  }
+
   static final ValueNotifier<List<UploadProgress>> uploadProgress =
       ValueNotifier<List<UploadProgress>>([]);
 
@@ -837,9 +857,7 @@ class SpaceSyncService {
     } catch (error) {
       // ব্যর্থ আপলোডের durable ফাইল মুছে ফেলো না।
       // নেটওয়ার্ক বা session সমস্যা হলে পরে আবার resume করা যাবে।
-      pending['status'] = 'pending';
-      pending['lastError'] = error.toString();
-      pending['updatedAt'] = DateTime.now().toIso8601String();
+      _markUploadFailed(pending, error);
 
       try {
         await _upsertPendingUpload(pending);
@@ -901,6 +919,13 @@ class SpaceSyncService {
     for (final item in uploads) {
       if (item['status'] == 'completed') continue;
 
+      final nextRetryAt = DateTime.tryParse(
+        '${item['nextRetryAt'] ?? ''}',
+      );
+      if (nextRetryAt != null && DateTime.now().isBefore(nextRetryAt)) {
+        continue;
+      }
+
       final id = item['id']?.toString() ?? '';
       final path = item['filePath']?.toString() ?? '';
       if (id.isEmpty || path.isEmpty) continue;
@@ -942,9 +967,7 @@ class SpaceSyncService {
         debugPrint('Resume upload failed ($id): $error');
 
         // Resume ব্যর্থ হলেও ফাইল ও session তথ্য রেখে দাও।
-        item['status'] = 'pending';
-        item['lastError'] = error.toString();
-        item['updatedAt'] = DateTime.now().toIso8601String();
+        _markUploadFailed(item, error);
 
         try {
           await _upsertPendingUpload(item);
