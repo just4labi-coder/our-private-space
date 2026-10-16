@@ -2147,6 +2147,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Timer? _messageHighlightTimer;
   bool _hasLoadedInitialMessages = false;
   bool _isNearChatBottom = true;
+  bool _showJumpToBottom = false;
   bool _userIsScrolling = false;
   int _scrollRequestToken = 0;
 
@@ -4546,9 +4547,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     } else if (notification is ScrollEndNotification) {
                       _userIsScrolling = false;
                     }
+                    if (notification is ScrollUpdateNotification ||
+                        notification is ScrollEndNotification) {
+                      _updateChatScrollPosition();
+                      final shouldShow = !_isNearChatBottom;
+                      if (shouldShow != _showJumpToBottom && mounted) {
+                        setState(() => _showJumpToBottom = shouldShow);
+                      }
+                    }
                     return false;
                   },
-                  child: ListView.builder(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ListView.builder(
                     key: const PageStorageKey<String>('couple-zone-chat-list'),
                     controller: scrollController,
                     physics: const ClampingScrollPhysics(
@@ -4566,6 +4578,32 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
                       return _buildMessage(messages[index], index);
                     },
+                        ),
+                      ),
+                      if (_showJumpToBottom)
+                        Positioned(
+                          right: 16,
+                          bottom: 14,
+                          child: Material(
+                            color: pinkColor,
+                            elevation: 7,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () => _scrollToBottom(),
+                              child: const SizedBox(
+                                width: 48,
+                                height: 48,
+                                child: Icon(
+                                  Icons.keyboard_double_arrow_down_rounded,
+                                  color: Colors.white,
+                                  size: 27,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
         ),
