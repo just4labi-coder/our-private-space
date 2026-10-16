@@ -1,7 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'private_space_service.dart';
+import 'orbit_notification_worker.dart';
 
 class ChatSyncService {
   ChatSyncService._();
@@ -124,6 +127,7 @@ class ChatSyncService {
       throw Exception('মেসেজ ID পাওয়া যায়নি।');
     }
 
+    final spaceId = await PrivateSpaceService.getSavedSpaceId();
     final ref = await _messagesRef();
 
     await ref.doc(id).set({
@@ -135,6 +139,15 @@ class ChatSyncService {
       'seenBy': <String, bool>{user.uid: true},
       'unsent': false,
     });
+
+    if (spaceId != null && spaceId.isNotEmpty) {
+      unawaited(
+        OrbitNotificationWorker.notifyNewMessage(
+          spaceId: spaceId,
+          messageId: id,
+        ),
+      );
+    }
   }
 
   /// একটি মেসেজে নিজের রিঅ্যাকশন যোগ, পরিবর্তন বা সরায়।
