@@ -7861,167 +7861,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  late TextEditingController firstController;
-
-  @override
-  void initState() {
-    super.initState();
-    firstController = TextEditingController(text: widget.partnerOne);
-  }
-
-  @override
-  void didUpdateWidget(covariant SettingsPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (oldWidget.partnerOne != widget.partnerOne) {
-      firstController.text = widget.partnerOne;
-    }
-  }
-
-  @override
-  void dispose() {
-    firstController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveProfile() async {
-    final ownName = firstController.text.trim();
-
-    if (ownName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('নিজের নাম লিখতে হবে।')),
-      );
-      return;
-    }
-
-    try {
-      await RelationshipService.saveOwnName(ownName);
-      await SpaceStore.saveString('partnerOne', ownName);
-
-      widget.onSave(ownName, widget.partnerTwo);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('নিজের নাম সংরক্ষণ হয়েছে।')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('নাম সংরক্ষণ করা যায়নি: $e')),
-      );
-    }
-  }
-
-  Future<void> _pickProfilePhoto() async {
-    if (!mounted) return;
-
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('আগে অ্যাকাউন্টে সাইন ইন করো।'),
-        ),
-      );
-      return;
-    }
-
-    try {
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 1000,
-        maxHeight: 1000,
-      );
-
-      if (!mounted || picked == null) return;
-
-      final sourceFile = File(picked.path);
-
-      if (!await sourceFile.exists() ||
-          await sourceFile.length() == 0) {
-        throw Exception('নির্বাচিত ছবিটি পাওয়া যায়নি।');
-      }
-
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: picked.path,
-        aspectRatio: const CropAspectRatio(
-          ratioX: 1,
-          ratioY: 1,
-        ),
-        maxWidth: 384,
-        maxHeight: 384,
-        compressFormat: ImageCompressFormat.jpg,
-        compressQuality: 70,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'প্রোফাইল ছবি ঠিক করো',
-            toolbarColor: const Color(0xFF111026),
-            toolbarWidgetColor: Colors.white,
-            activeControlsWidgetColor: pinkColor,
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: true,
-            cropStyle: CropStyle.circle,
-            showCropGrid: true,
-            hideBottomControls: false,
-          ),
-          IOSUiSettings(
-            title: 'প্রোফাইল ছবি ঠিক করো',
-            aspectRatioLockEnabled: true,
-            resetAspectRatioEnabled: false,
-            cropStyle: CropStyle.circle,
-          ),
-        ],
-      );
-
-      if (!mounted || cropped == null) return;
-
-      final croppedFile = File(cropped.path);
-
-      if (!await croppedFile.exists()) {
-        throw Exception('ক্রপ করা ছবিটি পাওয়া যায়নি।');
-      }
-
-      final bytes = await croppedFile.readAsBytes();
-
-      if (bytes.isEmpty || bytes.length > 500 * 1024) {
-        throw Exception(
-          'ছবিটি ৫০০ KB-এর বেশি। ছোট ছবি দিয়ে আবার চেষ্টা করো।',
-        );
-      }
-
-      final name = firstController.text.trim().isNotEmpty
-          ? firstController.text.trim()
-          : 'User';
-
-      await ChatSyncService.saveMyProfile(
-        name: name,
-        photoBase64: base64Encode(bytes),
-      );
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('প্রোফাইল ছবি সংরক্ষণ হয়েছে।'),
-        ),
-      );
-    } catch (error, stackTrace) {
-      debugPrint('Profile photo error: $error');
-      debugPrintStack(stackTrace: stackTrace);
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'প্রোফাইল ছবি সংরক্ষণ করা যায়নি: $error',
-          ),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -8037,28 +7876,30 @@ class _SettingsPageState extends State<SettingsPage> {
           style: TextStyle(color: Colors.white54),
         ),
         const SizedBox(height: 25),
-        const SectionHeading(title: 'Couple profile'),
-        const SizedBox(height: 12),
-        TextField(
-          controller: firstController,
-          decoration: const InputDecoration(
-            labelText: 'Your name',
-            prefixIcon: Icon(Icons.person_outline),
+        Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: blueColor,
+              child: Icon(Icons.privacy_tip_outlined, color: Colors.white),
+            ),
+            title: const Text('Privacy & account'),
+            subtitle: const Text('ইমেইল, পাসওয়ার্ড, নাম ও প্রোফাইল সেটিংস'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PrivacyPage(
+                    partnerOne: widget.partnerOne,
+                    partnerTwo: widget.partnerTwo,
+                    onSave: widget.onSave,
+                  ),
+                ),
+              );
+            },
           ),
         ),
-        const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: _saveProfile,
-          icon: const Icon(Icons.save_outlined),
-          label: const Text('Save profile'),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: _pickProfilePhoto,
-          icon: const Icon(Icons.add_a_photo_outlined),
-          label: const Text('প্রোফাইল ছবি সেট করো'),
-        ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'Data & downloads'),
         const SizedBox(height: 10),
         ValueListenableBuilder<bool>(
@@ -8229,6 +8070,361 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+
+class PrivacyPage extends StatefulWidget {
+  final String partnerOne;
+  final String partnerTwo;
+  final void Function(String first, String second) onSave;
+
+  const PrivacyPage({
+    super.key,
+    required this.partnerOne,
+    required this.partnerTwo,
+    required this.onSave,
+  });
+
+  @override
+  State<PrivacyPage> createState() => _PrivacyPageState();
+}
+
+class _PrivacyPageState extends State<PrivacyPage> {
+  late final TextEditingController firstController;
+
+  @override
+  void initState() {
+    super.initState();
+    firstController = TextEditingController(text: widget.partnerOne);
+  }
+
+  @override
+  void dispose() {
+    firstController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    final ownName = firstController.text.trim();
+
+    if (ownName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('নিজের নাম লিখতে হবে।')),
+      );
+      return;
+    }
+
+    try {
+      await RelationshipService.saveOwnName(ownName);
+      await SpaceStore.saveString('partnerOne', ownName);
+
+      widget.onSave(ownName, widget.partnerTwo);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('নিজের নাম সংরক্ষণ হয়েছে।')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('নাম সংরক্ষণ করা যায়নি: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickProfilePhoto() async {
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('আগে অ্যাকাউন্টে সাইন ইন করো।'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1000,
+        maxHeight: 1000,
+      );
+
+      if (!mounted || picked == null) return;
+
+      final sourceFile = File(picked.path);
+
+      if (!await sourceFile.exists() ||
+          await sourceFile.length() == 0) {
+        throw Exception('নির্বাচিত ছবিটি পাওয়া যায়নি।');
+      }
+
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(
+          ratioX: 1,
+          ratioY: 1,
+        ),
+        maxWidth: 384,
+        maxHeight: 384,
+        compressFormat: ImageCompressFormat.jpg,
+        compressQuality: 70,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'প্রোফাইল ছবি ঠিক করো',
+            toolbarColor: const Color(0xFF111026),
+            toolbarWidgetColor: Colors.white,
+            activeControlsWidgetColor: pinkColor,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+            cropStyle: CropStyle.circle,
+            showCropGrid: true,
+            hideBottomControls: false,
+          ),
+          IOSUiSettings(
+            title: 'প্রোফাইল ছবি ঠিক করো',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+            cropStyle: CropStyle.circle,
+          ),
+        ],
+      );
+
+      if (!mounted || cropped == null) return;
+
+      final croppedFile = File(cropped.path);
+
+      if (!await croppedFile.exists()) {
+        throw Exception('ক্রপ করা ছবিটি পাওয়া যায়নি।');
+      }
+
+      final bytes = await croppedFile.readAsBytes();
+
+      if (bytes.isEmpty || bytes.length > 500 * 1024) {
+        throw Exception(
+          'ছবিটি ৫০০ KB-এর বেশি। ছোট ছবি দিয়ে আবার চেষ্টা করো।',
+        );
+      }
+
+      final name = firstController.text.trim().isNotEmpty
+          ? firstController.text.trim()
+          : 'User';
+
+      await ChatSyncService.saveMyProfile(
+        name: name,
+        photoBase64: base64Encode(bytes),
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('প্রোফাইল ছবি সংরক্ষণ হয়েছে।'),
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Profile photo error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'প্রোফাইল ছবি সংরক্ষণ করা যায়নি: $error',
+          ),
+        ),
+      );
+    }
+  }
+
+
+  Future<void> _changeEmail() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showMessage('আগে অ্যাকাউন্টে সাইন ইন করো।');
+      return;
+    }
+
+    final controller = TextEditingController();
+    final newEmail = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('ইমেইল পরিবর্তন'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.emailAddress,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'নতুন ইমেইল',
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('বাতিল'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('ভেরিফিকেশন পাঠাও'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (newEmail == null || newEmail.trim().isEmpty || !mounted) return;
+    if (!newEmail.contains('@') || !newEmail.contains('.')) {
+      _showMessage('সঠিক ইমেইল ঠিকানা দাও।');
+      return;
+    }
+    if (newEmail.trim().toLowerCase() == (user.email ?? '').toLowerCase()) {
+      _showMessage('এটি তোমার বর্তমান ইমেইল।');
+      return;
+    }
+
+    try {
+      await user.verifyBeforeUpdateEmail(newEmail.trim());
+      if (!mounted) return;
+      _showMessage('নতুন ইমেইলে ভেরিফিকেশন লিংক পাঠানো হয়েছে। ইমেইল যাচাই করে আবার লগইন করো।');
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      final message = error.code == 'requires-recent-login'
+          ? 'নিরাপত্তার জন্য আবার লগইন করে ইমেইল পরিবর্তন করো।'
+          : error.code == 'email-already-in-use'
+              ? 'এই ইমেইলটি অন্য অ্যাকাউন্টে ব্যবহৃত হচ্ছে।'
+              : error.code == 'invalid-email'
+                  ? 'সঠিক ইমেইল ঠিকানা দাও।'
+                  : 'ইমেইল পরিবর্তনের অনুরোধ পাঠানো যায়নি: ${error.message ?? error.code}';
+      _showMessage(message);
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage('ইমেইল পরিবর্তনের অনুরোধ পাঠানো যায়নি। আবার চেষ্টা করো।');
+    }
+  }
+
+  Future<void> _sendPasswordReset() async {
+    final email = FirebaseAuth.instance.currentUser?.email?.trim() ?? '';
+    if (email.isEmpty) {
+      _showMessage('অ্যাকাউন্টের ইমেইল পাওয়া যায়নি।');
+      return;
+    }
+
+    try {
+      await AuthService.resetPassword(email);
+      if (!mounted) return;
+      _showMessage('পাসওয়ার্ড রিসেট করার লিংক ইমেইলে পাঠানো হয়েছে। Inbox/Spam দেখো।');
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      _showMessage(AuthService.friendlyError(error));
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage('রিসেট ইমেইল পাঠানো যায়নি। Firebase Functions সেটআপ ও ইন্টারনেট পরীক্ষা করো।');
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Privacy & account'),
+        backgroundColor: backgroundColor,
+      ),
+      body: GlowBackground(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Text(
+              'Account security',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'তোমার অ্যাকাউন্ট ও ব্যক্তিগত প্রোফাইল এখানে পরিচালনা করো।',
+              style: TextStyle(color: Colors.white60),
+            ),
+            const SizedBox(height: 22),
+            const SectionHeading(title: 'Email'),
+            const SizedBox(height: 10),
+            Card(
+              color: surfaceColor,
+              child: ListTile(
+                leading: const Icon(Icons.email_outlined, color: pinkColor),
+                title: Text(user?.email ?? 'ইমেইল পাওয়া যায়নি'),
+                subtitle: const Text('বর্তমান অ্যাকাউন্ট ইমেইল'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _changeEmail,
+              icon: const Icon(Icons.mark_email_read_outlined),
+              label: const Text('ইমেইল পরিবর্তন করো'),
+            ),
+            const SizedBox(height: 20),
+            const SectionHeading(title: 'Password'),
+            const SizedBox(height: 10),
+            Card(
+              color: surfaceColor,
+              child: ListTile(
+                leading: const Icon(Icons.lock_reset_rounded, color: purpleColor),
+                title: const Text('পাসওয়ার্ড রিসেট'),
+                subtitle: const Text('ইমেইলে নিরাপদ রিসেট লিংক পাঠাবে'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: _sendPasswordReset,
+              ),
+            ),
+            const SizedBox(height: 22),
+            const SectionHeading(title: 'Profile'),
+            const SizedBox(height: 10),
+            TextField(
+              controller: firstController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'তোমার নাম',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _saveProfile,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('নাম সংরক্ষণ করো'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _pickProfilePhoto,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: const Text('প্রোফাইল ছবি সেট করো'),
+            ),
+            const SizedBox(height: 20),
+            const Card(
+              color: surfaceColor,
+              child: ListTile(
+                leading: Icon(Icons.verified_user_outlined, color: blueColor),
+                title: Text('তোমার অ্যাকাউন্ট সুরক্ষা'),
+                subtitle: Text('ইমেইল পরিবর্তন নিশ্চিত করতে ইমেইল ভেরিফিকেশন লাগবে।'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
