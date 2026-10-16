@@ -264,7 +264,13 @@ class SpaceStore {
       }
 
       final status = data['connectionStatus'] ?? 'connected';
-      if (status != 'connected') return null;
+      if (status != 'connected') {
+        if (status == 'disconnected') {
+          final cleared = await PrivateSpaceService.clearCachedSpaceData();
+          if (cleared) syncVersion.value++;
+        }
+        return null;
+      }
 
       return spaceId;
     } catch (e) {
@@ -337,15 +343,16 @@ class SpaceStore {
 
       if (await _getConnectedSpaceId() != spaceId) return;
       if (!snapshot.exists) return;
-      await _applyRemoteData(snapshot.data());
+      await _applyRemoteData(snapshot.data(), notifyChanges: false);
     } catch (e) {
       debugPrint('Firebase download error: $e');
     }
   }
 
   static Future<void> _applyRemoteData(
-    Map<String, dynamic>? data,
-  ) async {
+    Map<String, dynamic>? data, {
+    bool notifyChanges = true,
+  }) async {
     if (data == null) return;
 
     await init();
@@ -358,15 +365,16 @@ class SpaceStore {
         continue;
       }
       final oldRaw = _prefs!.getString(key);
-      if (oldRaw == null) continue;
       final nextValue = entry.value;
       final normalizedNext = nextValue is List
           ? jsonEncode(nextValue)
           : nextValue is String
               ? nextValue
               : null;
-      if (normalizedNext != null && oldRaw != normalizedNext &&
-          key != 'chatMessages') {
+      if (notifyChanges &&
+          normalizedNext != null &&
+          key != 'chatMessages' &&
+          (oldRaw == null || oldRaw != normalizedNext)) {
         changedKeys.add(key);
       }
     }
@@ -425,7 +433,7 @@ class SpaceStore {
         detailedBody: 'Changed: $readable',
         privateTitle: 'Check change',
         privateBody: 'Your partner changed shared data.',
-        id: 7002,
+        id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
       ).catchError((Object error) {
         debugPrint('Shared change notification error: $error');
       });
@@ -1212,6 +1220,13 @@ class _MainScreenState extends State<MainScreen>
           if (!isConnected) {
             _connectionSyncReady = false;
             await SpaceStore.stopRealtimeSync();
+            if (snapshot.exists && status == 'disconnected') {
+              final cleared = await PrivateSpaceService.clearCachedSpaceData();
+              if (cleared) {
+                SpaceStore.syncVersion.value++;
+                await _loadPartnerNames();
+              }
+            }
             return;
           }
           if (_connectionSyncBusy || _connectionSyncReady) {
@@ -3611,6 +3626,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             children: [
               ListTile(
                 enabled: !unsent,
+                leading: const Icon(Icons.add_reaction_outlined, color: pinkColor),
+                title: const Text('React to message'),
+                onTap: unsent
+                    ? null
+                    : () {
+                        Navigator.pop(sheetContext);
+                        _showReactionPicker(message);
+                      },
+              ),
+              ListTile(
+                enabled: !unsent,
                 leading: Icon(
                   Icons.reply_rounded,
                   color: unsent ? Colors.white24 : pinkColor,
@@ -4458,12 +4484,224 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return currentDate.difference(previousDate) > const Duration(minutes: 10);
   }
 
+  bool _isEmojiOnlyText(String value) {
+    final runes = value.trim().runes.toList();
+    if (runes.isEmpty) return false;
+
+    final hasKeycap = runes.contains(0x20E3);
+    const emojiSymbols = <int>{
+      0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139,
+      0x3030, 0x303D, 0x3297, 0x3299, 0x24C2,
+    };
+    var foundEmoji = false;
+
+    for (final rune in runes) {
+      if (rune == 0x20 ||
+          rune == 0x00A0 ||
+          rune == 0x200D ||
+          rune == 0xFE0E ||
+          rune == 0xFE0F ||
+          rune == 0x20E3 ||
+          (rune >= 0xE0020 && rune <= 0xE007F)) {
+        continue;
+      }
+
+      final isEmojiCodePoint =
+          (rune >= 0x1F000 && rune <= 0x1FAFF) ||
+          (rune >= 0x2600 && rune <= 0x27BF) ||
+          (rune >= 0x2300 && rune <= 0x23FF) ||
+          emojiSymbols.contains(rune) ||
+          (hasKeycap &&
+              ((rune >= 0x30 && rune <= 0x39) ||
+                  rune == 0x23 ||
+                  rune == 0x2A));
+
+      if (!isEmojiCodePoint) return false;
+      foundEmoji = true;
+    }
+
+    return foundEmoji;
+  }
+
+  static const List<String> _quickReactionEmojis = [
+    '❤️', '😂', '🥹', '😍', '😮', '😢',
+    '🔥', '👍', '🙏', '🎉', '💯', '🫶',
+  ];
+
+  Future<void> _setMessageReaction(
+    String messageId,
+    String emoji,
+  ) async {
+    try {
+      await ChatSyncService.setMessageReaction(
+        messageId: messageId,
+        emoji: emoji,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('রিঅ্যাকশন দেওয়া যায়নি: ${error}')),
+      );
+    }
+  }
+
+  Future<void> _showReactionPicker(
+    Map<String, dynamic> message,
+  ) async {
+    if (message['unsent'] == true) return;
+    final messageId = '${message['id'] ?? ''}'.trim();
+    if (messageId.isEmpty) return;
+
+    final controller = TextEditingController();
+    final selectedEmoji = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 18, 16, 16 + bottomInset),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'React to message',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: _quickReactionEmojis.map((emoji) {
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => Navigator.pop(sheetContext, emoji),
+                        child: Padding(
+                          padding: const EdgeInsets.all(7),
+                          child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: controller,
+                    maxLength: 16,
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) => setSheetState(() {}),
+                    onSubmitted: (value) {
+                      final emoji = value.trim();
+                      if (emoji.isNotEmpty) Navigator.pop(sheetContext, emoji);
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'যেকোনো ইমোজি',
+                      hintText: 'ফোনের ইমোজি কিবোর্ড ব্যবহার করো',
+                      prefixIcon: Icon(Icons.emoji_emotions_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: controller.text.trim().isEmpty
+                          ? null
+                          : () => Navigator.pop(
+                                sheetContext,
+                                controller.text.trim(),
+                              ),
+                      child: const Text('React'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    controller.dispose();
+
+    if (selectedEmoji != null) {
+      await _setMessageReaction(messageId, selectedEmoji);
+    }
+  }
+
+  Widget _buildReactionSummary(
+    Map<String, dynamic> message,
+    bool mine,
+  ) {
+    if (message['unsent'] == true) return const SizedBox.shrink();
+    final raw = message['reactions'];
+    if (raw is! Map || raw.isEmpty) return const SizedBox.shrink();
+
+    final reactions = <String, String>{};
+    for (final entry in raw.entries) {
+      final emoji = '${entry.value}'.trim();
+      if (emoji.isNotEmpty) reactions['${entry.key}'] = emoji;
+    }
+    if (reactions.isEmpty) return const SizedBox.shrink();
+
+    final grouped = <String, int>{};
+    for (final emoji in reactions.values) {
+      grouped[emoji] = (grouped[emoji] ?? 0) + 1;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          children: grouped.entries.map((entry) {
+            final selectedByMe = reactions[_currentUid] == entry.key;
+            return InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _setMessageReaction(
+                '${message['id'] ?? ''}',
+                selectedByMe ? '' : entry.key,
+              ),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: selectedByMe
+                      ? pinkColor.withValues(alpha: 0.22)
+                      : Colors.white.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: selectedByMe
+                        ? pinkColor.withValues(alpha: 0.7)
+                        : Colors.white12,
+                  ),
+                ),
+                child: Text(
+                  '${entry.key} ${entry.value}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMessage(Map<String, dynamic> message, int index) {
     final mine = _isMine(message);
     final senderUid = '${message['senderUid'] ?? ''}';
     final messageId = '${message['id'] ?? index}';
     final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 104.0).toDouble();
     final expanded = _expandedMessageTimes.contains(messageId);
+    final isEmojiOnly = message['unsent'] != true &&
+        '${message['type'] ?? 'text'}' == 'text' &&
+        _isEmojiOnlyText('${message['text'] ?? ''}');
 
     final row = Row(
       mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -4482,30 +4720,41 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           child: Column(
             crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              Container(
-                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: mine ? const Color(0xFF453078) : surfaceColor,
-                  border: Border.all(
-                    color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
+              if (isEmojiOnly)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  child: Text(
+                    '${message['text'] ?? ''}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 40, height: 1.08),
                   ),
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(18),
-                    topRight: const Radius.circular(18),
-                    bottomLeft: Radius.circular(mine ? 18 : 5),
-                    bottomRight: Radius.circular(mine ? 5 : 18),
+                )
+              else
+                Container(
+                  constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: mine ? const Color(0xFF453078) : surfaceColor,
+                    border: Border.all(
+                      color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
+                    ),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(mine ? 18 : 5),
+                      bottomRight: Radius.circular(mine ? 5 : 18),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildReplyQuote(message),
+                      _messageContent(message),
+                    ],
                   ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildReplyQuote(message),
-                    _messageContent(message),
-                  ],
-                ),
-              ),
+              _buildReactionSummary(message, mine),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
@@ -4605,6 +4854,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             });
           },
           onLongPress: () => _showMessageOptions(index),
+          onDoubleTap: () => unawaited(
+            _setMessageReaction(messageId, '❤️'),
+          ),
           onHorizontalDragUpdate: (details) {
             final currentOffset = _replyDragOffsets[messageId] ?? 0;
             // Messenger-এর মতো reply করতে স্পষ্টভাবে ডানদিকে টানতে হবে;
