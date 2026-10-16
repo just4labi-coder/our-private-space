@@ -231,7 +231,7 @@ exports.sendBrandedPasswordResetEmail = onCall(
   },
   async (request) => {
     const email = stringValue(request.data?.email).trim().toLowerCase();
-    if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new HttpsError("invalid-argument", "Enter a valid email address.");
     }
 
