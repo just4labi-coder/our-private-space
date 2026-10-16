@@ -155,6 +155,31 @@ async function firestoreList(path, accessToken) {
   }));
 }
 
+async function firestoreCreateEvent(eventId, spaceId, messageId, senderUid, accessToken) {
+  const url = "https://firestore.googleapis.com/v1/projects/" +
+    FIREBASE_PROJECT_ID + "/databases/(default)/documents/notificationEvents?documentId=" +
+    encodeURIComponent(eventId);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + accessToken,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      fields: {
+        spaceId: { stringValue: spaceId },
+        messageId: { stringValue: messageId },
+        senderUid: { stringValue: senderUid },
+        createdAt: { timestampValue: new Date().toISOString() },
+      },
+    }),
+  });
+  if (response.status === 409) return false;
+  if (!response.ok) throw new Error("Could not record notification event.");
+  return true;
+}
+
+
 function cleanText(value, maxLength = 180) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
@@ -274,6 +299,19 @@ export default {
 
       const partnerUid = members.find((member) => member !== uid);
       if (!partnerUid) return json({ error: "Partner not found" }, 404);
+
+      // One push/email attempt per message prevents replaying the same request
+      // to repeatedly notify the partner.
+      const eventId = (spaceId + "_" + messageId).slice(0, 180);
+      const isFirstAttempt = await firestoreCreateEvent(
+        eventId,
+        spaceId,
+        messageId,
+        uid,
+        accessToken,
+      );
+      if (!isFirstAttempt) return json({ ok: true, duplicate: true, pushCount: 0, emailSent: false });
+
       const [senderProfile, partnerProfile, tokenDocs] = await Promise.all([
         firestoreGet("users/" + uid, accessToken),
         firestoreGet("users/" + partnerUid, accessToken),
