@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_functions/firebase_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -162,7 +163,20 @@ class AuthService {
   }
 
   static Future<void> resetPassword(String email) async {
-    await _auth.sendPasswordResetEmail(email: email.trim());
+    final normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail.isEmpty || !normalizedEmail.contains('@')) {
+      throw FirebaseAuthException(
+        code: 'invalid-email',
+        message: 'Enter a valid email address.',
+      );
+    }
+
+    // Use the server-side SMTP template so the email can include Orbit Two
+    // branding and its hosted logo without exposing SMTP credentials in the app.
+    final callable = FirebaseFunctions.instance.httpsCallable(
+      'sendBrandedPasswordResetEmail',
+    );
+    await callable.call<void>({'email': normalizedEmail});
   }
 
   static Future<void> _saveProfile(User? user) async {
