@@ -1,6 +1,6 @@
 
 name: our_private_space
-description: Eternal Space - a private space for two.
+description: Orbit Two - a private space for two.
 publish_to: 'none'
 version: 1.0.0+2
 
@@ -41,7 +41,7 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/branding/couple_zone_logo.png"
+  image_path: "assets/branding/orbit_two_logo.jpg"
   adaptive_icon_background: "#070513"
   adaptive_icon_foreground: "assets/branding/couple_zone_logo.png"
   min_sdk_android: 23
