@@ -3869,6 +3869,51 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   );
                 }
 
+                // ছবি লোড হওয়ার সময়ও চূড়ান্ত 210x210 জায়গা ধরে রাখি;
+                // নইলে 120px placeholder থেকে 210px ছবিতে বদলে scroll offset লাফায়।
+                if (type == 'image') {
+                  return SizedBox(
+                    width: 210,
+                    height: 210,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(
+                              color: pinkColor,
+                              strokeWidth: 2,
+                            ),
+                            const SizedBox(height: 10),
+                            ValueListenableBuilder<List<DownloadProgress>>(
+                              valueListenable: SpaceSyncService.downloadProgress,
+                              builder: (context, downloads, _) {
+                                DownloadProgress? current;
+                                for (final item in downloads) {
+                                  if (item.fileId == fileId) {
+                                    current = item;
+                                    break;
+                                  }
+                                }
+                                return Text(
+                                  current == null
+                                      ? 'ছবি লোড হচ্ছে...'
+                                      : '${(current.progress * 100).toStringAsFixed(0)}%',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
                 return SizedBox(
                   width: 210,
                   height: 120,
@@ -4270,10 +4315,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ],
     );
 
-    return KeyedSubtree(
-      key: _messageKeys.putIfAbsent(messageId, () => GlobalKey()),
-      child: Column(
-        children: [
+    return RepaintBoundary(
+      key: ValueKey<String>('chat-row-$messageId'),
+      child: KeyedSubtree(
+        key: _messageKeys.putIfAbsent(messageId, () => GlobalKey()),
+        child: Column(
+          children: [
         if (_shouldShowTimeDivider(index))
           Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 5),
@@ -4355,7 +4402,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             ),
           ),
         ),
-      ],
+          ],
+        ),
       ),
     );
   }
@@ -4601,6 +4649,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     physics: const ClampingScrollPhysics(
                       parent: AlwaysScrollableScrollPhysics(),
                     ),
+                    // মিডিয়া-সমৃদ্ধ চ্যাটে অফস্ক্রিন row আগে প্রস্তুত রাখে।
+                    cacheExtent: 800,
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
