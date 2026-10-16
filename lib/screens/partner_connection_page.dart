@@ -255,6 +255,22 @@ class _PartnerConnectionPageState
           isError: false,
         );
       }
+
+      // Once both partners have approved, clear this device's cached Space
+      // data immediately. The cloud copy remains so the same accounts can
+      // reconnect later and restore their previous shared data.
+      final latestSpace = await PrivateSpaceService.watchSpace(spaceId).first;
+      if (latestSpace?['connectionStatus'] == 'disconnected') {
+        await PrivateSpaceService.clearCachedSpaceData();
+        await PrivateSpaceService.clearSavedConnection();
+        if (mounted) {
+          setState(() {
+            _spaceId = null;
+            _savedCode = null;
+            _codeController.clear();
+          });
+        }
+      }
     } catch (e) {
       _showMessage(
         'অনুরোধ সম্পন্ন হয়নি। Firebase Rules পরীক্ষা করো।\n$e',
