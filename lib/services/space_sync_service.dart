@@ -1523,7 +1523,7 @@ class SpaceSyncService {
     Map<String, dynamic> data,
   ) async {
     final bytes = utf8.encode(jsonEncode({
-      'app': 'Eternal Space',
+      'app': 'Orbit Two',
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
       'data': data,
     }));
@@ -1533,11 +1533,11 @@ class SpaceSyncService {
     }
 
     final tempDir = await Directory.systemTemp.createTemp(
-      'eternal_space_backup_',
+      'orbit_two_backup_',
     );
 
     try {
-      final file = File('${tempDir.path}/EternalSpaceBackup.json');
+      final file = File('${tempDir.path}/OrbitTwoBackup.json');
       await file.writeAsBytes(bytes, flush: true);
       await uploadPersonalMedia(file);
     } finally {
@@ -1550,7 +1550,7 @@ class SpaceSyncService {
   static Future<void> shareMediaFolder(String email) async {
     throw UnsupportedError(
       'ইমেইল দিয়ে Drive ফোল্ডার শেয়ার বন্ধ। '
-      'Eternal Space-এর shared folder ব্যবহার করো।',
+      'Orbit Two-এর shared folder ব্যবহার করো।',
     );
   }
 }
