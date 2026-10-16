@@ -3280,12 +3280,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
       final clampedOffset = nextOffset.clamp(0.0, maxExtent).toDouble();
       if ((clampedOffset - position.pixels).abs() < 1) break;
-      await scrollController.animateTo(
-        clampedOffset,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.linear,
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 35));
+      // Build off-screen rows without repeated intermediate animations.
+      scrollController.jumpTo(clampedOffset);
+      await WidgetsBinding.instance.endOfFrame;
     }
 
     if (!mounted || !scrollController.hasClients) return;
