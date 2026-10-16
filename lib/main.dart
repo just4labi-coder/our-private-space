@@ -8,6 +8,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -26,6 +27,7 @@ import 'screens/auth_screen.dart';
 import 'services/auth_service.dart';
 import 'services/relationship_service.dart';
 import 'services/private_space_service.dart';
+import 'services/push_notification_service.dart';
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -56,6 +58,23 @@ Future<void> main() async {
   );
 
   await notifications.initialize(initializationSettings);
+
+  await PushNotificationService.initialize();
+  FirebaseMessaging.onMessage.listen((message) {
+    final data = message.data;
+    final kind = data['kind']?.toString() ?? 'message';
+    unawaited(NotificationPrivacySettings.showPartnerNotification(
+      detailedTitle: data['detailedTitle']?.toString() ??
+          message.notification?.title ?? 'Orbit Two',
+      detailedBody: data['detailedBody']?.toString() ??
+          message.notification?.body ?? 'You have an update.',
+      privateTitle: kind == 'change' ? 'Check change' : 'Check message',
+      privateBody: kind == 'change'
+          ? 'Your partner changed shared data.'
+          : 'You have a new message.',
+      id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
+    ));
+  });
 
   // Android 13+ এ অনুমতি না চাইলে লোকাল মেসেজ নোটিফিকেশন দেখাবে না।
   final androidNotifications = notifications
@@ -104,6 +123,7 @@ class NotificationPrivacySettings {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_key, value);
     hideDetails.value = value;
+    await PushNotificationService.setHideDetails(value);
   }
 
   static Future<void> showPartnerNotification({
