@@ -214,6 +214,9 @@ class AuthService {
       'chatDraft',
       'chatMessages',
       'pendingDriveUploads',
+      'myDisplayName',
+      'partnerOne',
+      'partnerTwo',
       'eternal_space_id',
       'eternal_space_invite_code',
     ]) {
