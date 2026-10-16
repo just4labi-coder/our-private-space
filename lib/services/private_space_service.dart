@@ -54,23 +54,39 @@ class PrivateSpaceService {
     try {
       final result = await _spaces
           .where('memberUids', arrayContains: user.uid)
-          .limit(1)
           .get();
+
+      QueryDocumentSnapshot<Map<String, dynamic>>? disconnectedSpace;
 
       for (final document in result.docs) {
         final data = document.data();
-        final members = List<String>.from(
-          data['memberUids'] ?? [],
-        );
+        final members = List<String>.from(data['memberUids'] ?? []);
 
         if (!members.contains(user.uid) || members.length != 2) {
           continue;
         }
 
-        final inviteCode = '${data['inviteCode'] ?? ''}';
+        final status = data['connectionStatus'] ?? 'connected';
+        if (status == 'connected') {
+          final inviteCode = '${data['inviteCode'] ?? ''}';
+          await _saveConnection(document.id, inviteCode);
+          return document.id;
+        }
 
-        await _saveConnection(document.id, inviteCode);
-        return document.id;
+        if (status == 'disconnected' && disconnectedSpace == null) {
+          disconnectedSpace = document;
+        }
+      }
+
+      // কোনো সক্রিয় Space না থাকলে পুরোনো বিচ্ছিন্ন Space দেখাই,
+      // যাতে দুজন চাইলে একই Space-এ পুনরায় যুক্ত হতে পারে।
+      if (disconnectedSpace != null) {
+        final data = disconnectedSpace.data();
+        await _saveConnection(
+          disconnectedSpace.id,
+          '${data['inviteCode'] ?? ''}',
+        );
+        return disconnectedSpace.id;
       }
     } catch (error) {
       debugPrint('Saved Space recovery error: $error');
@@ -93,6 +109,7 @@ class PrivateSpaceService {
     'galleryFolders',
     'spaceComplaints',
     'relationshipStartAt',
+    'partnerTwo',
     'chatDraft',
     'chatMessages',
   ];
@@ -107,15 +124,26 @@ class PrivateSpaceService {
     await prefs.remove('pendingDriveUploads');
   }
 
+  static Future<bool> clearCachedSpaceData() async {
+    final prefs = await _prefs;
+    final keys = <String>[
+      ..._spaceScopedLocalKeys,
+      'pendingDriveUploads',
+    ];
+    final hadData = keys.any(prefs.containsKey);
+    await _clearSpaceScopedLocalData(prefs);
+    return hadData;
+  }
+
   static Future<void> _saveConnection(
     String spaceId,
     String inviteCode,
   ) async {
     final prefs = await _prefs;
     final previousSpaceId = prefs.getString(_spaceIdKey);
-    if (previousSpaceId != null &&
-        previousSpaceId.isNotEmpty &&
-        previousSpaceId != spaceId) {
+    if (previousSpaceId != spaceId) {
+      // Never carry local data into a different Space. Its own cloud copy
+      // will be restored after the connection has been verified.
       await _clearSpaceScopedLocalData(prefs);
     }
     await prefs.setString(_spaceIdKey, spaceId);
