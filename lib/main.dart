@@ -2144,6 +2144,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final Map<String, GlobalKey> _messageKeys = {};
   final Set<String> _requestedMediaDownloads = {};
   String? _highlightedMessageId;
+  Timer? _messageHighlightTimer;
+  bool _hasLoadedInitialMessages = false;
+  bool _isNearChatBottom = true;
+  int _scrollRequestToken = 0;
 
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
@@ -2204,6 +2208,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    scrollController.addListener(_updateChatScrollPosition);
     _appIsResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     unawaited(_restoreDraft());
     SpaceSyncService.uploadProgress.addListener(
@@ -2383,21 +2388,37 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         (latestMessages) {
           if (!mounted) return;
 
+          final firstSnapshot = !_hasLoadedInitialMessages;
+          final previousCount = messages.length;
+          final previousLastId =
+              messages.isEmpty ? '' : '${messages.last['id'] ?? ''}';
+          final nextLastId = latestMessages.isEmpty
+              ? ''
+              : '${latestMessages.last['id'] ?? ''}';
+          final hasNewTailMessage = latestMessages.length > previousCount ||
+              (latestMessages.isNotEmpty && nextLastId != previousLastId);
+          final shouldFollowTail =
+              firstSnapshot || (_isNearChatBottom && hasNewTailMessage);
+
           setState(() {
             messages = latestMessages;
           });
+          _hasLoadedInitialMessages = true;
 
           if (_appIsResumed) {
             unawaited(
-            ChatSyncService.markMessagesSeen(latestMessages).catchError(
-              (Object error) {
-                debugPrint('Mark seen skipped: $error');
-              },
-            ),
+              ChatSyncService.markMessagesSeen(latestMessages).catchError(
+                (Object error) {
+                  debugPrint('Mark seen skipped: $error');
+                },
+              ),
             );
           }
 
-          _scrollToBottom();
+          // শুধু প্রথম লোড বা নতুন মেসেজ এলে—প্রতিটি Seen/metadata আপডেটে নয়।
+          if (shouldFollowTail) {
+            _scrollToBottom(animate: !firstSnapshot, settle: firstSnapshot);
+          }
         },
         onError: (Object error) {
           if (!mounted) return;
@@ -2417,6 +2438,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    scrollController.removeListener(_updateChatScrollPosition);
+    _messageHighlightTimer?.cancel();
     _typingHeartbeatTimer?.cancel();
     _typingHeartbeatTimer = null;
     _typingIdleTimer?.cancel();
@@ -2581,7 +2604,27 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     _scrollToBottom();
 
+    String? videoThumbnailBase64;
     try {
+      if (video) {
+        try {
+          final thumbnailBytes = await VideoThumbnail.thumbnailData(
+            video: picked.path,
+            imageFormat: ImageFormat.JPEG,
+            maxHeight: 240,
+            quality: 45,
+          );
+          // Firestore-এর 1 MiB document limit নিরাপদ রাখতে thumbnail ছোট রাখি।
+          if (thumbnailBytes != null &&
+              thumbnailBytes.isNotEmpty &&
+              thumbnailBytes.length <= 180 * 1024) {
+            videoThumbnailBase64 = base64Encode(thumbnailBytes);
+          }
+        } catch (error) {
+          debugPrint('Video preview generation skipped: $error');
+        }
+      }
+
       final uploaded = await SpaceSyncService.uploadSharedMedia(
         file,
         metadata: {
@@ -2623,6 +2666,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         'mimeType': uploaded['mimeType'] ?? '',
         'size': uploaded['size'] ?? '',
         'storage': 'shared',
+        if (videoThumbnailBase64 != null)
+          'thumbnailBase64': videoThumbnailBase64,
         if (replyTo != null) ...{
           'replyToId': '${replyTo['id'] ?? ''}',
           'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
@@ -3084,15 +3129,44 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return '${bytesPerSecond.toStringAsFixed(0)} B/s';
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !scrollController.hasClients) return;
+  void _scrollToBottom({bool animate = true, bool settle = false}) {
+    final requestToken = ++_scrollRequestToken;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (settle) {
+        await Future<void>.delayed(const Duration(milliseconds: 90));
+      }
+      if (!mounted ||
+          !scrollController.hasClients ||
+          requestToken != _scrollRequestToken) {
+        return;
+      }
 
-      scrollController.animateTo(
-        scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+      final position = scrollController.position;
+      final target = position.maxScrollExtent;
+      if (animate) {
+        await scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        scrollController.jumpTo(target);
+      }
+
+      // Initial load can revise maxScrollExtent as long messages/media are laid out.
+      if (settle) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        if (!mounted ||
+            !scrollController.hasClients ||
+            requestToken != _scrollRequestToken) {
+          return;
+        }
+        final latestPosition = scrollController.position;
+        if (latestPosition.maxScrollExtent - latestPosition.pixels > 8) {
+          scrollController.jumpTo(latestPosition.maxScrollExtent);
+        }
+      }
     });
   }
 
@@ -3125,25 +3199,84 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     setState(() => _replyToMessage = Map<String, dynamic>.from(message));
   }
 
+  void _updateChatScrollPosition() {
+    if (!scrollController.hasClients) return;
+    final position = scrollController.position;
+    _isNearChatBottom = position.maxScrollExtent - position.pixels <= 120;
+  }
+
   Future<void> _jumpToMessage(String targetId) async {
-    final targetIndex = messages.indexWhere((item) => '${item['id'] ?? ''}' == targetId);
-    if (targetIndex < 0 || !scrollController.hasClients) return;
+    final targetIndex =
+        messages.indexWhere((item) => '${item['id'] ?? ''}' == targetId);
+    if (targetIndex < 0 || messages.isEmpty || !scrollController.hasClients) {
+      return;
+    }
+
+    _messageHighlightTimer?.cancel();
+    if (mounted) setState(() => _highlightedMessageId = targetId);
+
     final key = _messageKeys.putIfAbsent(targetId, () => GlobalKey());
-    var targetContext = key.currentContext;
-    if (targetContext == null) {
+    final denominator = messages.length > 1 ? messages.length - 1 : 1;
+
+    // Variable-height messages mean one guessed offset is not accurate enough.
+    // Scroll in viewport-sized steps until ListView builds the target widget.
+    for (var attempt = 0; attempt < 14; attempt++) {
+      if (!mounted || !scrollController.hasClients) return;
+
+      final targetContext = key.currentContext;
+      if (targetContext != null) {
+        await Scrollable.ensureVisible(
+          targetContext,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeInOutCubic,
+          alignment: 0.45,
+        );
+        _messageHighlightTimer = Timer(const Duration(milliseconds: 1500), () {
+          if (mounted && _highlightedMessageId == targetId) {
+            setState(() => _highlightedMessageId = null);
+          }
+        });
+        return;
+      }
+
       final position = scrollController.position;
-      final offset = position.maxScrollExtent * (targetIndex / (messages.isEmpty ? 1 : messages.length));
-      await scrollController.animateTo(offset.clamp(0.0, position.maxScrollExtent).toDouble(), duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      targetContext = key.currentContext;
+      final maxExtent = position.maxScrollExtent;
+      if (maxExtent <= 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        continue;
+      }
+
+      final targetFraction = targetIndex / denominator;
+      final currentFraction =
+          (position.pixels / maxExtent).clamp(0.0, 1.0).toDouble();
+      final direction = targetFraction >= currentFraction ? 1.0 : -1.0;
+      final nextOffset = attempt == 0
+          ? maxExtent * targetFraction
+          : position.pixels + direction * position.viewportDimension * 0.72;
+
+      await scrollController.animateTo(
+        nextOffset.clamp(0.0, maxExtent).toDouble(),
+        duration: Duration(milliseconds: attempt == 0 ? 220 : 150),
+        curve: Curves.easeOutCubic,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 70));
     }
-    if (targetContext != null) {
-      await Scrollable.ensureVisible(targetContext, duration: const Duration(milliseconds: 320), curve: Curves.easeInOutCubic, alignment: 0.45);
-    }
+
     if (!mounted) return;
-    setState(() => _highlightedMessageId = targetId);
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
-    if (mounted && _highlightedMessageId == targetId) setState(() => _highlightedMessageId = null);
+    final finalContext = key.currentContext;
+    if (finalContext != null) {
+      await Scrollable.ensureVisible(
+        finalContext,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeInOutCubic,
+        alignment: 0.45,
+      );
+    }
+    _messageHighlightTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted && _highlightedMessageId == targetId) {
+        setState(() => _highlightedMessageId = null);
+      }
+    });
   }
 
   Future<String?> _resolveChatVideoThumbnail(Map<String, dynamic> message, String videoPath) {
@@ -3490,6 +3623,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           '${message['fileId'] ?? message['driveFileId'] ?? ''}'.trim();
 
       final mediaKey = fileId.isNotEmpty ? fileId : path;
+      Uint8List? embeddedVideoThumbnail;
+      if (type == 'video') {
+        final encodedThumbnail =
+            '${message['thumbnailBase64'] ?? ''}'.trim();
+        if (encodedThumbnail.isNotEmpty) {
+          try {
+            embeddedVideoThumbnail = base64Decode(encodedThumbnail);
+          } catch (error) {
+            debugPrint('Embedded chat video preview decode skipped: $error');
+          }
+        }
+      }
 
       return ValueListenableBuilder<bool>(
         valueListenable: DataSaverSettings.enabled,
@@ -3518,41 +3663,172 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       _requestedMediaDownloads.add(mediaKey);
                     });
                   },
-                  child: Container(
-                    width: 210,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          type == 'image'
-                              ? Icons.image_outlined
-                              : Icons.play_circle_outline_rounded,
-                          size: 36,
-                          color: pinkColor,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text('ডাউনলোড করতে ট্যাপ করো'),
-                        const SizedBox(height: 4),
-                        Text(
-                          _formatMediaSize(message['size']),
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 12,
+                  child: type == 'video'
+                      ? SizedBox(
+                          width: 210,
+                          height: 130,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                if (embeddedVideoThumbnail != null)
+                                  Image.memory(
+                                    embeddedVideoThumbnail!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const ColoredBox(color: Colors.black26),
+                                  )
+                                else
+                                  const ColoredBox(color: Colors.black26),
+                                const DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Color(0xAA000000),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const Center(
+                                  child: Icon(
+                                    Icons.play_circle_fill_rounded,
+                                    size: 48,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 8,
+                                  bottom: 7,
+                                  child: Text(
+                                    'ডাউনলোড করতে ট্যাপ করো • ${_formatMediaSize(message['size'])}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : Container(
+                          width: 210,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.image_outlined,
+                                size: 36,
+                                color: pinkColor,
+                              ),
+                              const SizedBox(height: 8),
+                              const Text('ডাউনলোড করতে ট্যাপ করো'),
+                              const SizedBox(height: 4),
+                              Text(
+                                _formatMediaSize(message['size']),
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
                 );
               }
 
               if (snapshot.connectionState == ConnectionState.waiting) {
+                if (type == 'video' && embeddedVideoThumbnail != null) {
+                  return SizedBox(
+                    width: 210,
+                    height: 130,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.memory(
+                            embeddedVideoThumbnail!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const ColoredBox(color: Colors.black26),
+                          ),
+                          const DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Color(0xCC000000),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Center(
+                            child: Icon(
+                              Icons.play_circle_fill_rounded,
+                              size: 46,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Positioned(
+                            left: 8,
+                            right: 8,
+                            bottom: 7,
+                            child: ValueListenableBuilder<List<DownloadProgress>>(
+                              valueListenable: SpaceSyncService.downloadProgress,
+                              builder: (context, downloads, _) {
+                                DownloadProgress? current;
+                                for (final item in downloads) {
+                                  if (item.fileId == fileId) {
+                                    current = item;
+                                    break;
+                                  }
+                                }
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      current == null
+                                          ? 'ভিডিও ডাউনলোড হচ্ছে...'
+                                          : '${(current.progress * 100).toStringAsFixed(0)}% ডাউনলোড',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    LinearProgressIndicator(
+                                      value: current?.progress,
+                                      backgroundColor: Colors.white24,
+                                      color: pinkColor,
+                                      minHeight: 3,
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
                 return SizedBox(
                   width: 210,
                   height: 120,
@@ -4225,18 +4501,27 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ],
                   ),
                 )
-              : ListView.builder(
-                  controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                  itemCount:
-                      messages.length + (_pendingMediaName != null ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index >= messages.length) {
-                      return _buildPendingMediaMessage();
+              : NotificationListener<UserScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification.direction != ScrollDirection.idle) {
+                      // ব্যবহারকারী নিজে স্ক্রল করলে পুরোনো auto-scroll কাজটি বাতিল হবে।
+                      _scrollRequestToken++;
                     }
-
-                    return _buildMessage(messages[index], index);
+                    return false;
                   },
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    itemCount:
+                        messages.length + (_pendingMediaName != null ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index >= messages.length) {
+                        return _buildPendingMediaMessage();
+                      }
+
+                      return _buildMessage(messages[index], index);
+                    },
+                  ),
                 ),
         ),
         _buildTypingIndicator(),
