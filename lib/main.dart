@@ -4547,22 +4547,34 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         notification.dragDetails != null) {
                       _userIsScrolling = true;
                       _scrollRequestToken++;
+                      if (scrollController.hasClients) {
+                        final distanceFromBottom =
+                            scrollController.position.maxScrollExtent -
+                                scrollController.position.pixels;
+                        if (distanceFromBottom > 24) {
+                          _userHasScrolledAwayFromBottom = true;
+                        }
+                      }
                     } else if (notification is ScrollEndNotification) {
                       _userIsScrolling = false;
-                    }
-                    if (notification is ScrollUpdateNotification) {
-                      final delta = notification.scrollDelta ?? 0;
-                      // Upward manual scrolling disables auto-follow so new
-                      // snapshots cannot keep dragging the user back down.
-                      if (notification.dragDetails != null && delta < 0) {
-                        _userHasScrolledAwayFromBottom = true;
-                      }
                     }
                     if (notification is ScrollUpdateNotification ||
                         notification is ScrollEndNotification) {
                       _updateChatScrollPosition();
-                      if (_isNearChatBottom) {
-                        _userHasScrolledAwayFromBottom = false;
+                      if (scrollController.hasClients) {
+                        final distanceFromBottom =
+                            scrollController.position.maxScrollExtent -
+                                scrollController.position.pixels;
+                        // Clear auto-follow lock only when genuinely back at
+                        // the bottom, not merely within the 120px UI threshold.
+                        if (distanceFromBottom <= 24) {
+                          _userHasScrolledAwayFromBottom = false;
+                        } else if (notification is ScrollUpdateNotification &&
+                            notification.dragDetails != null) {
+                          // Any manual drag away from the bottom pauses
+                          // automatic following while the user reads history.
+                          _userHasScrolledAwayFromBottom = true;
+                        }
                       }
                       final shouldShow = !_isNearChatBottom;
                       if (shouldShow != _showJumpToBottom && mounted) {
