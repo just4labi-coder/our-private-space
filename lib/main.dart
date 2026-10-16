@@ -4652,7 +4652,13 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
       } catch (error) {
         debugPrint('Gallery download error: $error');
         return null;
-      } finally {
+      }
+    });
+
+    // সফল Future ক্যাশে রাখো, যাতে একই পেজ rebuild হলে আবার
+    // path lookup/download শুরু না হয়। ব্যর্থ হলে retry করার সুযোগ থাকবে।
+    future.then((path) {
+      if (path == null && identical(_pathFutures[key], future)) {
         _pathFutures.remove(key);
       }
     });
