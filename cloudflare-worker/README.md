@@ -6,7 +6,7 @@ This Worker is designed for Orbit Two's Firebase project `our-privet-space`. It 
 
 1. Create a Worker named `orbit-two-notifications` and deploy this folder.
 2. Add Worker secrets:
-   - `FIREBASE_WEB_API_KEY`: the Firebase Web API key for the app.
+   - `FIREBASE_WEB_API_KEY`: use a Firebase API key that permits Identity Toolkit requests. If your current key is restricted to Android apps, create a separate key restricted to the Identity Toolkit API (do not apply Android-only application restrictions to this server-side key).
    - `FIREBASE_SERVICE_ACCOUNT_JSON`: the complete private service-account JSON for project `our-privet-space`. Never commit this JSON or paste it into chat.
 3. Enable the Cloudflare Email Service, onboard and verify a sender domain, then set the `EMAIL_FROM` Worker variable to a sender address on that verified domain. The `EMAIL` binding is declared in `wrangler.toml`.
 4. Configure the GitHub Actions repository variable `ORBIT_WORKER_URL` with the deployed Worker URL, for example `https://orbit-two-notifications.<your-subdomain>.workers.dev`.
@@ -19,7 +19,7 @@ This Worker is designed for Orbit Two's Firebase project `our-privet-space`. It 
 
 ## Email behavior
 
-Email notifications are opt-in. The receiver's `users/{uid}` profile must contain `emailNotifications: true`; by default the app must leave this setting off. Email sending also requires a verified sender domain and an enabled Cloudflare Email Service binding. The free email quota is separate from the Workers request quota and can vary by account.
+Email notifications are opt-in. The receiver can enable **Email notifications** from Orbit Two Settings; this stores `emailNotifications: true` in their own `users/{uid}` profile. It is off by default. Email sending to arbitrary addresses requires a verified sender domain and an enabled Cloudflare Email Service binding. Without a verified sending domain, Cloudflare limits delivery to destination addresses that are verified in the account. The free email quota is separate from the Workers request quota and can vary by account.
 
 ## Security notes
 
