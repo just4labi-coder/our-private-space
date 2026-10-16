@@ -349,6 +349,28 @@ class SpaceStore {
     if (data == null) return;
 
     await init();
+    final changedKeys = <String>[];
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    for (final entry in data.entries) {
+      final key = entry.key;
+      if (key == 'updatedBy' || key == 'updatedAt' ||
+          key == 'partnerOne' || key == 'partnerTwo') {
+        continue;
+      }
+      final oldRaw = _prefs!.getString(key);
+      if (oldRaw == null) continue;
+      final nextValue = entry.value;
+      final normalizedNext = nextValue is List
+          ? jsonEncode(nextValue)
+          : nextValue is String
+              ? nextValue
+              : null;
+      if (normalizedNext != null && oldRaw != normalizedNext &&
+          key != 'chatMessages') {
+        changedKeys.add(key);
+      }
+    }
+
     _applyingRemoteData = true;
 
     try {
@@ -386,6 +408,28 @@ class SpaceStore {
       syncVersion.value++;
     } finally {
       _applyingRemoteData = false;
+    }
+
+    if (changedKeys.isNotEmpty && currentUid.isNotEmpty) {
+      final labels = <String, String>{
+        'loveNotes': 'Love Notes',
+        'specialDates': 'Special Dates',
+        'spaceComplaints': 'Complaints Box',
+        'galleryMedia': 'Gallery',
+        'galleryFolders': 'Gallery folders',
+        'relationshipStartAt': 'Together For',
+        'spaceComplaints': 'Complaints Box',
+      };
+      final readable = changedKeys.map((key) => labels[key] ?? 'Shared data').toSet().join(', ');
+      NotificationPrivacySettings.showPartnerNotification(
+        detailedTitle: 'Partner update',
+        detailedBody: 'Changed: $readable',
+        privateTitle: 'Check change',
+        privateBody: 'Your partner changed shared data.',
+        id: 7002,
+      ).catchError((Object error) {
+        debugPrint('Shared change notification error: $error');
+      });
     }
   }
 
@@ -1588,7 +1632,22 @@ class HomePage extends StatelessWidget {
               '${SpaceStore.readList('spaceComplaints').length} complaints',
               style: const TextStyle(color: Colors.white54),
             ),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasUnreadComplaint)
+                  Container(
+                    width: 9,
+                    height: 9,
+                    margin: const EdgeInsets.only(right: 10),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
             onTap: () async {
               await Navigator.push(
                 context,
@@ -5702,6 +5761,16 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final hasUnreadComplaint = SpaceStore.readList('spaceComplaints').any((item) {
+      final authorUid = '${item['authorUid'] ?? ''}';
+      final readBy = item['readBy'];
+      final hasRead = readBy is List && readBy.contains(currentUid);
+      return currentUid.isNotEmpty &&
+          authorUid.isNotEmpty &&
+          authorUid != currentUid &&
+          !hasRead;
+    });
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -7843,6 +7912,8 @@ class SpaceComplaint {
   final String title;
   final String details;
   final String createdAt;
+  final String authorUid;
+  final List<String> readBy;
 
   const SpaceComplaint({
     required this.id,
@@ -7850,6 +7921,8 @@ class SpaceComplaint {
     required this.title,
     required this.details,
     required this.createdAt,
+    this.authorUid = '',
+    this.readBy = const [],
   });
 
   Map<String, dynamic> toMap() => {
@@ -7858,6 +7931,8 @@ class SpaceComplaint {
         'title': title,
         'details': details,
         'createdAt': createdAt,
+        'authorUid': authorUid,
+        'readBy': readBy,
       };
 
   factory SpaceComplaint.fromMap(Map<String, dynamic> map) {
@@ -7867,6 +7942,10 @@ class SpaceComplaint {
       title: map['title']?.toString() ?? '',
       details: map['details']?.toString() ?? '',
       createdAt: map['createdAt']?.toString() ?? '',
+      authorUid: map['authorUid']?.toString() ?? '',
+      readBy: (map['readBy'] is List)
+          ? List<String>.from(map['readBy'])
+          : const [],
     );
   }
 }
@@ -7919,6 +7998,49 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
       'spaceComplaints',
       complaints.map((item) => item.toMap()).toList(),
     );
+  }
+
+  Future<void> _markComplaintRead(SpaceComplaint complaint) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty || complaint.readBy.contains(uid)) return;
+    final index = complaints.indexWhere((item) => item.id == complaint.id);
+    if (index < 0) return;
+    final updated = SpaceComplaint(
+      id: complaint.id,
+      author: complaint.author,
+      title: complaint.title,
+      details: complaint.details,
+      createdAt: complaint.createdAt,
+      authorUid: complaint.authorUid,
+      readBy: [...complaint.readBy, uid],
+    );
+    setState(() => complaints[index] = updated);
+    await _saveComplaints();
+  }
+
+  Future<void> _deleteComplaint(SpaceComplaint complaint) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Delete complaint?'),
+        content: const Text('This complaint will be removed for both partners.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => complaints.removeWhere((item) => item.id == complaint.id));
+    await _saveComplaints();
   }
 
   Future<void> _editComplaint({SpaceComplaint? existing}) async {
@@ -7993,6 +8115,13 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                         details: details,
                         createdAt: existing?.createdAt ??
                             DateTime.now().toIso8601String(),
+                        authorUid: existing?.authorUid ??
+                            FirebaseAuth.instance.currentUser?.uid ?? '',
+                        readBy: existing?.readBy ??
+                            <String>[
+                              if ((FirebaseAuth.instance.currentUser?.uid ?? '').isNotEmpty)
+                                FirebaseAuth.instance.currentUser!.uid,
+                            ],
                       ),
                     );
                   },
@@ -8071,6 +8200,15 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
               itemBuilder: (context, index) {
                 final complaint = complaints[index];
 
+                final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                final isOwnComplaint = complaint.authorUid.isNotEmpty
+                    ? complaint.authorUid == currentUid
+                    : complaint.author == 'You';
+                final isUnread = currentUid.isNotEmpty &&
+                    !isOwnComplaint &&
+                    !complaint.readBy.contains(currentUid);
+                final displayAuthor = isOwnComplaint ? 'You' : 'Partner';
+
                 return Card(
                   color: surfaceColor,
                   margin: const EdgeInsets.only(bottom: 12),
@@ -8078,14 +8216,31 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: const Color(0x33FF5FA2),
-                      child: Icon(
-                        complaint.author == 'You'
-                            ? Icons.person
-                            : Icons.favorite_outline,
-                        color: pinkColor,
-                      ),
+                    leading: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: const Color(0x33FF5FA2),
+                          child: Icon(
+                            isOwnComplaint
+                                ? Icons.person
+                                : Icons.favorite_outline,
+                            color: pinkColor,
+                          ),
+                        ),
+                        if (isUnread)
+                          const Positioned(
+                            right: -2,
+                            top: -2,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: SizedBox(width: 10, height: 10),
+                            ),
+                          ),
+                      ],
                     ),
                     title: Text(
                       complaint.title,
@@ -8093,12 +8248,29 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
-                      '${complaint.author} • ${complaint.details}',
+                      '$displayAuthor • ${complaint.details}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: Colors.white54),
                     ),
-                    onTap: () {
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _editComplaint(existing: complaint);
+                        } else if (value == 'delete') {
+                          _deleteComplaint(complaint);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                        ),
+                      ],
+                    ),
+                    onTap: () async {
+                      await _markComplaintRead(complaint);
                       showDialog<void>(
                         context: context,
                         builder: (context) => AlertDialog(
@@ -8106,7 +8278,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                           title: Text(complaint.title),
                           content: SingleChildScrollView(
                             child: Text(
-                              'By: ${complaint.author}\n\n'
+                              'By: $displayAuthor\n\n'
                               '${complaint.details}',
                             ),
                           ),
