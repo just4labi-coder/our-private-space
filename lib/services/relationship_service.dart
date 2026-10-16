@@ -156,6 +156,7 @@ class RelationshipService {
 
       transaction.update(ref, {
         'memberNames': names,
+        'updatedBy': user.uid,
       });
     });
   }
@@ -167,8 +168,11 @@ class RelationshipService {
       throw Exception('আগে Partner-এর সঙ্গে যুক্ত হও।');
     }
 
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('আগে সাইন ইন করো।');
     await ref.update({
       'relationshipStartAt': Timestamp.fromDate(dateTime),
+      'updatedBy': user.uid,
     });
   }
 
@@ -179,8 +183,11 @@ class RelationshipService {
       throw Exception('Partner Connection সক্রিয় নেই।');
     }
 
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('আগে সাইন ইন করো।');
     await ref.update({
       'relationshipStartAt': FieldValue.delete(),
+      'updatedBy': user.uid,
     });
   }
 }
