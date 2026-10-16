@@ -2160,6 +2160,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final Set<String> _expandedMessageTimes = <String>{};
   final Map<String, double> _replyDragOffsets = <String, double>{};
   final AudioRecorder _voiceRecorder = AudioRecorder();
+  final AudioPlayer _voicePreviewPlayer = AudioPlayer();
+  StreamSubscription<PlayerState>? _voicePreviewStateSubscription;
+  bool _isVoicePreviewPlaying = false;
+  bool _isSendingRecordedVoice = false;
   bool _isRecordingVoice = false;
   bool _attachmentMenuOpen = false;
   bool _appIsResumed = true;
@@ -2219,6 +2223,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
     _spaceStream = ChatSyncService.watchSpaceData().asBroadcastStream();
     _profilesStream = ChatSyncService.watchMemberProfiles();
+
+    _voicePreviewStateSubscription = _voicePreviewPlayer.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() => _isVoicePreviewPlaying = state == PlayerState.playing);
+    });
 
     _profilesSubscription = _profilesStream.listen(
       (profiles) {
@@ -2472,6 +2481,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
     _profilesSubscription?.cancel();
     _chatSubscription?.cancel();
+    _voicePreviewStateSubscription?.cancel();
+    unawaited(_voicePreviewPlayer.dispose());
     controller.dispose();
     scrollController.dispose();
     unawaited(_voiceRecorder.dispose());
@@ -2843,8 +2854,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (!await file.exists() || await file.length() == 0) {
         throw Exception('রেকর্ড করা ভয়েস পাওয়া যায়নি।');
       }
+      await _voicePreviewPlayer.stop();
       if (mounted) {
         setState(() {
+          _isVoicePreviewPlaying = false;
           _isRecordingVoice = false;
           _recordingPath = path;
           _recordedVoicePath = path;
@@ -2871,7 +2884,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _toggleVoicePreview() async {
+    final path = _recordedVoicePath;
+    if (_isRecordingVoice || path == null || !await File(path).exists()) return;
+    try {
+      if (_voicePreviewPlayer.state == PlayerState.playing) {
+        await _voicePreviewPlayer.pause();
+      } else if (_voicePreviewPlayer.state == PlayerState.paused) {
+        await _voicePreviewPlayer.resume();
+      } else {
+        await _voicePreviewPlayer.play(DeviceFileSource(path));
+      }
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ভয়েস চালানো যায়নি: $error')));
+    }
+  }
+
+  Future<void> _sendVoiceImmediately() async {
+    if (_isSendingRecordedVoice) return;
+    if (_isRecordingVoice) await _stopVoiceRecording();
+    if (!mounted || _recordedVoicePath == null) return;
+    await _sendRecordedVoice();
+  }
+
   Future<void> _resetVoiceRecording() async {
+    await _voicePreviewPlayer.stop();
     final oldPath = _recordedVoicePath ?? _recordingPath;
     _recordingTimer?.cancel();
     _recordingTimer = null;
@@ -2895,6 +2932,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _deleteVoiceRecording() async {
+    await _voicePreviewPlayer.stop();
     String? path = _recordedVoicePath ?? _recordingPath;
     if (_isRecordingVoice) {
       try {
@@ -2923,6 +2961,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendRecordedVoice() async {
+    if (_isSendingRecordedVoice) return;
     final path = _recordedVoicePath;
     if (path == null) return;
     final file = File(path);
@@ -2930,7 +2969,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       await _deleteVoiceRecording();
       return;
     }
-    await _sendVoiceFile(file);
+    if (mounted) setState(() => _isSendingRecordedVoice = true);
+    await _voicePreviewPlayer.stop();
+    try {
+      await _sendVoiceFile(file);
+    } finally {
+      if (mounted) setState(() => _isSendingRecordedVoice = false);
+    }
   }
 
   Widget _buildVoiceRecordingPanel() {
@@ -2981,14 +3026,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               ),
             ),
           ),
-          if (_isRecordingVoice)
+          if (_isRecordingVoice) ...[
             IconButton(
-              tooltip: 'রেকর্ড বন্ধ',
+              tooltip: 'রেকর্ড বন্ধ করে শুনুন',
               visualDensity: VisualDensity.compact,
               onPressed: _stopVoiceRecording,
               icon: const Icon(Icons.stop_circle_rounded, color: Colors.redAccent),
-            )
-          else ...[
+            ),
+            IconButton(
+              tooltip: 'এখনই পাঠান',
+              visualDensity: VisualDensity.compact,
+              onPressed: _isSendingRecordedVoice ? null : _sendVoiceImmediately,
+              icon: const Icon(Icons.send_rounded, color: pinkColor),
+            ),
+          ] else ...[
+            IconButton(
+              tooltip: _isVoicePreviewPlaying ? 'শোনা থামাও' : 'পাঠানোর আগে শুনুন',
+              visualDensity: VisualDensity.compact,
+              onPressed: _toggleVoicePreview,
+              icon: Icon(_isVoicePreviewPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: pinkColor),
+            ),
             IconButton(
               tooltip: 'আবার রেকর্ড',
               visualDensity: VisualDensity.compact,
@@ -3004,8 +3061,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             IconButton(
               tooltip: 'ভয়েস পাঠান',
               visualDensity: VisualDensity.compact,
-              onPressed: _sendRecordedVoice,
-              icon: const Icon(Icons.send_rounded, color: pinkColor),
+              onPressed: _isSendingRecordedVoice ? null : _sendRecordedVoice,
+              icon: _isSendingRecordedVoice ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: pinkColor)) : const Icon(Icons.send_rounded, color: pinkColor),
             ),
           ],
         ],
