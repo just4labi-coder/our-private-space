@@ -1,4 +1,4 @@
-import 'dart:async';
+Import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -2274,7 +2274,6 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _stopTyping() async {
-    ++_typingRequestId;
     _typingHeartbeatTimer?.cancel();
     _typingHeartbeatTimer = null;
     if (!_isTypingSent) return;
@@ -4676,8 +4675,7 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
               onPressed: _selectedIds.isEmpty ? null : _deleteSelectedItems,
               icon: const Icon(Icons.delete_outline_rounded),
             ),
-          IconButton(
-            tooltip: _selectionMode ? 'নির্বাচন বাতিল' : 'একাধিক ফাইল নির্বাচন',
+          TextButton.icon(
             onPressed: () {
               setState(() {
                 _selectionMode = !_selectionMode;
@@ -4688,6 +4686,17 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
               _selectionMode
                   ? Icons.close_rounded
                   : Icons.checklist_rounded,
+              color: pinkColor,
+            ),
+            label: Text(
+              _selectionMode ? 'বাতিল' : 'নির্বাচন',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
             ),
           ),
           IconButton(
