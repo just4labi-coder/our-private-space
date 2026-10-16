@@ -2180,7 +2180,7 @@ class _ChatPageState extends State<ChatPage> {
     SpaceSyncService.uploadProgress.addListener(
       _handleUploadProgressChanged,
     );
-    _spaceStream = ChatSyncService.watchSpaceData();
+    _spaceStream = ChatSyncService.watchSpaceData().asBroadcastStream();
     _profilesStream = ChatSyncService.watchMemberProfiles();
 
     _profilesSubscription = _profilesStream.listen(
