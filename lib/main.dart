@@ -2140,6 +2140,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> messages = [];
   StreamSubscription<List<Map<String, dynamic>>>? _chatSubscription;
   final Map<String, Future<String?>> _mediaPathFutures = {};
+  final Map<String, Map<String, dynamic>> _failedMediaMessages = {};
   final Map<String, Future<String?>> _chatVideoThumbnailFutures = {};
   final Map<String, GlobalKey> _messageKeys = {};
   final Set<String> _requestedMediaDownloads = {};
@@ -2306,6 +2307,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appIsResumed = state == AppLifecycleState.resumed;
     if (_appIsResumed) {
+      _retryFailedMediaDownloads();
       // অ্যাপ Recents/background থেকে ফিরলে ব্যর্থ মিডিয়া FutureBuilder-গুলো
       // আবার চেষ্টা করতে পারবে; চলমান ডাউনলোড সার্ভিসে deduplicate হয়।
       if (mounted) setState(() {});
@@ -3064,7 +3066,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
             ),
             IconButton(
-              tooltip: _isVoicePreviewPlaying ? 'শোনা চললেও পাঠানো যাবে' : 'ভয়েস পাঠান',
+              tooltip: _isVoicePreviewPlaying ? 'শোনা থামাতে হবে না — পাঠান' : 'না শুনেও সরাসরি পাঠান',
               visualDensity: VisualDensity.compact,
               onPressed: _isSendingRecordedVoice ? null : _sendRecordedVoice,
               icon: _isSendingRecordedVoice ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: pinkColor)) : const Icon(Icons.send_rounded, color: pinkColor),
@@ -3716,11 +3718,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
     _mediaPathFutures[key] = future;
     future.then((path) {
-      if (path == null && identical(_mediaPathFutures[key], future)) {
-        _mediaPathFutures.remove(key);
+      if (path == null) {
+        if (identical(_mediaPathFutures[key], future)) {
+          _mediaPathFutures.remove(key);
+        }
+        _failedMediaMessages[key] = Map<String, dynamic>.from(media);
+      } else {
+        _failedMediaMessages.remove(key);
       }
     });
     return future;
+  }
+
+  void _retryFailedMediaDownloads() {
+    if (!mounted || _failedMediaMessages.isEmpty) return;
+    final pending = _failedMediaMessages.entries.toList(growable: false);
+    for (final entry in pending) {
+      if (_mediaPathFutures.containsKey(entry.key)) continue;
+      unawaited(_resolveMediaPath(entry.value).then((path) {
+        if (!mounted) return;
+        setState(() {});
+      }).catchError((Object error) {
+        debugPrint('Automatic media retry failed: $error');
+      }));
+    }
+    if (mounted) setState(() {});
   }
 
   Widget _messageContent(Map<String, dynamic> message) {

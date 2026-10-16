@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -183,6 +184,37 @@ class SpaceSyncService {
   }
 
   static final Map<String, Future<String>> _activeDownloads = {};
+  static const MethodChannel _downloadServiceChannel =
+      MethodChannel('com.privatespace.ourspace/media_download');
+
+  static Future<void> _setDownloadService(bool enabled) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _downloadServiceChannel.invokeMethod<void>(
+        enabled ? 'start' : 'stop',
+      );
+    } catch (error) {
+      debugPrint('[MediaDownload] foreground service toggle failed: $error');
+    }
+  }
+
+  static bool _isRetryableDownloadError(Object error) {
+    if (error is SocketException ||
+        error is HttpException ||
+        error is HandshakeException ||
+        error is TimeoutException ||
+        error is FormatException) {
+      return true;
+    }
+    return RegExp(
+      r'408|429|500|502|503|504|SocketException|HttpException|'
+      r'TimeoutException|HandshakeException|Connection reset|'
+      r'Connection closed|Network is unreachable|Failed host lookup|'
+      r'Software caused connection abort|সার্ভারে উত্তর পেতে দেরি হচ্ছে|'
+      r'ডাউনলোডের অংশের তথ্য অসম্পূর্ণ|ডাউনলোডের অংশের দৈর্ঘ্য মেলেনি',
+      caseSensitive: false,
+    ).hasMatch(error.toString());
+  }
 
   static final ValueNotifier<List<DownloadProgress>> downloadProgress =
       ValueNotifier<List<DownloadProgress>>([]);
@@ -1032,7 +1064,11 @@ class SpaceSyncService {
       return active;
     }
 
-    final future = _downloadAndCache(
+    if (_activeDownloads.isEmpty) {
+      await _setDownloadService(true);
+    }
+
+    final future = _downloadWithRetry(
       fileId: id,
       shared: shared,
       saveAs: saveAs,
@@ -1047,7 +1083,38 @@ class SpaceSyncService {
       if (identical(_activeDownloads[key], future)) {
         _activeDownloads.remove(key);
       }
+      if (_activeDownloads.isEmpty) {
+        await _setDownloadService(false);
+      }
     }
+  }
+
+  static Future<String> _downloadWithRetry({
+    required String fileId,
+    required bool shared,
+    String? saveAs,
+  }) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await _downloadAndCache(
+          fileId: fileId,
+          shared: shared,
+          saveAs: saveAs,
+        );
+      } catch (error) {
+        lastError = error;
+        if (!_isRetryableDownloadError(error) || attempt == 3) rethrow;
+        final delay = Duration(milliseconds: 900 * (attempt + 1));
+        debugPrint(
+          '[MediaDownload] retry ${attempt + 1}/3 after $delay '
+          'file=${fileId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')} '
+          'error=$error',
+        );
+        await Future<void>.delayed(delay);
+      }
+    }
+    throw Exception('ডাউনলোড ব্যর্থ হয়েছে: $lastError');
   }
 
   static Future<String> _downloadAndCache({
