@@ -200,6 +200,25 @@ class AuthService {
   static Future<void> signOut() async {
     await _auth.signOut();
     await endTrial();
+
+    // Shared-space cache is account/partner scoped. Clear it on logout so
+    // another account on this phone cannot see the previous couple's data.
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in const [
+      'loveNotes',
+      'specialDates',
+      'galleryMedia',
+      'galleryFolders',
+      'spaceComplaints',
+      'relationshipStartAt',
+      'chatDraft',
+      'chatMessages',
+      'pendingDriveUploads',
+      'eternal_space_id',
+      'eternal_space_invite_code',
+    ]) {
+      await prefs.remove(key);
+    }
   }
 
   static String friendlyError(Object error) {
