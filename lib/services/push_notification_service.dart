@@ -21,12 +21,18 @@ class PushNotificationService {
     final prefs = await SharedPreferences.getInstance();
     _hideDetails = prefs.getBool(_privacyKey) ?? false;
 
-    await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
+    // Notification permission can be denied or temporarily unavailable.
+    // Do not let that prevent the app from opening or Firebase Auth from working.
+    try {
+      await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,
+      );
+    } catch (error) {
+      debugPrint('Notification permission request failed: $error');
+    }
 
     _authSubscription ??= FirebaseAuth.instance.authStateChanges().listen(
       (user) {
