@@ -271,21 +271,15 @@ export default {
       const partnerUid = members.find((member) => member !== uid);
       if (!partnerUid) return json({ error: "Partner not found" }, 404);
 
-      // One push/email attempt per message prevents replaying the same request
-      // to repeatedly notify the partner.
+      // Check for a completed notification before attempting delivery. The
+      // event is recorded only after at least one FCM send succeeds, so missing
+      // tokens or temporary FCM errors do not permanently block a later retry.
       const eventId = (spaceId + "_" + messageId).slice(0, 180);
-      const isFirstAttempt = await firestoreCreateEvent(
-        eventId,
-        spaceId,
-        messageId,
-        uid,
-        accessToken,
-      );
-      if (!isFirstAttempt) return json({ ok: true, duplicate: true, pushCount: 0, emailSent: false });
+      const existingEvent = await firestoreGet("notificationEvents/" + eventId, accessToken);
+      if (existingEvent) return json({ ok: true, duplicate: true, pushCount: 0 });
 
-      const [senderProfile, partnerProfile, tokenDocs] = await Promise.all([
+      const [senderProfile, tokenDocs] = await Promise.all([
         firestoreGet("users/" + uid, accessToken),
-        firestoreGet("users/" + partnerUid, accessToken),
         firestoreList("users/" + partnerUid + "/pushTokens", accessToken),
       ]);
 
@@ -317,6 +311,13 @@ export default {
         if (sent) pushCount++;
       }
 
+      if (pushCount === 0) {
+        // Do not record a completed event: the partner may register a token
+        // later, and a retry should then be able to deliver the notification.
+        return json({ ok: true, pushCount: 0, retryable: true });
+      }
+
+      await firestoreCreateEvent(eventId, spaceId, messageId, uid, accessToken);
       return json({ ok: true, pushCount });
     } catch (error) {
       console.error("Orbit Two notification request failed:", error?.message || "unknown");
