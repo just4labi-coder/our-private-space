@@ -4375,14 +4375,20 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
         final videoFile = File(videoPath);
         if (!await videoFile.exists()) return null;
 
-        final temp = await getTemporaryDirectory();
+        // Temporary directory পরিষ্কার হয়ে যেতে পারে, তাই
+        // thumbnail স্থায়ী app-support directory-তে রাখো।
+        final support = await getApplicationSupportDirectory();
         final safeId = fileId.replaceAll(
           RegExp(r'[^A-Za-z0-9_-]'),
           '_',
         );
+        final thumbnailDirectory = Directory(
+          '${support.path}/eternal_space_video_thumbnails',
+        );
+        await thumbnailDirectory.create(recursive: true);
 
         final thumbnailFile = File(
-          '${temp.path}/video_thumb_$safeId.jpg',
+          '${thumbnailDirectory.path}/video_thumb_$safeId.jpg',
         );
 
         if (await thumbnailFile.exists() &&
