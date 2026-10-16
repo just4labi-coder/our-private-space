@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
@@ -3674,7 +3675,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               children: [
                                 if (embeddedVideoThumbnail != null)
                                   Image.memory(
-                                    embeddedVideoThumbnail!,
+                                    embeddedVideoThumbnail,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) =>
                                         const ColoredBox(color: Colors.black26),
@@ -3759,7 +3760,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         fit: StackFit.expand,
                         children: [
                           Image.memory(
-                            embeddedVideoThumbnail!,
+                            embeddedVideoThumbnail,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) =>
                                 const ColoredBox(color: Colors.black26),
