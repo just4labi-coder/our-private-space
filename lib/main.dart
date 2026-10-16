@@ -49,7 +49,7 @@ Future<void> main() async {
   tz_data.initializeTimeZones();
 
   const androidSettings =
-      AndroidInitializationSettings('@android:drawable/sym_def_app_icon');
+      AndroidInitializationSettings('@mipmap/ic_launcher');
 
   const initializationSettings = InitializationSettings(
     android: androidSettings,
@@ -152,7 +152,7 @@ class EternalSpaceApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: rootNavigatorKey,
-      title: 'Couple Zone',
+      title: 'Orbit Two',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -573,13 +573,9 @@ class _SplashScreenState extends State<SplashScreen> {
             children: [
               Icon(Icons.favorite_rounded, size: 64, color: pinkColor),
               SizedBox(height: 18),
-              Text(
-                'Couple Zone',
-                style: TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1,
-                ),
+              const AnimatedOrbitTitle(
+                fontSize: 30,
+                splash: true,
               ),
               SizedBox(height: 8),
               Text(
@@ -596,6 +592,67 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class AnimatedOrbitTitle extends StatefulWidget {
+  final double fontSize;
+  final bool splash;
+
+  const AnimatedOrbitTitle({
+    super.key,
+    required this.fontSize,
+    this.splash = false,
+  });
+
+  @override
+  State<AnimatedOrbitTitle> createState() => _AnimatedOrbitTitleState();
+}
+
+class _AnimatedOrbitTitleState extends State<AnimatedOrbitTitle>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 9),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final hue = (_controller.value * 360) % 360;
+        final first = HSVColor.fromAHSV(1, hue, 0.42, 1).toColor();
+        final second =
+            HSVColor.fromAHSV(1, (hue + 95) % 360, 0.48, 1).toColor();
+        final third =
+            HSVColor.fromAHSV(1, (hue + 190) % 360, 0.38, 1).toColor();
+
+        return ShaderMask(
+          shaderCallback: (bounds) => LinearGradient(
+            colors: [first, second, third],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ).createShader(bounds),
+          child: Text(
+            'Orbit Two',
+            style: TextStyle(
+              color: Colors.white,
+              fontFamily: 'serif',
+              fontSize: widget.fontSize,
+              fontWeight: FontWeight.w700,
+              letterSpacing: widget.splash ? 1.1 : 0.4,
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1589,13 +1646,7 @@ class HomePage extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 6),
-                  Text(
-                    'Couple Zone',
-                    style: TextStyle(
-                      fontSize: 27,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  const AnimatedOrbitTitle(fontSize: 29),
                 ],
               ),
             ),
@@ -8037,17 +8088,17 @@ class _SettingsPageState extends State<SettingsPage> {
                       : Icons.notifications_active_outlined,
                   color: pinkColor,
                 ),
-                title: const Text('Hide Notification Details'),
+                title: const Text('Hide Notification'),
                 subtitle: Text(
                   hideDetails
-                      ? 'Messages show “Check message”; changes show “Check change”.'
-                      : 'Show partner name, message text and change details.',
+                      ? 'বন্ধ: “Check message” / “Check change” দেখাবে।'
+                      : 'চালু: পার্টনারের নাম, মেসেজ ও পরিবর্তনের বিবরণ দেখাবে।',
                 ),
-                value: hideDetails,
+                value: !hideDetails,
                 activeColor: pinkColor,
                 onChanged: (value) async {
                   try {
-                    await NotificationPrivacySettings.setHideDetails(value);
+                    await NotificationPrivacySettings.setHideDetails(!value);
                   } catch (error) {
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -8144,7 +8195,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 20),
         const Center(
           child: Text(
-            'Couple Zone • Made with love',
+            'Orbit Two • Made with love',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
         ),
