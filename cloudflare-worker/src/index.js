@@ -184,35 +184,6 @@ function cleanText(value, maxLength = 180) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[char]);
-}
-
-function emailHtml() {
-  // Keep email content intentionally generic so private chat text never lands
-  // in an email inbox, even when a user enables email notifications.
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f0fa;font-family:Arial,Helvetica,sans-serif;color:#211b31">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0">You have a new Orbit Two update.</div>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f0fa;padding:28px 10px"><tr><td align="center">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fff;border-radius:22px;overflow:hidden">
-<tr><td style="padding:30px 24px;text-align:center;background:#100b24;color:#fff">
-<div style="display:inline-block;width:54px;height:54px;line-height:54px;border-radius:18px;background:linear-gradient(135deg,#ff2e93,#8b5cf6);font-size:34px">♡</div>
-<div style="font-size:25px;font-weight:700;margin-top:13px">Orbit Two</div>
-<div style="font-size:13px;color:#d8cfee;margin-top:6px">Your private space for two</div></td></tr>
-<tr><td style="padding:30px 26px 24px">
-<div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#8b5cf6;font-weight:700">A little update</div>
-<h1 style="font-size:24px;line-height:1.3;margin:12px 0;color:#211b31">A new message is waiting</h1>
-<p style="font-size:16px;line-height:1.7;margin:0 0 18px">You have a new message in Orbit Two.</p>
-<div style="padding:16px 18px;border-radius:14px;background:#faf7ff;border:1px solid #eee5ff;color:#50465f;font-size:15px;line-height:1.7">Open the app to read and reply privately.</div>
-<p style="font-size:13px;line-height:1.7;color:#786f87;margin:22px 0 0">If you prefer not to receive email updates, turn them off in Orbit Two Settings.</p>
-</td></tr><tr><td style="padding:18px 24px;text-align:center;background:#faf9fc;border-top:1px solid #eeeaf4;color:#8a8298;font-size:12px">Orbit Two · Made with care for your private space</td></tr>
-</table></td></tr></table></body></html>`;
-}
-
 async function sendFcm(accessToken, token, title, body, details) {
   const response = await fetch(
     "https://fcm.googleapis.com/v1/projects/" + FIREBASE_PROJECT_ID + "/messages:send",
@@ -346,26 +317,7 @@ export default {
         if (sent) pushCount++;
       }
 
-      let emailSent = false;
-      if (partnerProfile?.emailNotifications === true &&
-          typeof partnerProfile.email === "string" &&
-          partnerProfile.email.includes("@") &&
-          env.EMAIL && env.EMAIL_FROM) {
-        try {
-          await env.EMAIL.send({
-            from: { name: "Orbit Two", email: env.EMAIL_FROM },
-            to: partnerProfile.email,
-            subject: "A new message in Orbit Two",
-            text: senderName + " sent you a message in Orbit Two. Open the app to reply.",
-            html: emailHtml(),
-          });
-          emailSent = true;
-        } catch (error) {
-          console.error("Orbit Two email notification failed:", error?.code || "unknown");
-        }
-      }
-
-      return json({ ok: true, pushCount, emailSent });
+      return json({ ok: true, pushCount });
     } catch (error) {
       console.error("Orbit Two notification request failed:", error?.message || "unknown");
       return json({ error: "Notification could not be processed" }, 500);
