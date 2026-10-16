@@ -1,31 +1,53 @@
-# Orbit Two — Password reset email branding
+# Orbit Two — branded password-reset email setup
 
-Firebase Authentication sends password-reset emails using the template configured in the Firebase Console. The Flutter app cannot change the sender name, template design, or add an image to that built-in email by changing Dart code alone.
+The app's **Forgot Password?** action now calls the server-side Firebase callable function `sendBrandedPasswordResetEmail`. The function generates a Firebase password-reset link and sends it through the configured SMTP provider. The SMTP credentials stay in Firebase Functions secrets, never in the Flutter app or GitHub source.
 
-## Built-in Firebase template (works without custom SMTP)
+## 1. Set up the sender
 
-In Firebase Console, open **Authentication → Templates → Password reset** and set:
+Choose an SMTP provider and verify the sender address/domain with that provider. Use the provider's SMTP host, port, username, and password. Do not use your normal email account password unless the provider explicitly instructs you to use an app password.
 
-- **Sender name:** Orbit Two
-- **Subject:** Reset your Orbit Two password
-- **Body:**
+## 2. Add Firebase Functions secrets
 
-Hello,
+From the repository root, run these commands in a trusted terminal. Each command prompts for the value, so do not put secret values in a command line, source file, screenshot, or GitHub commit.
 
-We received a request to reset the password for your Orbit Two account (%EMAIL%).
+```bash
+firebase functions:secrets:set SMTP_HOST
+firebase functions:secrets:set SMTP_PORT
+firebase functions:secrets:set SMTP_USER
+firebase functions:secrets:set SMTP_PASS
+firebase functions:secrets:set SMTP_FROM
+firebase functions:secrets:set ORBIT_LOGO_URL
+```
 
-To choose a new password, open this secure link:
+Use port `465` for implicit TLS or `587` for STARTTLS, according to the SMTP provider. `SMTP_FROM` must be a sender address/name accepted by the provider, for example `Orbit Two <verified-sender@example.com>`. Replace that example with your own verified sender.
 
-%LINK%
+`ORBIT_LOGO_URL` must be a publicly reachable HTTPS image URL. After adding your own app logo to a trusted public host, use its direct image URL. Do not use a private Drive link that requires signing in. If the URL is empty, the email falls back to a simple heart mark.
 
-If you did not request a password reset, you can safely ignore this email. Your password will not change unless you open the link and complete the reset.
+## 3. Deploy the server function
 
-For your security, do not forward this email or share the reset link with anyone.
+Install the Firebase CLI and sign in, select the correct Firebase project, then run from the repository root:
 
-— Orbit Two Support
+```bash
+firebase use YOUR_FIREBASE_PROJECT_ID
+firebase deploy --only functions:sendBrandedPasswordResetEmail
+```
 
-## Logo and large styled link
+Replace `YOUR_FIREBASE_PROJECT_ID` with the actual Firebase project ID. This callable function uses the secrets listed above. Firebase may require the Blaze billing plan for deployment and runtime use.
 
-The built-in Firebase Authentication template does not provide full control over custom HTML branding and an embedded app logo. To guarantee the Orbit Two logo and a large, styled button/link, configure a trusted SMTP sender and use a custom HTML email template through a server-side email service. Do not put SMTP passwords or API keys in the Flutter app or GitHub source.
+For push notifications, deploy the notification functions too:
 
-After saving the template, send a real password-reset test to an account you control and verify the sender name, subject, link, and spam-folder placement.
+```bash
+firebase deploy --only functions
+```
+
+Review the project selection before deploying. The functions must be deployed to the same Firebase project used by the Android app.
+
+## 4. Firebase Authentication template
+
+The app's Forgot Password action uses the branded SMTP function instead of Firebase's built-in email sender. The built-in **Authentication → Templates → Password reset** template therefore does not control emails sent by this custom function. You may still set a clear sender name and subject there for other Firebase flows, but it will not replace the custom HTML email.
+
+## 5. Test
+
+After deployment, open the app, choose **Forgot Password?**, and enter an account email you control. Verify the sender name, subject, Orbit Two logo, large reset button, text link, and inbox/spam placement. Also verify that the reset link opens the Firebase password-reset page.
+
+Never add SMTP passwords or secret values to GitHub, the Flutter app, or a public issue. If a secret is accidentally exposed, rotate it with the SMTP provider and update the Firebase Functions secret.
