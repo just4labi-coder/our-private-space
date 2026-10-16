@@ -224,7 +224,24 @@ export default {
     if (request.method === "OPTIONS") return json({ ok: true });
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "Orbit Two notifications" });
+      let serviceAccountConfigured = false;
+      try {
+        const account = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON || "");
+        serviceAccountConfigured = Boolean(
+          account.client_email &&
+          account.private_key &&
+          (account.token_uri || "https://oauth2.googleapis.com/token")
+        );
+      } catch (_) {
+        serviceAccountConfigured = false;
+      }
+
+      return json({
+        ok: true,
+        service: "Orbit Two notifications",
+        firebaseApiKeyConfigured: Boolean(env.FIREBASE_WEB_API_KEY),
+        serviceAccountConfigured,
+      });
     }
     if (request.method !== "POST" || url.pathname !== "/notify-message") {
       return json({ error: "Not found" }, 404);
@@ -235,6 +252,13 @@ export default {
       ? authorization.slice(7).trim()
       : "";
     if (!idToken) return json({ error: "Authentication required" }, 401);
+
+    // Fail early with a clear configuration status instead of making Firebase
+    // requests that cannot succeed when Cloudflare secrets are missing.
+    if (!env.FIREBASE_WEB_API_KEY || !env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      console.error("Orbit notification Worker is missing required Firebase secrets.");
+      return json({ error: "Worker Firebase secrets are not configured" }, 503);
+    }
 
     let input;
     try {
