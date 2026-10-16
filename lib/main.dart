@@ -3786,7 +3786,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final mine = _isMine(message);
     final senderUid = '${message['senderUid'] ?? ''}';
     final messageId = '${message['id'] ?? index}';
-    final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 76.0);
+    final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 76.0).toDouble();
     final expanded = _expandedMessageTimes.contains(messageId);
 
     final row = Row(
@@ -3929,7 +3929,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (details.delta.dx <= 0 && (_replyDragOffsets[messageId] ?? 0) <= 0) return;
             setState(() {
               _replyDragOffsets[messageId] =
-                  ((_replyDragOffsets[messageId] ?? 0) + details.delta.dx).clamp(0.0, 76.0);
+                  ((_replyDragOffsets[messageId] ?? 0) + details.delta.dx).clamp(0.0, 76.0).toDouble();
             });
           },
           onHorizontalDragEnd: (_) {
