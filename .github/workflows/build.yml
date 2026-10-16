@@ -95,7 +95,7 @@ jobs:
           fi
 
       - name: Generate custom launcher icon when logo is valid
-        if: ${{ steps.logo_conversion.outputs.valid == 'true' }}
+        if: ${{ hashFiles('assets/branding/orbit_two_logo_icon.png') != '' }}
         run: |
           dart run flutter_launcher_icons
           sed -i 's#android:icon="@android:drawable/sym_def_app_icon"#android:icon="@mipmap/ic_launcher"#' android/app/src/main/AndroidManifest.xml
