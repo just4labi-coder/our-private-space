@@ -2762,7 +2762,35 @@ class _ChatPageState extends State<ChatPage> {
                     Navigator.pop(sheetContext);
 
                     try {
+                      // আগে Firestore-এ মেসেজটি সরাও, যাতে চ্যাট সঙ্গে সঙ্গে আপডেট হয়।
                       await ChatSyncService.unsendMessage(messageId);
+
+                      final mediaType = '${message['type'] ?? ''}';
+                      final fileId = (
+                        message['fileId'] ??
+                        message['driveFileId'] ??
+                        ''
+                      ).toString().trim();
+
+                      if ((mediaType == 'image' || mediaType == 'video') &&
+                          fileId.isNotEmpty) {
+                        // গ্যালারিতে একই Drive ফাইল রেফারেন্স থাকলে সেটি অকারণে ভাঙবে না।
+                        final linkedInGallery = SpaceStore
+                            .readList('galleryMedia')
+                            .any((item) =>
+                                '${item['fileId'] ?? item['driveFileId'] ?? ''}' ==
+                                fileId);
+
+                        if (!linkedInGallery) {
+                          unawaited(
+                            SpaceSyncService.deleteSharedMedia(fileId).catchError(
+                              (Object error) {
+                                debugPrint('Chat media Drive cleanup failed: $error');
+                              },
+                            ),
+                          );
+                        }
+                      }
                     } catch (error) {
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
