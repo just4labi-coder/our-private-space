@@ -379,6 +379,11 @@ class SpaceSyncService {
     if (n.endsWith('.3gp')) return 'video/3gpp';
     if (n.endsWith('.webm')) return 'video/webm';
     if (n.endsWith('.m4v')) return 'video/x-m4v';
+    if (n.endsWith('.m4a')) return 'audio/mp4';
+    if (n.endsWith('.aac')) return 'audio/aac';
+    if (n.endsWith('.mp3')) return 'audio/mpeg';
+    if (n.endsWith('.wav')) return 'audio/wav';
+    if (n.endsWith('.ogg') || n.endsWith('.opus')) return 'audio/ogg';
     if (n.endsWith('.png')) return 'image/png';
     if (n.endsWith('.webp')) return 'image/webp';
     if (n.endsWith('.gif')) return 'image/gif';
