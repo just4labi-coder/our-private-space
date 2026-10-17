@@ -2893,6 +2893,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     _startChatSync();
     orbitSharedText.addListener(_handleSharedTextDraft);
+    _handleSharedTextDraft();
     _saveOwnProfile();
   }
 
