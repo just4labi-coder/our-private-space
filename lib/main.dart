@@ -153,7 +153,7 @@ Future<void> main() async {
             AndroidFlutterLocalNotificationsPlugin>();
     await androidNotifications?.createNotificationChannel(
       AndroidNotificationChannel(
-        'orbit_partner_updates_v2',
+        'orbit_partner_updates_v3',
         'Orbit Two messages',
         description: 'Messages and updates from your partner',
         importance: Importance.max,
