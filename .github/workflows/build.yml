@@ -9,9 +9,10 @@ permissions:
   contents: read
 
 # A new push supersedes older builds so only the latest source is packaged.
+# Queue builds instead of cancelling an APK build already in progress.
 concurrency:
   group: orbit-two-main-apk
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
