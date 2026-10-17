@@ -7,8 +7,41 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private var pendingSharedText: String? = null
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        pendingSharedText = extractSharedText(intent)
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val sharedText = extractSharedText(intent)
+        if (!sharedText.isNullOrBlank()) {
+            pendingSharedText = sharedText
+            flutterEngine?.dartExecutor?.binaryMessenger?.let { messenger ->
+                MethodChannel(messenger, "com.privatespace.ourspace/share_intent").invokeMethod("sharedText", sharedText)
+            }
+        }
+    }
+
+    private fun extractSharedText(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_SEND) return null
+        return intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+    }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.privatespace.ourspace/share_intent"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getInitialSharedText" -> { result.success(pendingSharedText); pendingSharedText = null }
+                else -> result.notImplemented()
+            }
+        }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
