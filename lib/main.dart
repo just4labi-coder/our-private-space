@@ -1476,7 +1476,7 @@ class _MainScreenState extends State<MainScreen>
     orbitShareChannel.setMethodCallHandler((call) async {
       if (call.method == 'sharedText') {
         final shared = '${call.arguments ?? ''}'.trim();
-        if (shared.isNotEmpty && mounted) _handleIncomingSharedText(shared);
+        if (shared.isNotEmpty && mounted) unawaited(_handleIncomingSharedText(shared));
       }
     });
     unawaited(_loadInitialSharedText());
@@ -1486,13 +1486,16 @@ class _MainScreenState extends State<MainScreen>
   Future<void> _loadInitialSharedText() async {
     try {
       final shared = await orbitShareChannel.invokeMethod<String>('getInitialSharedText');
-      if (shared != null && shared.trim().isNotEmpty && mounted) _handleIncomingSharedText(shared.trim());
+      if (shared != null && shared.trim().isNotEmpty && mounted) await _handleIncomingSharedText(shared.trim());
     } catch (error) {
       debugPrint('Initial shared text unavailable: $error');
     }
   }
 
-  void _handleIncomingSharedText(String shared) {
+  Future<void> _handleIncomingSharedText(String shared) async {
+    // On a cold launch, saved partner names may still be loading.
+    if (partnerTwo.trim().isEmpty) await _loadPartnerNames();
+    if (!mounted) return;
     if (partnerTwo.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('লিংক শেয়ার করতে আগে Partner-এর সঙ্গে Connect করো।')),
