@@ -46,6 +46,8 @@ async function sendToUser(uid, notification) {
   for (const tokenDoc of snapshot.docs) {
     const token = stringValue(tokenDoc.get("token"));
     if (!token) continue;
+    // The switch is per device: do not send FCM at all when notifications are hidden.
+    if (tokenDoc.get("notificationsEnabled") === false) continue;
     const hide = tokenDoc.get("hideNotificationDetails") === true;
     const title = hide ? notification.privateTitle : notification.detailedTitle;
     const body = hide ? notification.privateBody : notification.detailedBody;
