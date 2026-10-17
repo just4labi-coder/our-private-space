@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@android:color/black">
+        <shape android:shape="rectangle">
+            <solid android:color="#070513" />
+        </shape>
+    </item>
+    <item
+        android:drawable="@drawable/orbit_two_mark"
+        android:gravity="center" />
+</layer-list>
