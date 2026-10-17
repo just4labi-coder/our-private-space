@@ -1672,7 +1672,7 @@ class _MainScreenState extends State<MainScreen>
         if (!mounted) return;
 
         setState(() {
-          hasUnreadChat = selectedIndex == 1 ? false : unread;
+          hasUnreadChat = orbitChatVisible ? false : unread;
         });
       },
       onError: (_) {},
