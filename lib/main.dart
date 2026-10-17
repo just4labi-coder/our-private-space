@@ -1030,6 +1030,8 @@ class _GlowBackgroundState extends State<GlowBackground>
       ),
       child: AnimatedBuilder(
         animation: _controller,
+        // Keep the page subtree out of the animated glow rebuild.
+        child: RepaintBoundary(child: SafeArea(child: widget.child)),
         builder: (context, child) {
           final phase = _controller.value * 2 * pi;
           final waveA = sin(phase);
@@ -1071,9 +1073,7 @@ class _GlowBackgroundState extends State<GlowBackground>
                   const Color(0xFF5424B8).withValues(alpha: 0.24),
                 ),
               ),
-              SafeArea(
-                child: widget.child,
-              ),
+              if (child != null) child,
             ],
           );
         },
