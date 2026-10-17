@@ -451,7 +451,7 @@ class StartupErrorScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
+                  'assets/branding/orbit_two_logo_artwork.png',
                   width: 100,
                   height: 100,
                   fit: BoxFit.contain,
@@ -904,7 +904,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(22),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
+                    'assets/branding/orbit_two_logo_artwork.png',
                     width: 132,
                     height: 132,
                     fit: BoxFit.contain,
@@ -2025,7 +2025,7 @@ class HomePage extends StatelessWidget {
                 child: ColoredBox(
                   color: const Color(0xFF070513),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
+                    'assets/branding/orbit_two_logo_artwork.png',
                     width: 64,
                     height: 64,
                     fit: BoxFit.contain,
