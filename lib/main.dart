@@ -5029,26 +5029,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ),
                 ),
               _buildReactionSummary(message, mine),
-              if (expanded && message['unsent'] != true)
-                Align(
-                  alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () => _showReactionPicker(message),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        child: const Icon(Icons.add_reaction_outlined, size: 16, color: Colors.white70),
-                      ),
-                    ),
-                  ),
-                ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
@@ -5200,7 +5180,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   duration: const Duration(milliseconds: 90),
                   curve: Curves.easeOut,
                   transform: Matrix4.translationValues(dragOffset, 0, 0),
-                  child: row,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      row,
+                      if (expanded && message['unsent'] != true)
+                        Positioned(
+                          top: -10,
+                          right: mine ? 0 : null,
+                          left: mine ? null : 0,
+                          child: Material(
+                            color: surfaceColor,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () => _showReactionPicker(message),
+                              child: const Padding(
+                                padding: EdgeInsets.all(5),
+                                child: Icon(Icons.add_reaction_outlined, size: 17, color: pinkColor),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ],
               ),
