@@ -5659,8 +5659,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     physics: const ClampingScrollPhysics(
                       parent: AlwaysScrollableScrollPhysics(),
                     ),
-                    // বেশি অফস্ক্রিন ভিডিও/থাম্বনেইল একসঙ্গে তৈরি হলে scroll frame drop হয়।
-                    cacheExtent: 280,
+                    // কম off-screen row তৈরি রাখি, যাতে ছবি/ভিডিও/ভয়েসের
+                    // decode ও download একসঙ্গে শুরু হয়ে scroll frame drop না করে।
+                    cacheExtent: 80,
                     addAutomaticKeepAlives: false,
                     addRepaintBoundaries: true,
                     keyboardDismissBehavior:
