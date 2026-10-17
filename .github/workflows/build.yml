@@ -73,20 +73,6 @@ jobs:
           test -s assets/branding/orbit_two_logo.jpg
           file assets/branding/orbit_two_logo.jpg
 
-      - name: Prepare native splash logo from the actual Orbit Two artwork
-        if: ${{ steps.logo_conversion.outputs.valid == 'true' }}
-        run: |
-          mkdir -p android/app/src/main/res/drawable-nodpi
-          python - <<'PY'
-          from PIL import Image
-          source = "assets/branding/orbit_two_logo.jpg"
-          target = "android/app/src/main/res/drawable-nodpi/orbit_logo.png"
-          with Image.open(source) as image:
-              image.load()
-              image.convert("RGBA").resize((360, 360), Image.Resampling.LANCZOS).save(target, "PNG")
-          print("Prepared the actual Orbit Two logo for the native splash screen.")
-          PY
-
       - name: Convert launcher logo to PNG (non-blocking)
         id: logo_conversion
         continue-on-error: true
@@ -112,6 +98,28 @@ jobs:
             echo "valid=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Skipping launcher icon generation because the logo image is invalid. APK build will continue using the existing launcher icon."
           fi
+
+      - name: Prepare native splash logo from the actual Orbit Two artwork
+        run: |
+          mkdir -p android/app/src/main/res/drawable-nodpi
+          python - <<'PY'
+          from PIL import Image, ImageDraw
+          source = "assets/branding/orbit_two_logo.jpg"
+          target = "android/app/src/main/res/drawable-nodpi/orbit_logo.png"
+          try:
+              with Image.open(source) as image:
+                  image.load()
+                  image.convert("RGBA").resize((360, 360), Image.Resampling.LANCZOS).save(target, "PNG")
+              print("Prepared the actual Orbit Two logo for the native splash screen.")
+          except Exception as error:
+              print(f"::warning::Using a fallback splash mark because the logo could not be decoded: {error}")
+              image = Image.new("RGBA", (360, 360), "#070513")
+              draw = ImageDraw.Draw(image)
+              draw.ellipse((74, 62, 192, 180), fill="#FF2E93")
+              draw.ellipse((168, 62, 286, 180), fill="#FF2E93")
+              draw.polygon([(74, 124), (286, 124), (180, 292)], fill="#FF2E93")
+              image.save(target, "PNG")
+          PY
 
       - name: Use safe Android launcher icon if logo conversion fails
         if: ${{ steps.logo_conversion.outputs.valid != 'true' }}
