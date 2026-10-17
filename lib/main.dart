@@ -1452,14 +1452,24 @@ class _MainScreenState extends State<MainScreen>
   }
 
   Future<void> _handleIncomingSharedText(String shared) async {
-    if (partnerTwo.trim().isEmpty) await _loadPartnerNames();
+    // Check the actual Firebase space connection, not just a cached partner name.
+    final connectedSpaceId = await SpaceStore._getConnectedSpaceId();
     if (!mounted) return;
-    if (partnerTwo.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('লিংক শেয়ার করতে আগে Partner-এর সঙ্গে Connect করো।')));
+    if (connectedSpaceId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('লিংক শেয়ার করতে আগে Partner-এর সঙ্গে Connect করো।'),
+        ),
+      );
       return;
     }
+    if (partnerTwo.trim().isEmpty) await _loadPartnerNames();
+    if (!mounted) return;
     orbitSharedText.value = shared;
-    setState(() { selectedIndex = 1; hasUnreadChat = false; });
+    setState(() {
+      selectedIndex = 1;
+      hasUnreadChat = false;
+    });
   }
 
   Future<void> _recoverPendingUploads() async {
