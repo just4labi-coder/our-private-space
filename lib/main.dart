@@ -2658,6 +2658,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final Map<String, Future<String?>> _mediaPathFutures = {};
   final Map<String, Map<String, dynamic>> _failedMediaMessages = {};
   final Map<String, Future<String?>> _chatVideoThumbnailFutures = {};
+  final Map<String, Uint8List> _embeddedVideoThumbnails = {};
   final Map<String, GlobalKey> _messageKeys = {};
   final Set<String> _requestedMediaDownloads = {};
   String? _highlightedMessageId;
@@ -4325,13 +4326,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           '${message['fileId'] ?? message['driveFileId'] ?? ''}'.trim();
 
       final mediaKey = fileId.isNotEmpty ? fileId : path;
-      Uint8List? embeddedVideoThumbnail;
-      if (type == 'video') {
+      Uint8List? embeddedVideoThumbnail = _embeddedVideoThumbnails[mediaKey];
+      if (type == 'video' && embeddedVideoThumbnail == null) {
         final encodedThumbnail =
             '${message['thumbnailBase64'] ?? ''}'.trim();
         if (encodedThumbnail.isNotEmpty) {
           try {
             embeddedVideoThumbnail = base64Decode(encodedThumbnail);
+            _embeddedVideoThumbnails[mediaKey] = embeddedVideoThumbnail;
           } catch (error) {
             debugPrint('Embedded chat video preview decode skipped: $error');
           }
@@ -4344,9 +4346,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           final localMediaPath =
               '${message['text'] ?? message['path'] ?? ''}'.trim();
 
-          final senderHasLocalFile = _isMine(message) &&
-              localMediaPath.isNotEmpty &&
-              File(localMediaPath).existsSync();
+          // File existence is checked asynchronously inside _resolveMediaPath.
+          // Synchronous disk checks here were blocking the UI while scrolling media.
+          final senderHasLocalFile = _isMine(message) && localMediaPath.isNotEmpty;
 
           final shouldDownload = senderHasLocalFile ||
               !dataSaverEnabled ||
@@ -4637,9 +4639,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 );
               }
 
-              if (snapshot.hasError ||
-                  resolvedPath == null ||
-                  !File(resolvedPath).existsSync()) {
+              if (snapshot.hasError || resolvedPath == null) {
                 return InkWell(
                   onTap: () {
                     _mediaPathFutures.remove(mediaKey);
@@ -4715,7 +4715,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           future: _resolveChatVideoThumbnail(message, resolvedPath),
                           builder: (context, snapshot) {
                             final thumbnailPath = snapshot.data;
-                            if (thumbnailPath != null && File(thumbnailPath).existsSync()) {
+                            if (thumbnailPath != null) {
                               return Image.file(File(thumbnailPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26));
                             }
                             return const ColoredBox(color: Colors.black26);
