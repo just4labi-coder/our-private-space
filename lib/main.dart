@@ -1942,23 +1942,43 @@ class HomePage extends StatelessWidget {
                 ],
               ),
             ),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.asset(
-                'assets/branding/orbit_two_logo.jpg',
-                width: 56,
-                height: 56,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF17233D),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: pinkColor.withValues(alpha: 0.45)),
+            Container(
+              width: 72,
+              height: 72,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF8B5CF6), Color(0xFFFF2E93)],
+                ),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: pinkColor.withValues(alpha: 0.28),
+                    blurRadius: 18,
+                    spreadRadius: 1,
                   ),
-                  child: const Icon(Icons.favorite_rounded, color: pinkColor, size: 30),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: ColoredBox(
+                  color: const Color(0xFF070513),
+                  child: Image.asset(
+                    'assets/branding/orbit_two_logo.jpg',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: Icon(
+                        Icons.favorite_rounded,
+                        color: pinkColor,
+                        size: 38,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -3657,6 +3677,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           'senderUid': user.uid,
           'type': 'voice',
           'fileName': fileName,
+          'durationMs': _recordingElapsed.inMilliseconds,
           'createdAt': createdAt,
           if (replyTo != null) ...{
             'replyToId': '${replyTo['id'] ?? ''}',
@@ -3678,6 +3699,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         'senderUid': user.uid,
         'text': file.path,
         'type': 'voice',
+        'durationMs': _recordingElapsed.inMilliseconds,
         'fileId': fileId,
         'driveFileId': fileId,
         'driveFileName': uploaded['driveFileName'] ?? fileName,
@@ -4684,7 +4706,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               }
 
               if (type == 'voice') {
-                return ChatVoicePlayer(path: resolvedPath);
+                return ChatVoicePlayer(
+                  path: resolvedPath,
+                  durationMs: int.tryParse('${message['durationMs'] ?? ''}'),
+                );
               }
 
               if (type == 'image') {
@@ -7742,9 +7767,14 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
 
 
 class ChatVoicePlayer extends StatefulWidget {
-  const ChatVoicePlayer({super.key, required this.path});
+  const ChatVoicePlayer({
+    super.key,
+    required this.path,
+    this.durationMs,
+  });
 
   final String path;
+  final int? durationMs;
 
   @override
   State<ChatVoicePlayer> createState() => _ChatVoicePlayerState();
@@ -7754,8 +7784,12 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   AudioPlayer? _player;
   StreamSubscription<PlayerState>? _stateSubscription;
   StreamSubscription<Duration>? _durationSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
   bool _isPlaying = false;
+  bool _isPreparing = false;
+  bool _sourceLoaded = false;
   Duration? _duration;
+  Duration _position = Duration.zero;
   double _playbackRate = 1.0;
 
   String _formatDuration(Duration duration) {
@@ -7763,6 +7797,15 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final milliseconds = widget.durationMs ?? 0;
+    if (milliseconds > 0) {
+      _duration = Duration(milliseconds: milliseconds);
+    }
   }
 
   Future<AudioPlayer> _getPlayer() async {
@@ -7773,17 +7816,38 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
     _player = player;
     _stateSubscription = player.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
-      setState(() => _isPlaying = state == PlayerState.playing);
+      setState(() {
+        _isPlaying = state == PlayerState.playing;
+        if (state == PlayerState.completed && _duration != null) {
+          _position = _duration!;
+        }
+      });
     });
     _durationSubscription = player.onDurationChanged.listen((duration) {
       if (!mounted) return;
       setState(() => _duration = duration);
     });
+    _positionSubscription = player.onPositionChanged.listen((position) {
+      if (!mounted) return;
+      setState(() => _position = position);
+    });
     await player.setPlaybackRate(_playbackRate);
     return player;
   }
 
+  Future<void> _loadSource(AudioPlayer player) async {
+    if (_sourceLoaded) return;
+    await player.setSource(DeviceFileSource(widget.path));
+    _sourceLoaded = true;
+    final actualDuration = await player.getDuration();
+    if (actualDuration != null && mounted) {
+      setState(() => _duration = actualDuration);
+    }
+  }
+
   Future<void> _togglePlayback() async {
+    if (_isPreparing) return;
+    setState(() => _isPreparing = true);
     try {
       final player = await _getPlayer();
 
@@ -7792,9 +7856,14 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
       } else if (player.state == PlayerState.paused) {
         await player.resume();
       } else {
-        await player.setVolume(1.0);
+        // Load metadata first so the full duration appears before playback starts.
+        await _loadSource(player);
+        if (player.state == PlayerState.completed) {
+          await player.seek(Duration.zero);
+          if (mounted) setState(() => _position = Duration.zero);
+        }
         await player.setPlaybackRate(_playbackRate);
-        await player.play(DeviceFileSource(widget.path));
+        await player.resume();
       }
     } catch (error) {
       if (mounted) {
@@ -7802,6 +7871,8 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
           SnackBar(content: Text('ভয়েস চালানো যায়নি: $error')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isPreparing = false);
     }
   }
 
@@ -7832,6 +7903,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   void dispose() {
     _stateSubscription?.cancel();
     _durationSubscription?.cancel();
+    _positionSubscription?.cancel();
     final player = _player;
     if (player != null) unawaited(player.dispose());
     super.dispose();
@@ -7839,8 +7911,10 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final total = _duration == null ? '--:--' : _formatDuration(_duration!);
+    final elapsed = _formatDuration(_position);
     return Container(
-      width: 252,
+      width: 270,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.12),
@@ -7851,21 +7925,34 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
         children: [
           IconButton(
             tooltip: _isPlaying ? 'Pause voice message' : 'Play voice message',
-            onPressed: _togglePlayback,
-            icon: Icon(
-              _isPlaying
-                  ? Icons.pause_circle_filled_rounded
-                  : Icons.play_circle_fill_rounded,
-              color: pinkColor,
-              size: 34,
-            ),
+            onPressed: _isPreparing ? null : _togglePlayback,
+            icon: _isPreparing
+                ? const SizedBox(
+                    width: 25,
+                    height: 25,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: pinkColor,
+                    ),
+                  )
+                : Icon(
+                    _isPlaying
+                        ? Icons.pause_circle_filled_rounded
+                        : Icons.play_circle_fill_rounded,
+                    color: pinkColor,
+                    size: 34,
+                  ),
           ),
           Expanded(
             child: Text(
-              _duration == null ? 'Voice message' : _formatDuration(_duration!),
+              '$elapsed / $total',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
           ),
           const SizedBox(width: 4),
