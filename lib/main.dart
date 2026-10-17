@@ -3828,22 +3828,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         scrollController.jumpTo(target);
       }
 
-      // Initial load can revise maxScrollExtent as long messages/media are laid out.
-      if (settle) {
-        await Future<void>.delayed(const Duration(milliseconds: 120));
-        if (!mounted ||
-            !scrollController.hasClients ||
-            requestToken != _scrollRequestToken ||
-            _userIsScrolling ||
-            _userHasScrolledAwayFromBottom ||
-            scrollController.position.isScrollingNotifier.value) {
-          return;
-        }
-        final latestPosition = scrollController.position;
-        if (latestPosition.maxScrollExtent - latestPosition.pixels > 8) {
-          scrollController.jumpTo(latestPosition.maxScrollExtent);
-        }
-      }
+      // Do not issue a second corrective jump after the first frame.
+      // Repeated jumps during lazy media layout cause visible chat-list shaking.
     });
   }
 
@@ -4651,9 +4637,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   );
                 }
 
+                // Keep the voice bubble close to its final height while downloading,
+                // so resolving a voice file does not move neighbouring chat rows.
                 return SizedBox(
-                  width: 210,
-                  height: 120,
+                  width: 270,
+                  height: 52,
                   child: ValueListenableBuilder<List<DownloadProgress>>(
                     valueListenable: SpaceSyncService.downloadProgress,
                     builder: (context, downloads, _) {
@@ -5672,7 +5660,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       parent: AlwaysScrollableScrollPhysics(),
                     ),
                     // বেশি অফস্ক্রিন ভিডিও/থাম্বনেইল একসঙ্গে তৈরি হলে scroll frame drop হয়।
-                    cacheExtent: 80,
+                    cacheExtent: 280,
                     addAutomaticKeepAlives: false,
                     addRepaintBoundaries: true,
                     keyboardDismissBehavior:
