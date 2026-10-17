@@ -5270,9 +5270,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             }
             setState(() => _replyDragOffsets[messageId] = 0);
           },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic,
+          child: Container(
             transform: Matrix4.identity()..scale(_highlightedMessageId == messageId ? 1.025 : 1.0),
             transformAlignment: Alignment.center,
             padding: const EdgeInsets.all(3),
