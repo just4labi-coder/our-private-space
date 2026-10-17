@@ -280,14 +280,29 @@ class InteractionFeedbackSettings {
     }
   }
 
-  static Future<void> playTypingSound() async {
+  static Future<void> _playAssetSound(String asset) async {
     if (!soundsEnabled.value) return;
+    final player = AudioPlayer();
     try {
-      await SystemSound.play(SystemSoundType.click);
+      await player.play(AssetSource(asset));
+      unawaited(
+        player.onPlayerComplete.first.then<void>((_) async {
+          await player.dispose();
+        }).catchError((Object error) {
+          debugPrint('Feedback sound cleanup failed: $error');
+        }),
+      );
     } catch (error) {
-      debugPrint('Typing sound unavailable: $error');
+      await player.dispose();
+      debugPrint('Feedback sound unavailable: $error');
     }
   }
+
+  static Future<void> playTypingSound() =>
+      _playAssetSound('sounds/orbit_typing.wav');
+
+  static Future<void> playSeenSound() =>
+      _playAssetSound('sounds/orbit_seen.wav');
 }
 
 class NotificationPrivacySettings {
@@ -2830,6 +2845,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Timer? _draftSaveTimer;
   Map<String, dynamic>? _replyToMessage;
   final Set<String> _expandedMessageTimes = <String>{};
+  final Set<String> _seenSoundPlayedFor = <String>{};
   final Map<String, double> _replyDragOffsets = <String, double>{};
   final AudioRecorder _voiceRecorder = AudioRecorder();
   final AudioPlayer _voicePreviewPlayer = AudioPlayer();
@@ -3125,6 +3141,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             }
           }
 
+          final previouslySeenIds = <String>{
+            for (final item in messages)
+              if (_isMine(item) && _isSeenByPartner(item))
+                '${item['id'] ?? ''}',
+          };
+          if (firstSnapshot) {
+            for (final item in latestMessages) {
+              if (_isMine(item) && _isSeenByPartner(item)) {
+                _seenSoundPlayedFor.add('${item['id'] ?? ''}');
+              }
+            }
+          } else {
+            for (final item in latestMessages) {
+              final id = '${item['id'] ?? ''}';
+              if (id.isNotEmpty &&
+                  _isMine(item) &&
+                  _isSeenByPartner(item) &&
+                  !previouslySeenIds.contains(id) &&
+                  _seenSoundPlayedFor.add(id)) {
+                unawaited(InteractionFeedbackSettings.playSeenSound());
+              }
+            }
+          }
+
           setState(() {
             messages = latestMessages;
             _cachedLastOwnMessageIndex = nextLastOwnMessageIndex;
@@ -3213,6 +3253,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
 
     return message['mine'] == true;
+  }
+
+  bool _isSeenByPartner(Map<String, dynamic> message) {
+    final seenBy = message['seenBy'];
+    if (seenBy is! Map) return false;
+    return seenBy.entries.any(
+      (entry) => '${entry.key}' != _currentUid && entry.value == true,
+    );
   }
 
   int get _lastOwnMessageIndex => _cachedLastOwnMessageIndex;
@@ -5022,9 +5070,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'আপলোড হচ্ছে...',
-                        style: TextStyle(
+                      Text(
+                        _pendingMediaProgress <= 0
+                            ? 'আপলোড প্রস্তুত হচ্ছে...'
+                            : 'আপলোড হচ্ছে...',
+                        style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
                         ),
@@ -6019,6 +6069,7 @@ class GalleryPage extends StatefulWidget {
 class _GalleryPageState extends State<GalleryPage> {
   List<Map<String, dynamic>> folders = [];
   List<Map<String, dynamic>> media = [];
+  bool _autoDownloadRunning = false;
 
   @override
   void initState() {
@@ -6039,6 +6090,76 @@ class _GalleryPageState extends State<GalleryPage> {
       folders.add({'id': 'videos', 'name': 'Videos'});
       unawaited(SpaceStore.saveList('galleryFolders', folders));
     }
+    unawaited(_autoDownloadMissingMedia());
+  }
+
+  Future<void> _autoDownloadMissingMedia() async {
+    if (_autoDownloadRunning || !mounted) return;
+    _autoDownloadRunning = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedRaw = prefs.getString('galleryLocalPaths');
+      final savedPaths = <String, dynamic>{};
+      if (savedRaw != null && savedRaw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(savedRaw);
+          if (decoded is Map) savedPaths.addAll(Map<String, dynamic>.from(decoded));
+        } catch (_) {}
+      }
+
+      var changed = false;
+      final candidates = media.map((item) => Map<String, dynamic>.from(item)).toList();
+      for (final item in candidates) {
+        if (!mounted) break;
+        final fileId = '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+        if (fileId.isEmpty) continue;
+        final isPersonal = item['storage'] == 'personal';
+        final localPath = '${item['path'] ?? ''}'.trim();
+        if (localPath.isNotEmpty) {
+          try {
+            final localFile = File(localPath);
+            if (await localFile.exists() && await localFile.length() > 0) continue;
+          } catch (_) {}
+        }
+
+        try {
+          var resolvedPath = await SpaceSyncService.getCachedMediaPath(
+            fileId,
+            shared: !isPersonal,
+          );
+          if (resolvedPath == null || !await File(resolvedPath).exists()) {
+            final originalName = '${item['driveFileName'] ?? item['name'] ?? 'memory'}';
+            final safeName = '${item['id'] ?? fileId}_$originalName';
+            resolvedPath = isPersonal
+                ? await SpaceSyncService.downloadPersonalMedia(fileId, saveAs: safeName)
+                : await SpaceSyncService.downloadMedia(fileId, saveAs: safeName);
+          }
+          final downloaded = File(resolvedPath);
+          if (!await downloaded.exists() || await downloaded.length() <= 0) continue;
+          savedPaths[fileId] = resolvedPath;
+          final index = media.indexWhere((entry) =>
+              '${entry['fileId'] ?? entry['driveFileId'] ?? ''}' == fileId);
+          if (index >= 0 && media[index]['path'] != resolvedPath) {
+            media[index]['path'] = resolvedPath;
+            changed = true;
+          }
+        } catch (error) {
+          debugPrint('Gallery background download skipped ($fileId): $error');
+        }
+      }
+
+      if (savedPaths.isNotEmpty) {
+        await prefs.setString('galleryLocalPaths', jsonEncode(savedPaths));
+      }
+      if (changed) {
+        await _save();
+        if (mounted) setState(() {});
+      }
+    } catch (error) {
+      debugPrint('Gallery background download error: $error');
+    } finally {
+      _autoDownloadRunning = false;
+    }
   }
 
   void _handleGallerySyncChanged() {
@@ -6051,6 +6172,7 @@ class _GalleryPageState extends State<GalleryPage> {
       folders = latestFolders;
       media = latestMedia;
     });
+    unawaited(_autoDownloadMissingMedia());
   }
 
   @override
@@ -6255,7 +6377,7 @@ class _GalleryPageState extends State<GalleryPage> {
   Future<void> _deleteFolder(Map<String, dynamic> folder) async {
     final id = '${folder['id']}';
 
-    if (id == 'all' || id == 'favorites') return;
+    if (id == 'all' || id == 'favorites' || id == 'videos') return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -7746,12 +7868,12 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
     final controller = _controller;
     if (!widget.isActive) {
       if (controller != null && controller.value.isInitialized) {
-        unawaited(controller.pause());
+        unawaited(controller.setVolume(0).then((_) => controller.pause()));
       }
     } else if (controller == null) {
       unawaited(_initialize());
     } else if (controller.value.isInitialized) {
-      unawaited(controller.play());
+      unawaited(controller.setVolume(1).then((_) => controller.play()));
     }
   }
 
@@ -7769,6 +7891,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
       }
 
       setState(() {});
+      await video.setVolume(widget.isActive ? 1.0 : 0.0);
       if (widget.isActive) await video.play();
     } catch (error) {
       await video.dispose();
@@ -8890,42 +9013,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   );
                 }
               },
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        const SectionHeading(title: 'App information'),
-        const SizedBox(height: 10),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(Icons.lock_outline, color: blueColor),
-            title: Text('Private by design'),
-            subtitle: Text(
-              'This version stores supported app data locally on this device.',
-            ),
-          ),
-        ),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(Icons.cloud_outlined, color: purpleColor),
-            title: Text('Firebase Sync'),
-            subtitle: Text(
-              'Firebase sync is active with partner connection.',
-            ),
-          ),
-        ),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(
-              Icons.notifications_active_outlined,
-              color: pinkColor,
-            ),
-            title: Text('Special date reminders'),
-            subtitle: Text(
-              'Reminders can be scheduled for dates you add.',
             ),
           ),
         ),

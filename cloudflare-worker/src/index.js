@@ -196,6 +196,12 @@ async function sendFcm(accessToken, token, title, body, details) {
       body: JSON.stringify({
         message: {
           token,
+          // Data-only pushes are not reliably displayed when Android has
+          // swiped the app away. Include an OS-rendered notification too.
+          notification: {
+            title: cleanText(title, 80) || "Orbit Two",
+            body: cleanText(body, 180) || "You have a new message.",
+          },
           data: {
             kind: "message",
             messageId: details.messageId,
@@ -207,6 +213,11 @@ async function sendFcm(accessToken, token, title, body, details) {
           android: {
             priority: "HIGH",
             ttl: "86400s",
+            notification: {
+              channel_id: "orbit_partner_updates_v2",
+              sound: "default",
+              visibility: "PRIVATE",
+            },
           },
         },
       }),
