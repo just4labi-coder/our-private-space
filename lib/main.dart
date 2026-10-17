@@ -836,17 +836,31 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
-                  width: 132,
-                  height: 132,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.favorite_rounded,
-                    size: 64,
-                    color: pinkColor,
+              Container(
+                width: 152,
+                height: 152,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF171026),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: pinkColor.withValues(alpha: 0.55), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(color: pinkColor.withValues(alpha: 0.28), blurRadius: 28, spreadRadius: 2),
+                    BoxShadow(color: purpleColor.withValues(alpha: 0.22), blurRadius: 42, spreadRadius: 4),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
+                  child: Image.asset(
+                    'assets/branding/orbit_two_logo.jpg',
+                    width: 132,
+                    height: 132,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      Icons.favorite_rounded,
+                      size: 72,
+                      color: pinkColor,
+                    ),
                   ),
                 ),
               ),
@@ -7474,6 +7488,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
   String? _error;
   String? _optimizedPath;
   bool _isOptimizing = false;
+  bool _hasAttemptedOptimization = false;
 
   @override
   void initState() {
@@ -7497,43 +7512,66 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
       await video.play();
     } catch (error) {
       await video.dispose();
+      if (identical(_controller, video)) _controller = null;
 
-      if (mounted) {
-        setState(() {
-          _controller = null;
-          _error = 'ভিডিও খোলা যাচ্ছে না। আবার চেষ্টা করো।';
-        });
+      if (!mounted) return;
+      if (!_hasAttemptedOptimization) {
+        // পুরোনো/HEVC ভিডিও প্রথমবার না চললে নিজে থেকেই MP4/H.264-এ রূপান্তর করো।
+        unawaited(_tryOptimizeAndPlay());
+        return;
       }
+      setState(() {
+        _error = 'ভিডিও খোলা যায়নি। ফাইলটি অসম্পূর্ণ বা এই ডিভাইসে অসমর্থিত হতে পারে।';
+      });
     }
   }
 
-  Future<void> _tryOptimizeAndPlay() async {
-    if (_isOptimizing) return;
+  Future<void> _tryOptimizeAndPlay({bool force = false}) async {
+    if (_isOptimizing || (_hasAttemptedOptimization && !force)) return;
+    _hasAttemptedOptimization = true;
     setState(() {
       _isOptimizing = true;
       _error = null;
     });
     try {
-      final result = await VideoCompress.compressVideo(
-        widget.path,
-        quality: VideoQuality.Res1280x720Quality,
-        deleteOrigin: false,
-        includeAudio: true,
+      final support = await getApplicationSupportDirectory();
+      final optimizedDirectory = Directory('${support.path}/orbit_optimized_videos');
+      await optimizedDirectory.create(recursive: true);
+      final sourceName = File(widget.path).uri.pathSegments.last
+          .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      final optimizedFile = File(
+        '${optimizedDirectory.path}/${sourceName}_720p.mp4',
       );
-      final optimized = result?.file;
-      if (optimized == null ||
-          !await optimized.exists() ||
-          await optimized.length() <= 0) {
-        throw Exception('অপটিমাইজ করা ফাইল পাওয়া যায়নি।');
+
+      if (!await optimizedFile.exists() || await optimizedFile.length() <= 0) {
+        final result = await VideoCompress.compressVideo(
+          widget.path,
+          quality: VideoQuality.Res1280x720Quality,
+          deleteOrigin: false,
+          includeAudio: true,
+        );
+        final compressed = result?.file;
+        if (compressed == null ||
+            !await compressed.exists() ||
+            await compressed.length() <= 0) {
+          throw Exception('অপটিমাইজ করা ফাইল পাওয়া যায়নি।');
+        }
+        if (await optimizedFile.exists()) await optimizedFile.delete();
+        await compressed.copy(optimizedFile.path);
       }
-      _optimizedPath = optimized.path;
+
+      if (await optimizedFile.length() <= 0) {
+        throw Exception('অপটিমাইজ করা ভিডিও খালি।');
+      }
+      _optimizedPath = optimizedFile.path;
       await _controller?.dispose();
       _controller = null;
-      await _initialize(optimized.path);
+      await _initialize(optimizedFile.path);
     } catch (error) {
+      debugPrint('Automatic video optimization failed: $error');
       if (mounted) {
         setState(() {
-          _error = 'ভিডিওটি এই ফোনে চালানো যাচ্ছে না। আবার চেষ্টা করুন।';
+          _error = 'ভিডিও স্বয়ংক্রিয়ভাবে অপটিমাইজ করা যায়নি। আবার চেষ্টা করুন।';
         });
       }
     } finally {
@@ -7574,7 +7612,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 14),
               FilledButton.icon(
-                onPressed: _isOptimizing ? null : _tryOptimizeAndPlay,
+                onPressed: _isOptimizing ? null : () => _tryOptimizeAndPlay(force: true),
                 icon: _isOptimizing
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.auto_fix_high_rounded),
