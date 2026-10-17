@@ -66,12 +66,12 @@ Future<void> orbitFirebaseMessagingBackgroundHandler(RemoteMessage message) asyn
     await Firebase.initializeApp();
     final prefs = await SharedPreferences.getInstance();
     final hideDetails = prefs.getBool('hideNotificationDetails') ?? false;
-    const plugin = FlutterLocalNotificationsPlugin();
+    final plugin = FlutterLocalNotificationsPlugin();
     const initSettings = InitializationSettings(
       android: AndroidInitializationSettings('@drawable/ic_stat_orbit'),
     );
     await plugin.initialize(initSettings);
-    const channel = AndroidNotificationChannel(
+    final channel = AndroidNotificationChannel(
       orbitNotificationChannelId,
       'Orbit Two messages',
       description: 'Messages and updates from your partner',
