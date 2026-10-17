@@ -12,7 +12,10 @@ class MediaDownloadService : Service() {
     companion object {
         private const val CHANNEL_ID = "couple_zone_media_downloads"
         private const val NOTIFICATION_ID = 7204
+        private const val EXTRA_FILE_NAME = "download_file_name"
     }
+
+    private var currentFileName: String = "মিডিয়া"
 
     override fun onCreate() {
         super.onCreate()
@@ -21,6 +24,11 @@ class MediaDownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        currentFileName = intent?.getStringExtra(EXTRA_FILE_NAME)
+            ?.substringAfterLast('/')
+            ?.take(100)
+            ?.takeIf { it.isNotBlank() }
+            ?: currentFileName
         startForeground(NOTIFICATION_ID, buildNotification())
         return START_STICKY
     }
@@ -52,8 +60,8 @@ class MediaDownloadService : Service() {
 
         return builder
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Orbit Two")
-            .setContentText("ছবি, ভিডিও বা ভয়েস ডাউনলোড হচ্ছে…")
+            .setContentTitle(currentFileName)
+            .setContentText("ডাউনলোড হচ্ছে…")
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
