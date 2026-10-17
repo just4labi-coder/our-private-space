@@ -65,6 +65,7 @@ Future<void> orbitFirebaseMessagingBackgroundHandler(RemoteMessage message) asyn
   try {
     await Firebase.initializeApp();
     final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('notificationsEnabled') == false) return;
     final hideDetails = prefs.getBool('hideNotificationDetails') ?? false;
     final plugin = FlutterLocalNotificationsPlugin();
     const initSettings = InitializationSettings(
@@ -256,11 +257,21 @@ class NotificationPrivacySettings {
   NotificationPrivacySettings._();
 
   static const String _key = 'hideNotificationDetails';
+  static const String _notificationsKey = 'notificationsEnabled';
   static final ValueNotifier<bool> hideDetails = ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> notificationsEnabled = ValueNotifier<bool>(true);
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     hideDetails.value = prefs.getBool(_key) ?? false;
+    notificationsEnabled.value = prefs.getBool(_notificationsKey) ?? true;
+  }
+
+  static Future<void> setNotificationsEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_notificationsKey, value);
+    notificationsEnabled.value = value;
+    await PushNotificationService.setNotificationsEnabled(value);
   }
 
   static Future<void> setHideDetails(bool value) async {
@@ -277,6 +288,7 @@ class NotificationPrivacySettings {
     required String privateBody,
     int id = 7001,
   }) async {
+    if (!notificationsEnabled.value) return;
     final hidden = hideDetails.value;
     final title = hidden ? privateTitle : detailedTitle;
     final body = hidden ? privateBody : detailedBody;
@@ -3935,12 +3947,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _showMessageOptions(int index) async {
-    if (index < 0 || index >= messages.length) return;
-
-    final message = Map<String, dynamic>.from(messages[index]);
+  Future<void> _showMessageOptions(Map<String, dynamic> sourceMessage) async {
+    final message = Map<String, dynamic>.from(sourceMessage);
     final messageId = '${message['id'] ?? ''}';
-    final mine = _isMine(message);
+    final senderUid = '${message['senderUid'] ?? ''}';
+    final mine = _isMine(message) ||
+        message['mine'] == true ||
+        (_currentUid.isNotEmpty && senderUid == _currentUid);
     final unsent = message['unsent'] == true;
 
     await showModalBottomSheet<void>(
@@ -5218,7 +5231,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               }
             });
           },
-          onLongPress: () => _showMessageOptions(index),
+          onLongPress: () => _showMessageOptions(message),
           onDoubleTap: () => unawaited(
             _setMessageReaction(messageId, '❤️'),
           ),
@@ -5275,11 +5288,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     clipBehavior: Clip.none,
                     children: [
                       row,
-                      if (expanded && message['unsent'] != true)
+                      if (message['unsent'] != true)
                         Positioned(
-                          top: -10,
-                          right: mine ? 0 : null,
-                          left: mine ? null : 0,
+                          bottom: -8,
+                          left: mine ? 0 : null,
+                          right: mine ? null : 0,
                           child: Material(
                             color: surfaceColor,
                             shape: const CircleBorder(),
@@ -5549,7 +5562,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       parent: AlwaysScrollableScrollPhysics(),
                     ),
                     // বেশি অফস্ক্রিন ভিডিও/থাম্বনেইল একসঙ্গে তৈরি হলে scroll frame drop হয়।
-                    cacheExtent: 280,
+                    cacheExtent: 80,
+                    addAutomaticKeepAlives: false,
+                    addRepaintBoundaries: true,
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -8326,28 +8341,29 @@ class _SettingsPageState extends State<SettingsPage> {
         const SectionHeading(title: 'Notifications'),
         const SizedBox(height: 10),
         ValueListenableBuilder<bool>(
-          valueListenable: NotificationPrivacySettings.hideDetails,
-          builder: (context, hideDetails, _) {
+          valueListenable: NotificationPrivacySettings.notificationsEnabled,
+          builder: (context, notificationsEnabled, _) {
+            final hideNotifications = !notificationsEnabled;
             return Card(
               color: surfaceColor,
               child: SwitchListTile(
                 secondary: Icon(
-                  hideDetails
+                  hideNotifications
                       ? Icons.notifications_off_outlined
                       : Icons.notifications_active_outlined,
                   color: pinkColor,
                 ),
                 title: const Text('Hide Notification'),
                 subtitle: Text(
-                  hideDetails
-                      ? 'বন্ধ: “Check message” / “Check change” দেখাবে।'
-                      : 'চালু: পার্টনারের নাম, মেসেজ ও পরিবর্তনের বিবরণ দেখাবে।',
+                  hideNotifications
+                      ? 'চালু: সব মেসেজ নোটিফিকেশন বন্ধ থাকবে।'
+                      : 'বন্ধ: মেসেজ এলে নোটিফিকেশন ও ভাইব্রেশন আসবে।',
                 ),
-                value: !hideDetails,
+                value: hideNotifications,
                 activeColor: pinkColor,
-                onChanged: (value) async {
+                onChanged: (hide) async {
                   try {
-                    await NotificationPrivacySettings.setHideDetails(!value);
+                    await NotificationPrivacySettings.setNotificationsEnabled(!hide);
                   } catch (error) {
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
