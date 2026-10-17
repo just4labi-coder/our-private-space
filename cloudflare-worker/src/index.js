@@ -207,8 +207,13 @@ async function sendFcm(accessToken, token, title, body, details) {
           android: {
             priority: "HIGH",
             notification: {
-              channel_id: "partner_updates",
+              channel_id: "orbit_partner_updates_v2",
               sound: "default",
+              icon: "ic_stat_orbit",
+              color: "#FF2E93",
+              default_sound: true,
+              default_vibrate_timings: true,
+              notification_priority: "PRIORITY_MAX",
               visibility: "PRIVATE",
             },
           },
