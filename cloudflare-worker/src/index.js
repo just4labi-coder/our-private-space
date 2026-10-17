@@ -221,7 +221,14 @@ async function sendFcm(accessToken, token, title, body, details) {
       }),
     },
   );
-  return response.ok;
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const code = result?.error?.status || result?.error?.code || response.status;
+    const message = cleanText(result?.error?.message, 240) || "FCM rejected the push.";
+    console.error("FCM send failed:", code, message);
+    return { ok: false, code: String(code), message };
+  }
+  return { ok: true };
 }
 
 export default {
@@ -244,6 +251,8 @@ export default {
       return json({
         ok: true,
         service: "Orbit Two notifications",
+        workerVersion: "2026-10-17-push-diagnostics-v1",
+        firebaseProjectId: FIREBASE_PROJECT_ID,
         firebaseApiKeyConfigured: Boolean(env.FIREBASE_WEB_API_KEY),
         serviceAccountConfigured,
       });
@@ -332,14 +341,19 @@ export default {
         // Respect the per-device Hide Notification switch even while the app is closed.
         if (tokenDoc.data.notificationsEnabled === false) continue;
         const hidden = tokenDoc.data.hideNotificationDetails === true;
-        const sent = await sendFcm(
+        const result = await sendFcm(
           accessToken,
           token,
           hidden ? "Check message" : senderName,
           hidden ? "You have a new message." : preview,
           { title: senderName, body: preview },
         );
-        if (sent) pushCount++;
+        if (result.ok) {
+          pushCount++;
+        } else {
+          // Do not log the FCM token itself; it is a private device credential.
+          console.warn("Push was not delivered to a registered device:", result.code);
+        }
       }
 
       if (pushCount === 0) {
