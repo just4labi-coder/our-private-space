@@ -2984,7 +2984,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final picker = ImagePicker();
     final picked = video
         ? await picker.pickVideo(source: source)
-        : await picker.pickImage(source: source);
+        : await picker.pickImage(source: source, imageQuality: 88, maxWidth: 2560, maxHeight: 2560);
 
     if (picked == null || !mounted) return;
 
@@ -3831,17 +3831,36 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return SafeArea(
           child: Wrap(
             children: [
-              ListTile(
-                enabled: !unsent,
-                leading: const Icon(Icons.add_reaction_outlined, color: pinkColor),
-                title: const Text('React to message'),
-                onTap: unsent
-                    ? null
-                    : () {
-                        Navigator.pop(sheetContext);
-                        _showReactionPicker(message);
-                      },
-              ),
+              if (!unsent)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.spaceBetween,
+                    children: [
+                      ..._quickReactionEmojis.map((emoji) => InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          unawaited(_setMessageReaction(messageId, emoji));
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Text(emoji, style: const TextStyle(fontSize: 27)),
+                        ),
+                      )),
+                      IconButton(
+                        tooltip: 'সব ইমোজি',
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          _showReactionPicker(message);
+                        },
+                        icon: const Icon(Icons.add_circle_outline_rounded, color: pinkColor),
+                      ),
+                    ],
+                  ),
+                ),
               ListTile(
                 enabled: !unsent,
                 leading: Icon(
@@ -4730,9 +4749,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return foundEmoji;
   }
 
+  static const Map<String, List<String>> _reactionEmojiCategories = {
+    'ইতিহাস': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'],
+    'মুখ': ['😀', '😃', '😄', '😁', '😆', '🥹', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😜', '🤪', '🤗', '🤭', '🫢', '🤫', '🤔', '🫡', '😎', '🥳', '😭', '😢', '😤', '😡', '😱', '😮', '😴', '🤒', '🥺'],
+    'হাত': ['👍', '👎', '👏', '🙌', '🫶', '🤝', '🙏', '🤲', '💪', '✌️', '🤞', '🤟', '🤘', '👌', '🫰', '👋', '🤚', '✋', '🖐️', '☝️', '👇', '👆'],
+    'ফুল': ['🌹', '🌷', '🌸', '🌺', '🌻', '🌼', '💐', '🪷', '🪻', '🌱', '🌿', '🍀', '☘️', '🌵', '🌴', '🌳', '🌲', '🍁', '🍂', '🍃'],
+    'খাবার': ['🍎', '🍓', '🍒', '🍉', '🍇', '🍑', '🥭', '🍍', '🥥', '🥝', '🍌', '🍋', '🍊', '🥑', '🍕', '🍔', '🍟', '🌭', '🍿', '🍩', '🍪', '🎂', '🍰', '🧁', '🍫', '🍭', '☕', '🧋'],
+    'প্রকৃতি': ['🔥', '✨', '⭐', '🌟', '💫', '⚡', '☀️', '🌈', '☁️', '🌧️', '❄️', '🌙', '🌍', '🌊', '💧', '🎉', '🎊', '💯', '🏆', '🎁'],
+  };
+
   static const List<String> _quickReactionEmojis = [
-    '❤️', '😂', '🥹', '😍', '😮', '😢',
-    '🔥', '👍', '🙏', '🎉', '💯', '🫶',
+    '❤️', '😂', '🥹', '😍', '😮', '😢', '🔥', '👍', '🙏', '🎉', '💯', '🫶',
   ];
 
   Future<void> _setMessageReaction(
@@ -4759,7 +4786,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final messageId = '${message['id'] ?? ''}'.trim();
     if (messageId.isEmpty) return;
 
-    final controller = TextEditingController();
+    final categories = _reactionEmojiCategories.keys.toList();
+    var selectedCategory = categories.first;
     final selectedEmoji = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -4769,70 +4797,67 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ),
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) {
-          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          final emojis = _reactionEmojiCategories[selectedCategory]!;
           return SafeArea(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 18, 16, 16 + bottomInset),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'React to message',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: _quickReactionEmojis.map((emoji) {
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () => Navigator.pop(sheetContext, emoji),
-                        child: Padding(
-                          padding: const EdgeInsets.all(7),
-                          child: Text(emoji, style: const TextStyle(fontSize: 28)),
+              padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(context).height * 0.48,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Center(
+                      child: Text(
+                        'ইমোজি দিয়ে রিঅ্যাক্ট করো',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: categories.map((category) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              label: Text(category),
+                              selected: selectedCategory == category,
+                              onSelected: (_) => setSheetState(() => selectedCategory = category),
+                              selectedColor: pinkColor.withValues(alpha: 0.28),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: GridView.builder(
+                        itemCount: emojis.length,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 7,
+                          mainAxisSpacing: 2,
+                          crossAxisSpacing: 2,
                         ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: controller,
-                    maxLength: 16,
-                    textInputAction: TextInputAction.done,
-                    onChanged: (_) => setSheetState(() {}),
-                    onSubmitted: (value) {
-                      final emoji = value.trim();
-                      if (emoji.isNotEmpty) Navigator.pop(sheetContext, emoji);
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'যেকোনো ইমোজি',
-                      hintText: 'ফোনের ইমোজি কিবোর্ড ব্যবহার করো',
-                      prefixIcon: Icon(Icons.emoji_emotions_outlined),
+                        itemBuilder: (context, index) {
+                          final emoji = emojis[index];
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => Navigator.pop(sheetContext, emoji),
+                            child: Center(
+                              child: Text(emoji, style: const TextStyle(fontSize: 27)),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: controller.text.trim().isEmpty
-                          ? null
-                          : () => Navigator.pop(
-                                sheetContext,
-                                controller.text.trim(),
-                              ),
-                      child: const Text('React'),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
         },
       ),
     );
-    controller.dispose();
 
     if (selectedEmoji != null) {
       await _setMessageReaction(messageId, selectedEmoji);
@@ -4946,10 +4971,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
                     ),
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(18),
-                      topRight: const Radius.circular(18),
-                      bottomLeft: Radius.circular(mine ? 18 : 5),
-                      bottomRight: Radius.circular(mine ? 5 : 18),
+                      topLeft: Radius.circular(index > 0 &&
+                              '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
+                          ? (mine ? 7 : 7) : 18),
+                      topRight: Radius.circular(index > 0 &&
+                              '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
+                          ? 7 : 18),
+                      bottomLeft: Radius.circular(index + 1 < messages.length &&
+                              '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
+                          ? 7 : (mine ? 18 : 5)),
+                      bottomRight: Radius.circular(index + 1 < messages.length &&
+                              '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
+                          ? 7 : (mine ? 5 : 18)),
                     ),
                   ),
                   child: Column(
@@ -4962,6 +4995,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ),
                 ),
               _buildReactionSummary(message, mine),
+              if (expanded && message['unsent'] != true)
+                Align(
+                  alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => _showReactionPicker(message),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: const Icon(Icons.add_reaction_outlined, size: 16, color: Colors.white70),
+                      ),
+                    ),
+                  ),
+                ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
@@ -5367,8 +5420,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     physics: const ClampingScrollPhysics(
                       parent: AlwaysScrollableScrollPhysics(),
                     ),
-                    // মিডিয়া-সমৃদ্ধ চ্যাটে অফস্ক্রিন row আগে প্রস্তুত রাখে।
-                    cacheExtent: 800,
+                    // বেশি অফস্ক্রিন ভিডিও/থাম্বনেইল একসঙ্গে তৈরি হলে scroll frame drop হয়।
+                    cacheExtent: 280,
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -5860,7 +5913,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
     final picked = video
         ? await picker.pickVideo(source: ImageSource.gallery)
-        : await picker.pickImage(source: ImageSource.gallery);
+        : await picker.pickImage(source: ImageSource.gallery, imageQuality: 88, maxWidth: 2560, maxHeight: 2560);
 
     if (picked == null) return null;
     if (!mounted) return null;
