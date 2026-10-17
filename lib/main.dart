@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:video_player/video_player.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'screens/partner_connection_page.dart';
 import 'services/space_sync_service.dart';
@@ -32,6 +33,25 @@ import 'services/push_notification_service.dart';
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
 const Color blueColor = Color(0xFF172554);
+Future<File> _makeCompatibleVideo(File source) async {
+  if (!await source.exists() || await source.length() <= 0) {
+    throw Exception('ভিডিও ফাইলটি পাওয়া যায়নি।');
+  }
+
+  // MP4/H.264 720p output is broadly supported on Android devices.
+  final result = await VideoCompress.compressVideo(
+    source.path,
+    quality: VideoQuality.Res1280x720Quality,
+    deleteOrigin: false,
+    includeAudio: true,
+  );
+  final output = result?.file;
+  if (output == null || !await output.exists() || await output.length() <= 0) {
+    throw Exception('ভিডিও অপটিমাইজ করা যায়নি।');
+  }
+  return output;
+}
+
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
 
@@ -2988,8 +3008,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     if (picked == null || !mounted) return;
 
-    final file = File(picked.path);
-    final fileName = file.uri.pathSegments.isNotEmpty
+    File file = File(picked.path);
+    String fileName = file.uri.pathSegments.isNotEmpty
         ? file.uri.pathSegments.last
         : 'chat_media';
 
@@ -3011,8 +3031,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     try {
       if (video) {
         try {
+          file = await _makeCompatibleVideo(file);
+          fileName = file.uri.pathSegments.isNotEmpty
+              ? file.uri.pathSegments.last
+              : 'orbit_video.mp4';
+        } catch (error) {
+          debugPrint('Video compatibility optimization failed: $error');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('ভিডিও অপটিমাইজ করা যায়নি; অন্য ভিডিও দিয়ে চেষ্টা করুন।')),
+            );
+          }
+          return;
+        }
+        try {
           final thumbnailBytes = await VideoThumbnail.thumbnailData(
-            video: picked.path,
+            video: file.path,
             imageFormat: ImageFormat.JPEG,
             maxHeight: 240,
             quality: 45,
@@ -3061,7 +3095,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       final message = <String, dynamic>{
         'id': messageId,
         'senderUid': user.uid,
-        'text': picked.path,
+        'text': file.path,
         'type': video ? 'video' : 'image',
         'fileId': fileId,
         'driveFileId': fileId,
@@ -4750,7 +4784,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   static const Map<String, List<String>> _reactionEmojiCategories = {
-    'ইতিহাস': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'],
+    'হৃদয়': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'],
     'মুখ': ['😀', '😃', '😄', '😁', '😆', '🥹', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😜', '🤪', '🤗', '🤭', '🫢', '🤫', '🤔', '🫡', '😎', '🥳', '😭', '😢', '😤', '😡', '😱', '😮', '😴', '🤒', '🥺'],
     'হাত': ['👍', '👎', '👏', '🙌', '🫶', '🤝', '🙏', '🤲', '💪', '✌️', '🤞', '🤟', '🤘', '👌', '🫰', '👋', '🤚', '✋', '🖐️', '☝️', '👇', '👆'],
     'ফুল': ['🌹', '🌷', '🌸', '🌺', '🌻', '🌼', '💐', '🪷', '🪻', '🌱', '🌿', '🍀', '☘️', '🌵', '🌴', '🌳', '🌲', '🍁', '🍂', '🍃'],
@@ -5918,6 +5952,20 @@ class _GalleryPageState extends State<GalleryPage> {
     if (picked == null) return null;
     if (!mounted) return null;
 
+    File uploadFile = File(picked.path);
+    if (video) {
+      try {
+        uploadFile = await _makeCompatibleVideo(uploadFile);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ভিডিও অপটিমাইজ করা যায়নি; অন্য ভিডিও দিয়ে চেষ্টা করুন।')),
+          );
+        }
+        return null;
+      }
+    }
+
     final itemId = DateTime.now().microsecondsSinceEpoch.toString();
     final uploadCreatedAt = DateTime.now().toIso8601String();
     final creatorUid =
@@ -5928,7 +5976,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
     try {
       uploaded = await SpaceSyncService.uploadSharedMedia(
-        File(picked.path),
+        uploadFile,
         metadata: {
           'purpose': 'gallery',
           'itemId': itemId,
@@ -5937,7 +5985,7 @@ class _GalleryPageState extends State<GalleryPage> {
           'createdByUid': creatorUid,
           'createdByName': creatorName,
           'createdAt': uploadCreatedAt,
-          'fileName': picked.name,
+          'fileName': uploadFile.uri.pathSegments.last,
         },
       );
     } catch (e) {
@@ -5951,7 +5999,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
     // Upload সফল হলে picker-এর অস্থায়ী path-এর ওপর নির্ভর না করে
     // একই ফাইলকে স্থায়ী media cache-এ রাখো।
-    var galleryLocalPath = picked.path;
+    var galleryLocalPath = uploadFile.path;
     try {
       final fileId = (
         uploaded['fileId'] ??
@@ -5959,7 +6007,7 @@ class _GalleryPageState extends State<GalleryPage> {
         ''
       ).toString().trim();
 
-      final sourceFile = File(picked.path);
+      final sourceFile = uploadFile;
 
       if (fileId.isNotEmpty &&
           await sourceFile.exists() &&
@@ -5975,9 +6023,10 @@ class _GalleryPageState extends State<GalleryPage> {
           RegExp(r'[^A-Za-z0-9_-]'),
           '_',
         );
-        final dot = picked.name.lastIndexOf('.');
-        final extension = dot > 0 && picked.name.length - dot <= 10
-            ? picked.name.substring(dot).toLowerCase()
+        final uploadName = uploadFile.uri.pathSegments.last;
+        final dot = uploadName.lastIndexOf('.');
+        final extension = dot > 0 && uploadName.length - dot <= 10
+            ? uploadName.substring(dot).toLowerCase()
             : '';
 
         final cachedFile = File(
