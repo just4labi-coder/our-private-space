@@ -164,7 +164,7 @@ Future<void> main() async {
 
   try {
     const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@drawable/ic_stat_orbit');
     const initializationSettings = InitializationSettings(
       android: androidSettings,
     );
@@ -173,7 +173,7 @@ Future<void> main() async {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await androidNotifications?.createNotificationChannel(
-      const AndroidNotificationChannel(
+      AndroidNotificationChannel(
         'orbit_partner_updates_v2',
         'Orbit Two messages',
         description: 'Messages and updates from your partner',
@@ -287,13 +287,19 @@ class NotificationPrivacySettings {
       body,
       NotificationDetails(
         android: AndroidNotificationDetails(
-          'partner_updates',
-          'Partner updates',
+          orbitNotificationChannelId,
+          'Orbit Two messages',
           channelDescription: 'Messages and updates from your partner',
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
           playSound: true,
           enableVibration: true,
+          vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
+          enableLights: true,
+          ledColor: pinkColor,
+          ledOnMs: 1000,
+          ledOffMs: 500,
+          color: pinkColor,
           category: AndroidNotificationCategory.message,
           visibility: hidden
               ? NotificationVisibility.private
