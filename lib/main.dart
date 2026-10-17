@@ -962,7 +962,7 @@ class _AnimatedOrbitTitleState extends State<AnimatedOrbitTitle>
 // BACKGROUND
 // ============================================================
 
-class GlowBackground extends StatefulWidget {
+class GlowBackground extends StatelessWidget {
   final Widget child;
 
   const GlowBackground({
@@ -970,43 +970,22 @@ class GlowBackground extends StatefulWidget {
     required this.child,
   });
 
-  @override
-  State<GlowBackground> createState() => _GlowBackgroundState();
-}
-
-class _GlowBackgroundState extends State<GlowBackground>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 18),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
   Widget _glow(double size, Color color) {
     return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color,
-              color.withValues(alpha: 0.55),
-              color.withValues(alpha: 0),
-            ],
-            stops: const [0.0, 0.38, 1.0],
+      child: RepaintBoundary(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [
+                color,
+                color.withValues(alpha: 0.55),
+                color.withValues(alpha: 0),
+              ],
+              stops: const [0.0, 0.38, 1.0],
+            ),
           ),
         ),
       ),
@@ -1015,6 +994,9 @@ class _GlowBackgroundState extends State<GlowBackground>
 
   @override
   Widget build(BuildContext context) {
+    // Keep the decorative background completely static. The old repeating
+    // animation continuously moved four large gradients while media and chat
+    // rows were being laid out, wasting frames on mid-range phones.
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -1028,55 +1010,45 @@ class _GlowBackgroundState extends State<GlowBackground>
           ],
         ),
       ),
-      child: AnimatedBuilder(
-        animation: _controller,
-        // Keep the page subtree out of the animated glow rebuild.
-        child: RepaintBoundary(child: SafeArea(child: widget.child)),
-        builder: (context, child) {
-          final phase = _controller.value * 2 * pi;
-          final waveA = sin(phase);
-          final waveB = cos(phase);
-          final waveC = sin(phase + 1.7);
-
-          return Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned(
-                top: -125 + (waveA * 42),
-                left: -115 + (waveB * 48),
-                child: _glow(
-                  340,
-                  const Color(0xFF8B1D62).withValues(alpha: 0.34),
-                ),
-              ),
-              Positioned(
-                bottom: -145 + (waveB * 45),
-                right: -120 + (waveC * 55),
-                child: _glow(
-                  370,
-                  const Color(0xFF6826A8).withValues(alpha: 0.34),
-                ),
-              ),
-              Positioned(
-                top: 210 + (waveC * 95),
-                right: -165 + (waveA * 55),
-                child: _glow(
-                  310,
-                  const Color(0xFFB51E72).withValues(alpha: 0.22),
-                ),
-              ),
-              Positioned(
-                bottom: 70 + (waveA * 75),
-                left: -175 + (waveC * 65),
-                child: _glow(
-                  300,
-                  const Color(0xFF5424B8).withValues(alpha: 0.24),
-                ),
-              ),
-              if (child != null) child,
-            ],
-          );
-        },
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned(
+            top: -125,
+            left: -115,
+            child: _glow(
+              340,
+              const Color(0xFF8B1D62).withValues(alpha: 0.34),
+            ),
+          ),
+          Positioned(
+            bottom: -145,
+            right: -120,
+            child: _glow(
+              370,
+              const Color(0xFF6826A8).withValues(alpha: 0.34),
+            ),
+          ),
+          Positioned(
+            top: 210,
+            right: -165,
+            child: _glow(
+              310,
+              const Color(0xFFB51E72).withValues(alpha: 0.22),
+            ),
+          ),
+          Positioned(
+            bottom: 70,
+            left: -175,
+            child: _glow(
+              300,
+              const Color(0xFF5424B8).withValues(alpha: 0.24),
+            ),
+          ),
+          SafeArea(
+            child: RepaintBoundary(child: child),
+          ),
+        ],
       ),
     );
   }
