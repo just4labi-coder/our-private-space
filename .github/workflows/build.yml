@@ -73,6 +73,20 @@ jobs:
           test -s assets/branding/orbit_two_logo.jpg
           file assets/branding/orbit_two_logo.jpg
 
+      - name: Prepare native splash logo from the actual Orbit Two artwork
+        if: ${{ steps.logo_conversion.outputs.valid == 'true' }}
+        run: |
+          mkdir -p android/app/src/main/res/drawable-nodpi
+          python - <<'PY'
+          from PIL import Image
+          source = "assets/branding/orbit_two_logo.jpg"
+          target = "android/app/src/main/res/drawable-nodpi/orbit_logo.png"
+          with Image.open(source) as image:
+              image.load()
+              image.convert("RGBA").resize((360, 360), Image.Resampling.LANCZOS).save(target, "PNG")
+          print("Prepared the actual Orbit Two logo for the native splash screen.")
+          PY
+
       - name: Convert launcher logo to PNG (non-blocking)
         id: logo_conversion
         continue-on-error: true
