@@ -3098,7 +3098,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           }
         });
       }
-      _scrollToBottom();
+      // The Firestore message listener scrolls when the new tail message arrives.
+      // Do not start a second scroll animation here: competing animations make
+      // long text and emoji messages visibly jump/shake.
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
