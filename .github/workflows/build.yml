@@ -74,68 +74,46 @@ jobs:
           test -s assets/branding/orbit_two_logo.jpg
           file assets/branding/orbit_two_logo.jpg
 
-      - name: Convert launcher logo to PNG (non-blocking)
+      - name: Convert and verify launcher logo
         id: logo_conversion
-        continue-on-error: true
         shell: bash
         run: |
           python -m pip install --quiet Pillow
-          if python - <<'PY'
+          python - <<'PY'
           from PIL import Image
           source = "assets/branding/orbit_two_logo.jpg"
           target = "assets/branding/orbit_two_logo_icon.png"
-          try:
-              with Image.open(source) as image:
-                  image.load()
-                  image.convert("RGBA").save(target, format="PNG")
-              print("Logo decoded and converted successfully.")
-          except Exception as error:
-              print(f"::warning::Logo image cannot be decoded: {error}")
-              raise
+          with Image.open(source) as image:
+              image.load()
+              image.convert("RGBA").save(target, format="PNG")
+          with Image.open(target) as image:
+              image.verify()
+          print("Verified Orbit Two logo; launcher generation must use this artwork.")
           PY
-          then
-            echo "valid=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Skipping launcher icon generation because the logo image is invalid. APK build will continue using the existing launcher icon."
-          fi
+          echo "valid=true" >> "$GITHUB_OUTPUT"
 
       - name: Prepare native splash logo from the actual Orbit Two artwork
         run: |
           mkdir -p android/app/src/main/res/drawable-nodpi
           python - <<'PY'
-          from PIL import Image, ImageDraw
+          from PIL import Image
           source = "assets/branding/orbit_two_logo.jpg"
           target = "android/app/src/main/res/drawable-nodpi/orbit_logo.png"
-          try:
-              with Image.open(source) as image:
-                  image.load()
-                  image.convert("RGBA").resize((360, 360), Image.Resampling.LANCZOS).save(target, "PNG")
-              print("Prepared the actual Orbit Two logo for the native splash screen.")
-          except Exception as error:
-              print(f"::warning::Using a fallback splash mark because the logo could not be decoded: {error}")
-              image = Image.new("RGBA", (360, 360), "#070513")
-              draw = ImageDraw.Draw(image)
-              draw.ellipse((74, 62, 192, 180), fill="#FF2E93")
-              draw.ellipse((168, 62, 286, 180), fill="#FF2E93")
-              draw.polygon([(74, 124), (286, 124), (180, 292)], fill="#FF2E93")
-              image.save(target, "PNG")
+          with Image.open(source) as image:
+              image.load()
+              image.convert("RGBA").resize((360, 360), Image.Resampling.LANCZOS).save(target, "PNG")
+          with Image.open(target) as image:
+              image.verify()
+          print("Verified actual Orbit Two artwork for the native splash screen.")
           PY
 
-      - name: Use safe Android launcher icon if logo conversion fails
-        if: ${{ steps.logo_conversion.outputs.valid != 'true' }}
-        run: |
-          sed -i 's#android:icon="@mipmap/ic_launcher"#android:icon="@android:drawable/sym_def_app_icon"#' android/app/src/main/AndroidManifest.xml
-
-      - name: Generate custom launcher icon when logo is valid
-        if: ${{ steps.logo_conversion.outputs.valid == 'true' }}
+      - name: Generate custom launcher icon from the verified Orbit Two logo
         run: |
           dart run flutter_launcher_icons
           sed -i 's#android:icon="@android:drawable/sym_def_app_icon"#android:icon="@mipmap/ic_launcher"#' android/app/src/main/AndroidManifest.xml
-
-      - name: Generate themed launcher icon when monochrome logo is provided
-        if: ${{ steps.logo_conversion.outputs.valid == 'true' && hashFiles('assets/branding/orbit_two_logo_monochrome.png') != '' }}
-        run: dart run flutter_launcher_icons -f flutter_launcher_icons_monochrome.yaml
+          grep -q 'android:icon="@mipmap/ic_launcher"' android/app/src/main/AndroidManifest.xml
+          test -s android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          test -s android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
       - name: Check Cloudflare Worker JavaScript syntax
         run: node --check cloudflare-worker/src/index.js
