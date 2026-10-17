@@ -7713,30 +7713,36 @@ class ChatVoicePlayer extends StatefulWidget {
 }
 
 class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
-  late final AudioPlayer _player;
+  // স্ক্রল করার সময় প্রতিটি ভয়েস বুদ্‌বুদের জন্য native audio player তৈরি কোরো না।
+  // ব্যবহারকারী Play চাপলেই player তৈরি হবে—এতে scrolling-এর চাপ কমবে।
+  AudioPlayer? _player;
   StreamSubscription<PlayerState>? _stateSubscription;
   bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
-    _player = AudioPlayer();
-    unawaited(_player.setVolume(1.0));
-    _stateSubscription = _player.onPlayerStateChanged.listen((state) {
-      if (!mounted) return;
-      setState(() => _isPlaying = state == PlayerState.playing);
-    });
   }
 
   Future<void> _togglePlayback() async {
     try {
-      if (_player.state == PlayerState.playing) {
-        await _player.pause();
-      } else if (_player.state == PlayerState.paused) {
-        await _player.resume();
+      var player = _player;
+      if (player == null) {
+        player = AudioPlayer();
+        _player = player;
+        _stateSubscription = player.onPlayerStateChanged.listen((state) {
+          if (!mounted) return;
+          setState(() => _isPlaying = state == PlayerState.playing);
+        });
+      }
+
+      if (player.state == PlayerState.playing) {
+        await player.pause();
+      } else if (player.state == PlayerState.paused) {
+        await player.resume();
       } else {
-        await _player.setVolume(1.0);
-        await _player.play(DeviceFileSource(widget.path));
+        await player.setVolume(1.0);
+        await player.play(DeviceFileSource(widget.path));
       }
     } catch (error) {
       if (mounted) {
@@ -7750,7 +7756,8 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   @override
   void dispose() {
     _stateSubscription?.cancel();
-    unawaited(_player.dispose());
+    final player = _player;
+    if (player != null) unawaited(player.dispose());
     super.dispose();
   }
 
