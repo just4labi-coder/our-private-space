@@ -12,7 +12,8 @@
     <application
         android:label="Orbit Two"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher">
 
         <service
             android:name=".MediaDownloadService"
@@ -64,7 +65,7 @@
         <!-- FCM remote notifications should use the same channel as in-app notifications. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="orbit_partner_updates_v2" />
+            android:value="orbit_partner_updates_v3" />
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
