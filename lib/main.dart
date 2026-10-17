@@ -247,10 +247,10 @@ class InteractionFeedbackSettings {
   static final ValueNotifier<bool> soundsEnabled = ValueNotifier<bool>(true);
 
   static Future<void> load() async {
-    // Chat feedback is always enabled; clear any previous saved opt-out.
+    // Vibration is always enabled; enable typing sound after upgrading old settings.
     hapticsEnabled.value = true;
-    soundsEnabled.value = true;
     final prefs = await SharedPreferences.getInstance();
+    soundsEnabled.value = true;
     await prefs.setBool(_hapticsKey, true);
     await prefs.setBool(_soundsKey, true);
   }
@@ -262,9 +262,9 @@ class InteractionFeedbackSettings {
   }
 
   static Future<void> setSoundsEnabled(bool value) async {
-    soundsEnabled.value = true;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_soundsKey, true);
+    await prefs.setBool(_soundsKey, value);
+    soundsEnabled.value = value;
   }
 
   static Future<void> vibrate() async {
@@ -276,6 +276,7 @@ class InteractionFeedbackSettings {
   }
 
   static Future<void> playTypingSound() async {
+    if (!soundsEnabled.value) return;
     try {
       await SystemSound.play(SystemSoundType.alert);
     } catch (error) {
@@ -8775,6 +8776,31 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             );
           },
+        ),
+        const SizedBox(height: 20),
+        ValueListenableBuilder<bool>(
+          valueListenable: InteractionFeedbackSettings.soundsEnabled,
+          builder: (context, enabled, _) => Card(
+            color: surfaceColor,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined, color: pinkColor),
+              title: const Text('Typing sound'),
+              subtitle: const Text('সঙ্গী টাইপ করা শুরু করলে ছোট সিস্টেম সাউন্ড'),
+              value: enabled,
+              activeColor: pinkColor,
+              onChanged: (value) async {
+                try {
+                  await InteractionFeedbackSettings.setSoundsEnabled(value);
+                  if (value) await InteractionFeedbackSettings.playTypingSound();
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Sound setting could not be saved.')),
+                  );
+                }
+              },
+            ),
+          ),
         ),
         const SizedBox(height: 20),
         const SectionHeading(title: 'Notifications'),
