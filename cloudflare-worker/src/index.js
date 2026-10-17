@@ -242,7 +242,7 @@ export default {
       return json({
         ok: true,
         service: "Orbit Two notifications",
-        workerVersion: "2026-10-17-push-diagnostics-v1",
+        workerVersion: "2026-10-17-grouped-push-v2",
         firebaseProjectId: FIREBASE_PROJECT_ID,
         firebaseApiKeyConfigured: Boolean(env.FIREBASE_WEB_API_KEY),
         serviceAccountConfigured,
