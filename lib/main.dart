@@ -253,20 +253,22 @@ class InteractionFeedbackSettings {
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    hapticsEnabled.value = prefs.getBool(_hapticsKey) ?? true;
-    soundsEnabled.value = prefs.getBool(_soundsKey) ?? true;
+    await prefs.setBool(_hapticsKey, true);
+    await prefs.setBool(_soundsKey, true);
+    hapticsEnabled.value = true;
+    soundsEnabled.value = true;
   }
 
   static Future<void> setHapticsEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hapticsKey, value);
-    hapticsEnabled.value = value;
+    await prefs.setBool(_hapticsKey, true);
+    hapticsEnabled.value = true;
   }
 
   static Future<void> setSoundsEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_soundsKey, value);
-    soundsEnabled.value = value;
+    await prefs.setBool(_soundsKey, true);
+    soundsEnabled.value = true;
   }
 
   static Future<void> vibrate() async {
