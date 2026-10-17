@@ -69,7 +69,7 @@ class SpaceSyncService {
   static const String _apiUrl =
       'https://script.google.com/macros/s/AKfycbw5JDObuu19_VQQ1ytXsA2Bav2M_szPSoiARCrc5KvNZYKm-RoDr1lwUiy14s3nsnzSoQ/exec';
 
-  static const int _maxUploadBytes = 30 * 1024 * 1024;
+  static const int _maxUploadBytes = 150 * 1024 * 1024;
   static const int _minChunkSize = 1 * 1024 * 1024;
   static const int _initialChunkSize = 4 * 1024 * 1024;
   static const int _maxChunkSize = 10 * 1024 * 1024;
@@ -443,7 +443,7 @@ class SpaceSyncService {
     }
 
     if (length > _maxUploadBytes) {
-      throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
+      throw Exception('একটি ফাইল সর্বোচ্চ ১৫০ MB হতে পারবে।');
     }
 
     final name = pending['fileName']?.toString() ??
@@ -1529,7 +1529,7 @@ class SpaceSyncService {
     }));
 
     if (bytes.length > _maxUploadBytes) {
-      throw Exception('ব্যাকআপটি ৩০ MB সীমা অতিক্রম করেছে।');
+      throw Exception('ব্যাকআপটি ১৫০ MB সীমা অতিক্রম করেছে।');
     }
 
     final tempDir = await Directory.systemTemp.createTemp(
