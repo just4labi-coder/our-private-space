@@ -89,6 +89,20 @@ class AuthService {
       password: password,
     );
 
+    final signedInUser = result.user;
+    if (signedInUser != null && !signedInUser.emailVerified) {
+      try {
+        await signedInUser.sendEmailVerification();
+      } catch (error) {
+        debugPrint('Resend verification email failed: $error');
+      }
+      await _auth.signOut();
+      throw FirebaseAuthException(
+        code: 'email-not-verified',
+        message: 'ইমেইল যাচাই করে তারপর লগইন করো।',
+      );
+    }
+
     // নিচের কাজগুলো ব্যর্থ হলেও Login সফল থাকবে।
     await _clearTrialSafely();
 
@@ -151,13 +165,28 @@ class AuthService {
 
       // স্থানীয়ভাবে নাম সংরক্ষণের চেষ্টা।
       await _cacheDisplayName(cleanedName);
+
+      // নতুন অ্যাকাউন্টে ইমেইল যাচাই বাধ্যতামূলক।
+      try {
+        await user.sendEmailVerification();
+      } catch (error) {
+        debugPrint('Verification email send failed: $error');
+        await _auth.signOut();
+        await _clearTrialSafely();
+        throw FirebaseAuthException(
+          code: 'verification-email-failed',
+          message: 'যাচাইয়ের ইমেইল পাঠানো যায়নি। পরে আবার চেষ্টা করো।',
+        );
+      }
     }
 
+    await _auth.signOut();
     await _clearTrialSafely();
 
-    // Firestore-এ সমস্যা হলেও AuthScreen সফল Login-এর
-    // পরবর্তী ধাপে যেতে পারবে।
-    return result;
+    throw FirebaseAuthException(
+      code: 'email-not-verified',
+      message: 'ইমেইলে পাঠানো লিংক খুলে অ্যাকাউন্ট যাচাই করো। তারপর লগইন করো।',
+    );
   }
 
   static Future<void> resetPassword(String email) async {
@@ -257,6 +286,12 @@ class AuthService {
 
         case 'invalid-display-name':
           return 'নাম লিখতে হবে।';
+
+        case 'email-not-verified':
+          return 'ইমেইলের ইনবক্স খুলে যাচাইয়ের লিংকে চাপ দাও। তারপর আবার লগইন করো।';
+
+        case 'verification-email-failed':
+          return 'যাচাইয়ের ইমেইল পাঠানো যায়নি। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো.';
       }
     }
 
