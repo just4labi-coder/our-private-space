@@ -8767,52 +8767,22 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 20),
         const SectionHeading(title: 'Chat feedback'),
         const SizedBox(height: 10),
-        ValueListenableBuilder<bool>(
-          valueListenable: InteractionFeedbackSettings.hapticsEnabled,
-          builder: (context, enabled, _) => Card(
-            color: surfaceColor,
-            child: SwitchListTile(
-              secondary: const Icon(Icons.vibration_rounded, color: pinkColor),
-              title: const Text('Chat vibration'),
-              subtitle: const Text('ভয়েস চালু ও রিপ্লাই স্লাইড করলে হালকা ভাইব্রেশন'),
-              value: enabled,
-              activeColor: pinkColor,
-              onChanged: (value) async {
-                try {
-                  await InteractionFeedbackSettings.setHapticsEnabled(value);
-                  if (value) await InteractionFeedbackSettings.vibrate();
-                } catch (error) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Vibration setting could not be saved.')),
-                  );
-                }
-              },
-            ),
+        const Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: Icon(Icons.vibration_rounded, color: pinkColor),
+            title: Text('Chat vibration'),
+            subtitle: Text('চালু আছে — ভয়েস ও রিপ্লাই স্লাইডে হালকা ভাইব্রেশন'),
+            trailing: Icon(Icons.check_circle, color: pinkColor),
           ),
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: InteractionFeedbackSettings.soundsEnabled,
-          builder: (context, enabled, _) => Card(
-            color: surfaceColor,
-            child: SwitchListTile(
-              secondary: const Icon(Icons.volume_up_outlined, color: pinkColor),
-              title: const Text('Typing sound'),
-              subtitle: const Text('সঙ্গী টাইপ করা শুরু করলে ছোট সিস্টেম সাউন্ড'),
-              value: enabled,
-              activeColor: pinkColor,
-              onChanged: (value) async {
-                try {
-                  await InteractionFeedbackSettings.setSoundsEnabled(value);
-                  if (value) await InteractionFeedbackSettings.playTypingSound();
-                } catch (error) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Sound setting could not be saved.')),
-                  );
-                }
-              },
-            ),
+        const Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: Icon(Icons.volume_up_outlined, color: pinkColor),
+            title: Text('Typing and Seen sound'),
+            subtitle: Text('চালু আছে — সাউন্ড বন্ধ করা যাবে না'),
+            trailing: Icon(Icons.check_circle, color: pinkColor),
           ),
         ),
         const SizedBox(height: 20),
