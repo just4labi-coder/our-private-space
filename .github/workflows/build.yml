@@ -170,8 +170,11 @@ jobs:
           # Remove the long white scan-line artifact around the centre of the
           # source. Search only the central band so the real lower logo stroke
           # is not mistaken for the unwanted line.
-          row_scores = []
-          for y in range(int(size * 0.38), int(size * 0.62)):
+          # Remove the unwanted neutral-white scan line and lower white bar.
+          # The real Orbit artwork uses warm peach tones, so restrict removal to
+          # long, near-white horizontal runs and leave the artwork untouched.
+          artifact_rows = []
+          for y in range(int(size * 0.28), int(size * 0.90)):
               run = 0
               longest = 0
               for x in range(size):
@@ -181,18 +184,18 @@ jobs:
                       longest = max(longest, run)
                   else:
                       run = 0
-              row_scores.append((longest, y))
-          longest, line_y = max(row_scores, default=(0, 0))
-          if longest >= int(size * 0.18):
+              if longest >= int(size * 0.18):
+                  artifact_rows.append(y)
+
+          for line_y in artifact_rows:
               for y in range(max(0, line_y - 1), min(size, line_y + 2)):
                   for x in range(size):
                       r, g, b, a = pixels[x, y]
                       if a > 0 and min(r, g, b) >= 226 and max(r, g, b) - min(r, g, b) <= 24:
                           pixels[x, y] = (r, g, b, 0)
 
-          # Make the legacy launcher icon a proper blue app badge with the
-          # original Orbit artwork centered on it; no generated letter or black tile.
-          icon = Image.new("RGBA", (size, size), (24, 119, 242, 255))
+          # Both launcher layers are transparent. Never paint a blue, black,
+          # or white tile behind the original Orbit artwork.
           foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
           safe_size = 330
           safe_artwork = artwork.resize(
@@ -201,9 +204,12 @@ jobs:
           )
           offset = (size - safe_size) // 2
           foreground.alpha_composite(safe_artwork, (offset, offset))
-          icon.alpha_composite(foreground)
+          icon = foreground.copy()
           icon.save(out / "orbit_two_logo_icon.png", format="PNG")
           foreground.save(out / "orbit_two_logo_foreground.png", format="PNG")
+          Image.new("RGBA", (size, size), (0, 0, 0, 0)).save(
+              out / "orbit_two_logo_background.png", format="PNG"
+          )
 
           # Android themed icons use the same centered artwork's alpha mask.
           monochrome = Image.new("RGBA", (size, size), (255, 255, 255, 0))
@@ -214,6 +220,7 @@ jobs:
           for path in (
               out / "orbit_two_logo_icon.png",
               out / "orbit_two_logo_foreground.png",
+              out / "orbit_two_logo_background.png",
               out / "orbit_two_logo_monochrome.png",
           ):
               with Image.open(path) as image:
