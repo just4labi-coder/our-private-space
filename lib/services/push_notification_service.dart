@@ -18,23 +18,28 @@ class PushNotificationService {
   static bool _notificationsEnabled = true;
   static const String _privacyKey = 'hideNotificationDetails';
   static const String _notificationsKey = 'notificationsEnabled';
+  static const String _permissionAskedKey = 'notificationPermissionAsked';
 
   static Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
     _hideDetails = prefs.getBool(_privacyKey) ?? false;
     _notificationsEnabled = prefs.getBool(_notificationsKey) ?? true;
 
-    // Notification permission can be denied or temporarily unavailable.
-    // Do not let that prevent the app from opening or Firebase Auth from working.
-    try {
-      await _messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false,
-      );
-    } catch (error) {
-      debugPrint('Notification permission request failed: $error');
+    // Ask on the first run only. The system may not show another prompt after
+    // denial; users can re-enable permission in Android App info settings.
+    final permissionAsked = prefs.getBool(_permissionAskedKey) ?? false;
+    if (!permissionAsked) {
+      try {
+        await _messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+          provisional: false,
+        );
+        await prefs.setBool(_permissionAskedKey, true);
+      } catch (error) {
+        debugPrint('Notification permission request failed: $error');
+      }
     }
 
     _authSubscription ??= FirebaseAuth.instance.authStateChanges().listen(
