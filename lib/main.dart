@@ -6094,13 +6094,51 @@ class _GalleryPageState extends State<GalleryPage> {
       final localPath = '${item['path'] ?? ''}'.trim();
       if (fileId.isEmpty && localPath.isEmpty) continue;
       try {
-        await _resolveLocalPath(item);
+        await _preloadGalleryItem(item);
       } catch (error) {
         debugPrint('Gallery media pre-download skipped: $error');
       }
     }
   }
 
+  Future<void> _preloadGalleryItem(Map<String, dynamic> item) async {
+    final fileId = '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+    if (fileId.isEmpty) return;
+    final isPersonal = item['storage'] == 'personal';
+    final prefs = await SharedPreferences.getInstance();
+    final rawPaths = prefs.getString('galleryLocalPaths');
+    Map<String, dynamic> pathMap = {};
+    if (rawPaths != null && rawPaths.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawPaths);
+        if (decoded is Map) pathMap = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    final savedPath = '${pathMap[fileId] ?? ''}'.trim();
+    if (savedPath.isNotEmpty) {
+      final file = File(savedPath);
+      if (await file.exists() && await file.length() > 0) return;
+      pathMap.remove(fileId);
+    }
+    final cached = await SpaceSyncService.getCachedMediaPath(fileId, shared: !isPersonal);
+    if (cached != null && cached.isNotEmpty) {
+      final file = File(cached);
+      if (await file.exists() && await file.length() > 0) {
+        pathMap[fileId] = cached;
+        await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+        return;
+      }
+    }
+    final name = '${item['id'] ?? fileId}_${item['driveFileName'] ?? item['name'] ?? 'memory'}';
+    final downloaded = isPersonal
+        ? await SpaceSyncService.downloadPersonalMedia(fileId, saveAs: name)
+        : await SpaceSyncService.downloadMedia(fileId, saveAs: name);
+    final file = File(downloaded);
+    if (await file.exists() && await file.length() > 0) {
+      pathMap[fileId] = downloaded;
+      await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+    }
+  }
   void _handleGallerySyncChanged() {
     if (!mounted) return;
 
@@ -11117,13 +11155,51 @@ class _GalleryPageState extends State<GalleryPage> {
       final localPath = '${item['path'] ?? ''}'.trim();
       if (fileId.isEmpty && localPath.isEmpty) continue;
       try {
-        await _resolveLocalPath(item);
+        await _preloadGalleryItem(item);
       } catch (error) {
         debugPrint('Gallery media pre-download skipped: $error');
       }
     }
   }
 
+  Future<void> _preloadGalleryItem(Map<String, dynamic> item) async {
+    final fileId = '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+    if (fileId.isEmpty) return;
+    final isPersonal = item['storage'] == 'personal';
+    final prefs = await SharedPreferences.getInstance();
+    final rawPaths = prefs.getString('galleryLocalPaths');
+    Map<String, dynamic> pathMap = {};
+    if (rawPaths != null && rawPaths.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawPaths);
+        if (decoded is Map) pathMap = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    final savedPath = '${pathMap[fileId] ?? ''}'.trim();
+    if (savedPath.isNotEmpty) {
+      final file = File(savedPath);
+      if (await file.exists() && await file.length() > 0) return;
+      pathMap.remove(fileId);
+    }
+    final cached = await SpaceSyncService.getCachedMediaPath(fileId, shared: !isPersonal);
+    if (cached != null && cached.isNotEmpty) {
+      final file = File(cached);
+      if (await file.exists() && await file.length() > 0) {
+        pathMap[fileId] = cached;
+        await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+        return;
+      }
+    }
+    final name = '${item['id'] ?? fileId}_${item['driveFileName'] ?? item['name'] ?? 'memory'}';
+    final downloaded = isPersonal
+        ? await SpaceSyncService.downloadPersonalMedia(fileId, saveAs: name)
+        : await SpaceSyncService.downloadMedia(fileId, saveAs: name);
+    final file = File(downloaded);
+    if (await file.exists() && await file.length() > 0) {
+      pathMap[fileId] = downloaded;
+      await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+    }
+  }
   void _handleGallerySyncChanged() {
     if (!mounted) return;
 
