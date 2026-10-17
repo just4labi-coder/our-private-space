@@ -1822,6 +1822,11 @@ class ProfileAvatar extends StatelessWidget {
   final double radius;
   final Color color;
 
+  // Profile photos arrive as Base64 strings in chat snapshots. Keep a small
+  // decoded cache so scrolling does not repeatedly decode the same photo.
+  static final Map<String, Uint8List> _decodedPhotoCache =
+      <String, Uint8List>{};
+
   const ProfileAvatar({
     super.key,
     required this.name,
@@ -1850,24 +1855,42 @@ class ProfileAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Uint8List? bytes;
+    final raw = photoBase64.trim();
 
-    try {
-      if (photoBase64.trim().isNotEmpty) {
-        bytes = base64Decode(photoBase64.trim());
+    if (raw.isNotEmpty) {
+      final cacheKey = '${raw.length}:${raw.hashCode}';
+      bytes = _decodedPhotoCache[cacheKey];
+      if (bytes == null) {
+        try {
+          bytes = base64Decode(raw);
+          if (bytes.isNotEmpty) {
+            if (_decodedPhotoCache.length >= 48) {
+              _decodedPhotoCache.remove(_decodedPhotoCache.keys.first);
+            }
+            _decodedPhotoCache[cacheKey] = bytes;
+          }
+        } catch (_) {
+          bytes = null;
+        }
       }
-    } catch (_) {
-      bytes = null;
     }
 
     if (bytes == null || bytes.isEmpty) {
       return _letterAvatar();
     }
 
+    final pixelSize = (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(1, 512)
+        .toInt();
+
     return ClipOval(
       child: Image.memory(
         bytes,
         width: radius * 2,
         height: radius * 2,
+        cacheWidth: pixelSize,
+        cacheHeight: pixelSize,
         fit: BoxFit.cover,
         gaplessPlayback: true,
         errorBuilder: (_, __, ___) => _letterAvatar(),
@@ -4416,6 +4439,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 if (embeddedVideoThumbnail != null)
                                   Image.memory(
                                     embeddedVideoThumbnail,
+                                    cacheWidth: 420,
+                                    cacheHeight: 260,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) =>
                                         const ColoredBox(color: Colors.black26),
@@ -4726,6 +4751,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       File(resolvedPath),
                       width: 210,
                       height: 210,
+                      cacheWidth: (210 * MediaQuery.devicePixelRatioOf(context)).round(),
+                      cacheHeight: (210 * MediaQuery.devicePixelRatioOf(context)).round(),
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => const SizedBox(
                         width: 210,
@@ -4756,7 +4783,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           builder: (context, snapshot) {
                             final thumbnailPath = snapshot.data;
                             if (thumbnailPath != null) {
-                              return Image.file(File(thumbnailPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26));
+                              return Image.file(File(thumbnailPath), cacheWidth: (210 * MediaQuery.devicePixelRatioOf(context)).round(), cacheHeight: (130 * MediaQuery.devicePixelRatioOf(context)).round(), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26));
                             }
                             return const ColoredBox(color: Colors.black26);
                           },
@@ -5634,7 +5661,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       parent: AlwaysScrollableScrollPhysics(),
                     ),
                     // বেশি অফস্ক্রিন ভিডিও/থাম্বনেইল একসঙ্গে তৈরি হলে scroll frame drop হয়।
-                    cacheExtent: 80,
+                    cacheExtent: 250,
                     addAutomaticKeepAlives: false,
                     addRepaintBoundaries: true,
                     keyboardDismissBehavior:
