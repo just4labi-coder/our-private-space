@@ -2841,6 +2841,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     _voicePreviewStateSubscription = _voicePreviewPlayer.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
+      if (state == PlayerState.playing && !_isVoicePreviewPlaying) {
+        unawaited(InteractionFeedbackSettings.vibrate());
+      }
       setState(() => _isVoicePreviewPlaying = state == PlayerState.playing);
     });
 
