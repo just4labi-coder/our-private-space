@@ -62,6 +62,9 @@ bool orbitChatVisible = false;
 
 @pragma('vm:entry-point')
 Future<void> orbitFirebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Keep compatibility with the currently deployed Worker: Android already shows
+  // notification-payload pushes. Data-only pushes use the grouped local handler below.
+  if (message.notification != null) return;
   try {
     await Firebase.initializeApp();
     await NotificationPrivacySettings.load();
@@ -183,6 +186,9 @@ Future<void> main() async {
         return;
       }
       final messageId = data['messageId']?.toString() ?? '';
+      // Older deployed Worker versions omit messageId; Firestore's real-time
+      // listener supplies the same notification with a stable ID instead.
+      if (kind == 'message' && messageId.isEmpty) return;
       unawaited(NotificationPrivacySettings.showPartnerNotification(
         detailedTitle: data['detailedTitle']?.toString() ?? message.notification?.title ?? 'Orbit Two',
         detailedBody: data['detailedBody']?.toString() ?? message.notification?.body ?? 'You have an update.',
