@@ -74,8 +74,14 @@ async function sendToUser(uid, notification) {
         android: {
           priority: "high",
           notification: {
-            channelId: "partner_updates",
+            channelId: "orbit_partner_updates_v2",
             sound: "default",
+            icon: "ic_stat_orbit",
+            color: "#FF2E93",
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            visibility: "private",
+            priority: "max",
           },
         },
       })),
