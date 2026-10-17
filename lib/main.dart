@@ -1942,10 +1942,25 @@ class HomePage extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(
-              Icons.favorite_rounded,
-              color: pinkColor,
-              size: 28,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.asset(
+                'assets/branding/orbit_two_logo.jpg',
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF17233D),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: pinkColor.withValues(alpha: 0.45)),
+                  ),
+                  child: const Icon(Icons.favorite_rounded, color: pinkColor, size: 30),
+                ),
+              ),
             ),
           ],
         ),
@@ -4861,6 +4876,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return currentDate.difference(previousDate) > const Duration(minutes: 10);
   }
 
+  int _emojiDisplayCount(String value) {
+    var count = 0;
+    for (final rune in value.trim().runes) {
+      if (rune == 0x20 ||
+          rune == 0x00A0 ||
+          rune == 0x200D ||
+          rune == 0xFE0E ||
+          rune == 0xFE0F ||
+          rune == 0x20E3 ||
+          (rune >= 0x1F3FB && rune <= 0x1F3FF) ||
+          (rune >= 0xE0020 && rune <= 0xE007F)) {
+        continue;
+      }
+      count++;
+    }
+    return count;
+  }
+
   bool _isEmojiOnlyText(String value) {
     final runes = value.trim().runes.toList();
     if (runes.isEmpty) return false;
@@ -5083,9 +5116,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final messageId = '${message['id'] ?? index}';
     final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 104.0).toDouble();
     final expanded = _expandedMessageTimes.contains(messageId);
+    final messageText = '${message['text'] ?? ''}';
     final isEmojiOnly = message['unsent'] != true &&
         '${message['type'] ?? 'text'}' == 'text' &&
-        _isEmojiOnlyText('${message['text'] ?? ''}');
+        _isEmojiOnlyText(messageText) &&
+        _emojiDisplayCount(messageText) <= 3;
 
     final row = Row(
       mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -5149,7 +5184,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         ],
                       ),
                     ),
-                  if (message['unsent'] != true)
+                  if (expanded && message['unsent'] != true)
                     Positioned(
                       bottom: -8,
                       left: mine ? 0 : null,
@@ -5177,47 +5212,43 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 child: expanded
                     ? Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _formatTime(message['time']),
-                              style: const TextStyle(fontSize: 10, color: Colors.white54),
-                            ),
-                            if (mine && index == _lastOwnMessageIndex) ...[
-                              const SizedBox(width: 6),
-                              Builder(
-                                builder: (context) {
-                                  final rawSeenBy = message['seenBy'];
-                                  final wasSeen = rawSeenBy is Map &&
-                                      rawSeenBy.entries.any((entry) =>
-                                          '${entry.key}' != _currentUid && entry.value == true);
-                                  return Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        wasSeen ? Icons.done_all_rounded : Icons.done_rounded,
-                                        size: 13,
-                                        color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        wasSeen ? 'Seen' : 'Sent',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                          ],
+                        child: Text(
+                          _formatTime(message['time']),
+                          style: const TextStyle(fontSize: 10, color: Colors.white54),
                         ),
                       )
                     : const SizedBox.shrink(),
               ),
+              if (mine && index == _lastOwnMessageIndex)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3, right: 2),
+                  child: Builder(
+                    builder: (context) {
+                      final rawSeenBy = message['seenBy'];
+                      final wasSeen = rawSeenBy is Map &&
+                          rawSeenBy.entries.any((entry) =>
+                              '${entry.key}' != _currentUid && entry.value == true);
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            wasSeen ? Icons.done_all_rounded : Icons.done_rounded,
+                            size: 13,
+                            color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            wasSeen ? 'Seen' : 'Sent',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
             ],
           ),
         ),
