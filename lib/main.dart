@@ -6123,11 +6123,13 @@ class _GalleryPageState extends State<GalleryPage> {
         }
 
         try {
-          var resolvedPath = await SpaceSyncService.getCachedMediaPath(
-            fileId,
-            shared: !isPersonal,
-          );
-          if (resolvedPath == null || !await File(resolvedPath).exists()) {
+          String resolvedPath =
+              (await SpaceSyncService.getCachedMediaPath(
+                fileId,
+                shared: !isPersonal,
+              )) ??
+              '';
+          if (resolvedPath.isEmpty || !await File(resolvedPath).exists()) {
             final originalName = '${item['driveFileName'] ?? item['name'] ?? 'memory'}';
             final safeName = '${item['id'] ?? fileId}_$originalName';
             resolvedPath = isPersonal

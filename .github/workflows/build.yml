@@ -250,7 +250,7 @@ jobs:
           foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
           safe = ImageOps.fit(
               image,
-              (420, 420),
+              (330, 330),
               method=Image.Resampling.LANCZOS,
               centering=(0.5, 0.5),
           )
