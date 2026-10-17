@@ -329,6 +329,8 @@ export default {
       for (const tokenDoc of tokenDocs) {
         const token = cleanText(tokenDoc.data.token, 5000);
         if (!token) continue;
+        // Respect the per-device Hide Notification switch even while the app is closed.
+        if (tokenDoc.data.notificationsEnabled === false) continue;
         const hidden = tokenDoc.data.hideNotificationDetails === true;
         const sent = await sendFcm(
           accessToken,
