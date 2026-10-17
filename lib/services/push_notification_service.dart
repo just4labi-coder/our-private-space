@@ -15,11 +15,14 @@ class PushNotificationService {
   static StreamSubscription<String>? _tokenSubscription;
   static StreamSubscription<User?>? _authSubscription;
   static bool _hideDetails = false;
+  static bool _notificationsEnabled = true;
   static const String _privacyKey = 'hideNotificationDetails';
+  static const String _notificationsKey = 'notificationsEnabled';
 
   static Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
     _hideDetails = prefs.getBool(_privacyKey) ?? false;
+    _notificationsEnabled = prefs.getBool(_notificationsKey) ?? true;
 
     // Notification permission can be denied or temporarily unavailable.
     // Do not let that prevent the app from opening or Firebase Auth from working.
@@ -47,6 +50,13 @@ class PushNotificationService {
       unawaited(_saveToken(token));
     });
 
+    await _registerCurrentToken();
+  }
+
+  static Future<void> setNotificationsEnabled(bool value) async {
+    _notificationsEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_notificationsKey, value);
     await _registerCurrentToken();
   }
 
@@ -102,6 +112,7 @@ class PushNotificationService {
           .set({
         'token': token,
         'hideNotificationDetails': _hideDetails,
+        'notificationsEnabled': _notificationsEnabled,
         'platform': defaultTargetPlatform.name,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
