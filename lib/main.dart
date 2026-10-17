@@ -54,7 +54,7 @@ Future<File> _makeCompatibleVideo(File source) async {
 
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
-const String orbitNotificationChannelId = 'orbit_partner_updates_v4';
+const String orbitNotificationChannelId = 'orbit_partner_updates_v5';
 const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
 const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
 const int orbitMessageSummaryNotificationId = 7000;
@@ -5672,7 +5672,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       parent: AlwaysScrollableScrollPhysics(),
                     ),
                     // বেশি অফস্ক্রিন ভিডিও/থাম্বনেইল একসঙ্গে তৈরি হলে scroll frame drop হয়।
-                    cacheExtent: 250,
+                    cacheExtent: 80,
                     addAutomaticKeepAlives: false,
                     addRepaintBoundaries: true,
                     keyboardDismissBehavior:

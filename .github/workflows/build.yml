@@ -190,16 +190,24 @@ jobs:
                       if a > 0 and min(r, g, b) >= 226 and max(r, g, b) - min(r, g, b) <= 24:
                           pixels[x, y] = (r, g, b, 0)
 
-          artwork.save(out / "orbit_two_logo_icon.png", format="PNG")
-
-          # Adaptive foreground uses the same original artwork, not a generated F.
-          foreground = artwork.copy()
+          # Make the legacy launcher icon a proper blue app badge with the
+          # original Orbit artwork centered on it; no generated letter or black tile.
+          icon = Image.new("RGBA", (size, size), (24, 119, 242, 255))
+          foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+          safe_size = 330
+          safe_artwork = artwork.resize(
+              (safe_size, safe_size),
+              Image.Resampling.LANCZOS,
+          )
+          offset = (size - safe_size) // 2
+          foreground.alpha_composite(safe_artwork, (offset, offset))
+          icon.alpha_composite(foreground)
+          icon.save(out / "orbit_two_logo_icon.png", format="PNG")
           foreground.save(out / "orbit_two_logo_foreground.png", format="PNG")
 
-          # The monochrome layer retains the artwork's transparency so Android
-          # can tint the logo for supported themed icons.
+          # Android themed icons use the same centered artwork's alpha mask.
           monochrome = Image.new("RGBA", (size, size), (255, 255, 255, 0))
-          alpha = artwork.getchannel("A")
+          alpha = foreground.getchannel("A")
           monochrome.putalpha(alpha)
           monochrome.save(out / "orbit_two_logo_monochrome.png", format="PNG")
 
