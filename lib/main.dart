@@ -6032,9 +6032,12 @@ class _GalleryPageState extends State<GalleryPage> {
       folders = [
         {'id': 'all', 'name': 'All Memories'},
         {'id': 'favorites', 'name': 'Favorites'},
+        {'id': 'videos', 'name': 'Videos'},
       ];
-
-      SpaceStore.saveList('galleryFolders', folders);
+      unawaited(SpaceStore.saveList('galleryFolders', folders));
+    } else if (!folders.any((folder) => '${folder['id']}' == 'videos')) {
+      folders.add({'id': 'videos', 'name': 'Videos'});
+      unawaited(SpaceStore.saveList('galleryFolders', folders));
     }
   }
 
@@ -6129,7 +6132,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
   Future<void> _showFolderMenu(Map<String, dynamic> folder) async {
     final id = '${folder['id']}';
-    final isDefault = id == 'all' || id == 'favorites';
+    final isDefault = id == 'all' || id == 'favorites' || id == 'videos';
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -6200,7 +6203,7 @@ class _GalleryPageState extends State<GalleryPage> {
   Future<void> _renameFolder(Map<String, dynamic> folder) async {
     final id = '${folder['id']}';
 
-    if (id == 'all' || id == 'favorites') return;
+    if (id == 'all' || id == 'favorites' || id == 'videos') return;
 
     final controller = TextEditingController(
       text: '${folder['name'] ?? ''}',
@@ -6675,6 +6678,13 @@ class _GalleryPageState extends State<GalleryPage> {
       return media
           .where((item) =>
               item['favorite'] == true || item['folderId'] == 'favorites')
+          .toList();
+    }
+
+    if (id == 'videos') {
+      // Videos from every folder appear here; images are excluded.
+      return media
+          .where((item) => '${item['type']}'.toLowerCase() == 'video')
           .toList();
     }
 
