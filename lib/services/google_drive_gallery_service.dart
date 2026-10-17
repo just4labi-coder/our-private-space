@@ -13,7 +13,7 @@ class GoogleDriveGalleryService {
   static const String _endpoint =
       'https://script.google.com/macros/s/AKfycbw5JDObuu19_VQQ1ytXsA2Bav2M_szPSoiARCrc5KvNZYKm-RoDr1lwUiy14s3nsnzSoQ/exec';
 
-  static const int maxFileSize = 6 * 1024 * 1024;
+  static const int maxFileSize = 30 * 1024 * 1024;
 
   static Future<Map<String, dynamic>> _request(
     Map<String, dynamic> data,
@@ -119,7 +119,7 @@ class GoogleDriveGalleryService {
     }
 
     if (size > maxFileSize) {
-      throw Exception('একটি ফাইল সর্বোচ্চ ৬ MB হতে পারবে।');
+      throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
     }
 
     final bytes = await file.readAsBytes();

@@ -69,7 +69,7 @@ class SpaceSyncService {
   static const String _apiUrl =
       'https://script.google.com/macros/s/AKfycbw5JDObuu19_VQQ1ytXsA2Bav2M_szPSoiARCrc5KvNZYKm-RoDr1lwUiy14s3nsnzSoQ/exec';
 
-  static const int _maxUploadBytes = 150 * 1024 * 1024;
+  static const int _maxUploadBytes = 30 * 1024 * 1024;
   static const int _minChunkSize = 1 * 1024 * 1024;
   static const int _initialChunkSize = 4 * 1024 * 1024;
   static const int _maxChunkSize = 10 * 1024 * 1024;
@@ -375,7 +375,7 @@ class SpaceSyncService {
       case 'FILE_DATA_REQUIRED':
         return 'আপলোড করার ফাইল পাওয়া যায়নি।';
       case 'FILE_TOO_LARGE':
-        return 'ফাইলটি ১৫০ MB সীমা অতিক্রম করেছে।';
+        return 'ফাইলটি ৩০ MB সীমা অতিক্রম করেছে।';
       case 'DOWNLOAD_TOO_LARGE':
         return 'ফাইলটি বর্তমান ডাউনলোড সীমার চেয়ে বড়।';
       case 'INVALID_FILE_ID':
@@ -443,7 +443,7 @@ class SpaceSyncService {
     }
 
     if (length > _maxUploadBytes) {
-      throw Exception('একটি ফাইল সর্বোচ্চ ১৫০ MB হতে পারবে।');
+      throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
     }
 
     final name = pending['fileName']?.toString() ??
@@ -850,7 +850,7 @@ class SpaceSyncService {
     final length = await file.length();
     if (length <= 0) throw Exception('ফাইলটি খালি।');
     if (length > _maxUploadBytes) {
-      throw Exception('একটি ফাইল সর্বোচ্চ ১৫০ MB হতে পারবে।');
+      throw Exception('একটি ফাইল সর্বোচ্চ ৩০ MB হতে পারবে।');
     }
 
     final support = await getApplicationSupportDirectory();
@@ -1529,7 +1529,7 @@ class SpaceSyncService {
     }));
 
     if (bytes.length > _maxUploadBytes) {
-      throw Exception('ব্যাকআপটি ১৫০ MB সীমা অতিক্রম করেছে।');
+      throw Exception('ব্যাকআপটি ৩০ MB সীমা অতিক্রম করেছে।');
     }
 
     final tempDir = await Directory.systemTemp.createTemp(

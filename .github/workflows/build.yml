@@ -22,7 +22,7 @@ jobs:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      ORBIT_WORKER_URL: ${{ vars.ORBIT_WORKER_URL }}
+      ORBIT_WORKER_URL: ${{ vars.ORBIT_WORKER_URL || 'https://orbit-two-notifications.just4labi.workers.dev' }}
 
     steps:
       - name: Checkout

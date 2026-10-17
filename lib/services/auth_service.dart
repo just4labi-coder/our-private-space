@@ -62,7 +62,6 @@ class AuthService {
 
       if (value is String &&
           value.trim().isNotEmpty &&
-          value.trim() != 'Orbit Two User' &&
           value.trim() != 'Orbit Two User') {
         return value.trim();
       }

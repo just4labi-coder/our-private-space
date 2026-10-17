@@ -34,7 +34,7 @@ class MediaDownloadService : Service() {
                 "মিডিয়া ডাউনলোড",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Couple Zone-এর ছবি, ভিডিও ও ভয়েস ডাউনলোড চালু রাখে"
+                description = "Orbit Two-এর ছবি, ভিডিও ও ভয়েস ডাউনলোড চালু রাখে"
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java)
@@ -52,7 +52,7 @@ class MediaDownloadService : Service() {
 
         return builder
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Couple Zone")
+            .setContentTitle("Orbit Two")
             .setContentText("ছবি, ভিডিও বা ভয়েস ডাউনলোড হচ্ছে…")
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setOngoing(true)
