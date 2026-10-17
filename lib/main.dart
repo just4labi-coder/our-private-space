@@ -5104,48 +5104,71 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           child: Column(
             crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              if (isEmojiOnly)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  child: Text(
-                    '${message['text'] ?? ''}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 40, height: 1.08),
-                  ),
-                )
-              else
-                Container(
-                  constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: mine ? const Color(0xFF453078) : surfaceColor,
-                    border: Border.all(
-                      color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (isEmojiOnly)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      child: Text(
+                        '${message['text'] ?? ''}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 40, height: 1.08),
+                      ),
+                    )
+                  else
+                    Container(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: mine ? const Color(0xFF453078) : surfaceColor,
+                        border: Border.all(
+                          color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
+                        ),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(index > 0 &&
+                                  '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : 18),
+                          topRight: Radius.circular(index > 0 &&
+                                  '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : 18),
+                          bottomLeft: Radius.circular(index + 1 < messages.length &&
+                                  '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : (mine ? 18 : 5)),
+                          bottomRight: Radius.circular(index + 1 < messages.length &&
+                                  '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : (mine ? 5 : 18)),
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildReplyQuote(message),
+                          _messageContent(message),
+                        ],
+                      ),
                     ),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(index > 0 &&
-                              '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
-                          ? (mine ? 7 : 7) : 18),
-                      topRight: Radius.circular(index > 0 &&
-                              '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
-                          ? 7 : 18),
-                      bottomLeft: Radius.circular(index + 1 < messages.length &&
-                              '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
-                          ? 7 : (mine ? 18 : 5)),
-                      bottomRight: Radius.circular(index + 1 < messages.length &&
-                              '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
-                          ? 7 : (mine ? 5 : 18)),
+                  if (message['unsent'] != true)
+                    Positioned(
+                      bottom: -8,
+                      left: mine ? 0 : null,
+                      right: mine ? null : 0,
+                      child: Material(
+                        color: surfaceColor,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => _showReactionPicker(message),
+                          child: const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: Icon(Icons.add_reaction_outlined, size: 17, color: pinkColor),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildReplyQuote(message),
-                      _messageContent(message),
-                    ],
-                  ),
-                ),
+                ],
+              ),
               _buildReactionSummary(message, mine),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
@@ -5300,24 +5323,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     clipBehavior: Clip.none,
                     children: [
                       row,
-                      if (message['unsent'] != true)
-                        Positioned(
-                          bottom: -8,
-                          left: mine ? 0 : null,
-                          right: mine ? null : 0,
-                          child: Material(
-                            color: surfaceColor,
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () => _showReactionPicker(message),
-                              child: const Padding(
-                                padding: EdgeInsets.all(5),
-                                child: Icon(Icons.add_reaction_outlined, size: 17, color: pinkColor),
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
