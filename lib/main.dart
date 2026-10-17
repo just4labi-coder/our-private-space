@@ -756,7 +756,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _start() async {
     await SpaceStore.init();
-    await Future.delayed(const Duration(milliseconds: 900));
+    await Future.delayed(const Duration(milliseconds: 1500));
 
     if (!mounted) return;
 
@@ -825,11 +825,11 @@ class _SplashScreenState extends State<SplashScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(28),
                 child: Image.asset(
                   'assets/branding/orbit_two_logo.jpg',
-                  width: 104,
-                  height: 104,
+                  width: 132,
+                  height: 132,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(
                     Icons.favorite_rounded,
