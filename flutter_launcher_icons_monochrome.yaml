@@ -2,7 +2,7 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/branding/orbit_two_logo_icon.png"
-  adaptive_icon_background: "#070513"
-  adaptive_icon_foreground: "assets/branding/orbit_two_logo_icon.png"
+  adaptive_icon_background: "#1877F2"
+  adaptive_icon_foreground: "assets/branding/orbit_two_logo_foreground.png"
   adaptive_icon_monochrome: "assets/branding/orbit_two_logo_monochrome.png"
   min_sdk_android: 23
