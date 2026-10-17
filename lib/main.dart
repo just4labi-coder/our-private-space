@@ -7694,6 +7694,7 @@ class _GalleryMediaViewerPageState
               return _GalleryVideoPlayer(
                 key: ValueKey(path),
                 path: path,
+                isActive: index == currentIndex,
                 onPrevious: () => _goTo(_previousVideoIndex(index)),
                 onNext: () => _goTo(_nextVideoIndex(index)),
               );
@@ -7707,12 +7708,14 @@ class _GalleryMediaViewerPageState
 
 class _GalleryVideoPlayer extends StatefulWidget {
   final String path;
+  final bool isActive;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
 
   const _GalleryVideoPlayer({
     super.key,
     required this.path,
+    this.isActive = true,
     required this.onPrevious,
     required this.onNext,
   });
@@ -7733,10 +7736,27 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
   @override
   void initState() {
     super.initState();
-    _initialize();
+    if (widget.isActive) unawaited(_initialize());
+  }
+
+  @override
+  void didUpdateWidget(covariant _GalleryVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive == widget.isActive) return;
+    final controller = _controller;
+    if (!widget.isActive) {
+      if (controller != null && controller.value.isInitialized) {
+        unawaited(controller.pause());
+      }
+    } else if (controller == null) {
+      unawaited(_initialize());
+    } else if (controller.value.isInitialized) {
+      unawaited(controller.play());
+    }
   }
 
   Future<void> _initialize([String? sourcePath]) async {
+    if (!widget.isActive) return;
     final video = VideoPlayerController.file(File(sourcePath ?? _optimizedPath ?? widget.path));
     _controller = video;
 
@@ -7749,7 +7769,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
       }
 
       setState(() {});
-      await video.play();
+      if (widget.isActive) await video.play();
     } catch (error) {
       await video.dispose();
       if (identical(_controller, video)) _controller = null;
@@ -7828,7 +7848,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
 
   Future<void> _togglePlayback() async {
     final video = _controller;
-    if (video == null || !video.value.isInitialized) return;
+    if (!widget.isActive || video == null || !video.value.isInitialized) return;
 
     if (video.value.isPlaying) {
       await video.pause();
