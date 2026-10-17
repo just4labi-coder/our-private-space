@@ -133,6 +133,12 @@ Future<void> main() async {
   }
 
   try {
+    await InteractionFeedbackSettings.load();
+  } catch (error) {
+    debugPrint('Interaction feedback settings load failed: $error');
+  }
+
+  try {
     await NotificationPrivacySettings.load();
   } catch (error) {
     debugPrint('Notification privacy settings load failed: $error');
@@ -199,14 +205,6 @@ Future<void> main() async {
       ));
     });
 
-    try {
-      final androidNotifications = notifications
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      await androidNotifications?.requestNotificationsPermission();
-    } catch (error) {
-      debugPrint('Notification permission request failed: $error');
-    }
   }
 
   try {
@@ -236,6 +234,51 @@ class DataSaverSettings {
 
     await prefs.setBool(_key, value);
     enabled.value = value;
+  }
+}
+
+class InteractionFeedbackSettings {
+  InteractionFeedbackSettings._();
+
+  static const String _hapticsKey = 'interactionHapticsEnabled';
+  static const String _soundsKey = 'interactionSoundsEnabled';
+  static final ValueNotifier<bool> hapticsEnabled = ValueNotifier<bool>(true);
+  static final ValueNotifier<bool> soundsEnabled = ValueNotifier<bool>(true);
+
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    hapticsEnabled.value = prefs.getBool(_hapticsKey) ?? true;
+    soundsEnabled.value = prefs.getBool(_soundsKey) ?? true;
+  }
+
+  static Future<void> setHapticsEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hapticsKey, value);
+    hapticsEnabled.value = value;
+  }
+
+  static Future<void> setSoundsEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_soundsKey, value);
+    soundsEnabled.value = value;
+  }
+
+  static Future<void> vibrate() async {
+    if (!hapticsEnabled.value) return;
+    try {
+      await HapticFeedback.selectionClick();
+    } catch (error) {
+      debugPrint('Interaction haptic feedback unavailable: $error');
+    }
+  }
+
+  static Future<void> playTypingSound() async {
+    if (!soundsEnabled.value) return;
+    try {
+      await SystemSound.play(SystemSoundType.click);
+    } catch (error) {
+      debugPrint('Typing sound unavailable: $error');
+    }
   }
 }
 
@@ -5370,6 +5413,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           onHorizontalDragEnd: (_) {
             final offset = _replyDragOffsets[messageId] ?? 0;
             if (offset >= 78 && message['unsent'] != true) {
+              unawaited(InteractionFeedbackSettings.vibrate());
               _setReplyTo(message);
             }
             setState(() => _replyDragOffsets[messageId] = 0);
@@ -7859,6 +7903,9 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
     _player = player;
     _stateSubscription = player.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
+      if (state == PlayerState.playing && !_isPlaying) {
+        unawaited(InteractionFeedbackSettings.vibrate());
+      }
       setState(() {
         _isPlaying = state == PlayerState.playing;
         if (state == PlayerState.completed && _duration != null) {
@@ -8627,6 +8674,57 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         const SizedBox(height: 20),
+        const SectionHeading(title: 'Chat feedback'),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: InteractionFeedbackSettings.hapticsEnabled,
+          builder: (context, enabled, _) => Card(
+            color: surfaceColor,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.vibration_rounded, color: pinkColor),
+              title: const Text('Chat vibration'),
+              subtitle: const Text('ভয়েস চালু ও রিপ্লাই স্লাইড করলে হালকা ভাইব্রেশন'),
+              value: enabled,
+              activeColor: pinkColor,
+              onChanged: (value) async {
+                try {
+                  await InteractionFeedbackSettings.setHapticsEnabled(value);
+                  if (value) await InteractionFeedbackSettings.vibrate();
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Vibration setting could not be saved.')),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: InteractionFeedbackSettings.soundsEnabled,
+          builder: (context, enabled, _) => Card(
+            color: surfaceColor,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined, color: pinkColor),
+              title: const Text('Typing sound'),
+              subtitle: const Text('সঙ্গী টাইপ করা শুরু করলে ছোট সিস্টেম সাউন্ড'),
+              value: enabled,
+              activeColor: pinkColor,
+              onChanged: (value) async {
+                try {
+                  await InteractionFeedbackSettings.setSoundsEnabled(value);
+                  if (value) await InteractionFeedbackSettings.playTypingSound();
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Sound setting could not be saved.')),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'Notifications'),
         const SizedBox(height: 10),
         ValueListenableBuilder<bool>(
@@ -8642,11 +8740,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       : Icons.notifications_active_outlined,
                   color: pinkColor,
                 ),
-                title: const Text('Hide Notification'),
+                title: const Text('Message notifications'),
                 subtitle: Text(
                   hideNotifications
-                      ? 'চালু: সব মেসেজ নোটিফিকেশন বন্ধ থাকবে।'
-                      : 'বন্ধ: মেসেজ এলে নোটিফিকেশন ও ভাইব্রেশন আসবে।',
+                      ? 'বন্ধ: নতুন মেসেজের নোটিফিকেশন আসবে না।'
+                      : 'চালু: নতুন মেসেজের নোটিফিকেশন আসবে।',
                 ),
                 value: hideNotifications,
                 activeColor: pinkColor,
@@ -9608,6 +9706,9 @@ class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
   @override
   void didUpdateWidget(covariant PresenceStatusLabel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isTyping && widget.isTyping) {
+      unawaited(InteractionFeedbackSettings.playTypingSound());
+    }
     if (oldWidget.lastSeen != widget.lastSeen ||
         oldWidget.isOnline != widget.isOnline ||
         oldWidget.isTyping != widget.isTyping) {
