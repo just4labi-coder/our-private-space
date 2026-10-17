@@ -7788,6 +7788,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   bool _isPlaying = false;
   bool _isPreparing = false;
   bool _sourceLoaded = false;
+  Future<void>? _sourceLoadFuture;
   Duration? _duration;
   Duration _position = Duration.zero;
   double _playbackRate = 1.0;
@@ -7805,6 +7806,19 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
     final milliseconds = widget.durationMs ?? 0;
     if (milliseconds > 0) {
       _duration = Duration(milliseconds: milliseconds);
+    } else {
+      // Older voice messages do not contain duration metadata; read it in the
+      // background so the total duration appears before the user presses Play.
+      unawaited(_preloadDuration());
+    }
+  }
+
+  Future<void> _preloadDuration() async {
+    try {
+      final player = await _getPlayer();
+      await _loadSource(player);
+    } catch (error) {
+      debugPrint('Voice duration preload failed: $error');
     }
   }
 
@@ -7835,13 +7849,26 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
     return player;
   }
 
-  Future<void> _loadSource(AudioPlayer player) async {
-    if (_sourceLoaded) return;
-    await player.setSource(DeviceFileSource(widget.path));
-    _sourceLoaded = true;
-    final actualDuration = await player.getDuration();
-    if (actualDuration != null && mounted) {
-      setState(() => _duration = actualDuration);
+  Future<void> _loadSource(AudioPlayer player) {
+    if (_sourceLoaded) return Future<void>.value();
+    final existingLoad = _sourceLoadFuture;
+    if (existingLoad != null) return existingLoad;
+    final load = _loadSourceInternal(player);
+    _sourceLoadFuture = load;
+    return load;
+  }
+
+  Future<void> _loadSourceInternal(AudioPlayer player) async {
+    try {
+      await player.setSource(DeviceFileSource(widget.path));
+      _sourceLoaded = true;
+      final actualDuration = await player.getDuration();
+      if (actualDuration != null && mounted) {
+        setState(() => _duration = actualDuration);
+      }
+    } catch (_) {
+      _sourceLoadFuture = null;
+      rethrow;
     }
   }
 
