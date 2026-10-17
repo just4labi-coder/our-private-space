@@ -187,11 +187,15 @@ class SpaceSyncService {
   static const MethodChannel _downloadServiceChannel =
       MethodChannel('com.privatespace.ourspace/media_download');
 
-  static Future<void> _setDownloadService(bool enabled) async {
+  static Future<void> _setDownloadService(
+    bool enabled, {
+    String? fileName,
+  }) async {
     if (!Platform.isAndroid) return;
     try {
       await _downloadServiceChannel.invokeMethod<void>(
         enabled ? 'start' : 'stop',
+        enabled ? <String, dynamic>{'fileName': fileName ?? 'মিডিয়া'} : null,
       );
     } catch (error) {
       debugPrint('[MediaDownload] foreground service toggle failed: $error');
@@ -1065,7 +1069,7 @@ class SpaceSyncService {
     }
 
     if (_activeDownloads.isEmpty) {
-      await _setDownloadService(true);
+      await _setDownloadService(true, fileName: saveAs ?? id);
     }
 
     final future = _downloadWithRetry(
