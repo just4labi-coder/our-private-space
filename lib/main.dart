@@ -2720,6 +2720,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _userHasScrolledAwayFromBottom = false;
   bool _userIsScrolling = false;
   int _scrollRequestToken = 0;
+  int _cachedLastOwnMessageIndex = -1;
 
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
@@ -2991,8 +2992,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   _isNearChatBottom &&
                   hasNewTailMessage);
 
+          // Compute this once per Firestore snapshot instead of rescanning the
+          // complete message list while each visible row is being built.
+          var nextLastOwnMessageIndex = -1;
+          final currentUid = _currentUid;
+          for (var i = latestMessages.length - 1; i >= 0; i--) {
+            final item = latestMessages[i];
+            final senderUid = '${item['senderUid'] ?? ''}';
+            final mine = senderUid.isNotEmpty && currentUid.isNotEmpty
+                ? senderUid == currentUid
+                : item['mine'] == true;
+            if (mine && item['unsent'] != true) {
+              nextLastOwnMessageIndex = i;
+              break;
+            }
+          }
+
           setState(() {
             messages = latestMessages;
+            _cachedLastOwnMessageIndex = nextLastOwnMessageIndex;
           });
           _hasLoadedInitialMessages = true;
 
@@ -3079,14 +3097,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return message['mine'] == true;
   }
 
-  int get _lastOwnMessageIndex {
-    for (var i = messages.length - 1; i >= 0; i--) {
-      if (_isMine(messages[i]) && messages[i]['unsent'] != true) {
-        return i;
-      }
-    }
-    return -1;
-  }
+  int get _lastOwnMessageIndex => _cachedLastOwnMessageIndex;
 
   Future<void> _sendText() async {
     final text = controller.text.trim();
