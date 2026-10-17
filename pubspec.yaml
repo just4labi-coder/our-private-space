@@ -42,6 +42,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/orbit_two_logo.jpg
+    - assets/branding/orbit_two_logo_artwork.png
 
 flutter_launcher_icons:
   android: true
