@@ -820,6 +820,57 @@ class _SplashScreenState extends State<SplashScreen> {
     _start();
   }
 
+  Future<void> _preloadGalleryOnStartup() async {
+    try {
+      final items = SpaceStore.readList('galleryMedia');
+      final prefs = await SharedPreferences.getInstance();
+      final rawPaths = prefs.getString('galleryLocalPaths');
+      Map<String, dynamic> pathMap = {};
+      if (rawPaths != null && rawPaths.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rawPaths);
+          if (decoded is Map) pathMap = Map<String, dynamic>.from(decoded);
+        } catch (_) {}
+      }
+      for (final item in items) {
+        if (!mounted) return;
+        final fileId = '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+        if (fileId.isEmpty) continue;
+        final isPersonal = item['storage'] == 'personal';
+        final savedPath = (pathMap[fileId] ?? '').toString().trim();
+        if (savedPath.isNotEmpty) {
+          final savedFile = File(savedPath);
+          if (await savedFile.exists() && await savedFile.length() > 0) continue;
+          pathMap.remove(fileId);
+        }
+        final cached = await SpaceSyncService.getCachedMediaPath(fileId, shared: !isPersonal);
+        if (cached != null && cached.isNotEmpty) {
+          final cachedFile = File(cached);
+          if (await cachedFile.exists() && await cachedFile.length() > 0) {
+            pathMap[fileId] = cached;
+            await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+            continue;
+          }
+        }
+        try {
+          final name = '${item['id'] ?? fileId}_${item['driveFileName'] ?? item['name'] ?? 'memory'}';
+          final downloaded = isPersonal
+              ? await SpaceSyncService.downloadPersonalMedia(fileId, saveAs: name)
+              : await SpaceSyncService.downloadMedia(fileId, saveAs: name);
+          final file = File(downloaded);
+          if (await file.exists() && await file.length() > 0) {
+            pathMap[fileId] = downloaded;
+            await prefs.setString('galleryLocalPaths', jsonEncode(pathMap));
+          }
+        } catch (error) {
+          debugPrint('Startup gallery pre-download failed: $error');
+        }
+      }
+    } catch (error) {
+      debugPrint('Startup gallery pre-download skipped: $error');
+    }
+  }
+
   Future<void> _start() async {
     await SpaceStore.init();
     await Future.delayed(const Duration(milliseconds: 1500));
@@ -841,6 +892,10 @@ class _SplashScreenState extends State<SplashScreen> {
       } catch (error) {
         debugPrint('Startup realtime sync error: $error');
       }
+
+      // Begin downloading uncached gallery items as soon as the app opens.
+      // Do not block navigation; each file is cached and failures can retry later.
+      unawaited(_preloadGalleryOnStartup());
 
       if (!mounted) return;
 
