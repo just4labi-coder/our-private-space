@@ -1651,7 +1651,7 @@ class _MainScreenState extends State<MainScreen>
               privateTitle: 'Check message',
               privateBody: 'You have a new message.',
               kind: 'message',
-              id: NotificationPrivacySettings.notificationIdForMessage(id),
+              id: NotificationPrivacySettings.notificationIdForMessage('${message['id'] ?? ''}'),
             ).catchError((Object error) {
               debugPrint('Message notification error: $error');
             });
