@@ -221,7 +221,40 @@ jobs:
               print(f"Generated and verified {path}")
           PY
 
-      - name: Generate custom launcher icon from the verified Orbit Two logo
+      - name: Prepare the new image for app icon and splash only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageOps
+
+          branding = Path("assets/branding")
+          source = branding / "orbit_two_app_icon_new.jpg"
+          icon_path = branding / "orbit_two_app_icon_new_icon.png"
+          foreground_path = branding / "orbit_two_app_icon_new_foreground.png"
+          background_path = branding / "orbit_two_app_icon_new_background.png"
+          size = 512
+
+          with Image.open(source) as image:
+              image.load()
+              image = image.convert("RGBA")
+          fitted = ImageOps.contain(image, (size, size), method=Image.Resampling.LANCZOS)
+          square = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+          square.alpha_composite(fitted, ((size - fitted.width) // 2, (size - fitted.height) // 2))
+          square.save(icon_path, format="PNG")
+
+          foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+          safe = ImageOps.contain(image, (330, 330), method=Image.Resampling.LANCZOS)
+          foreground.alpha_composite(safe, ((size - safe.width) // 2, (size - safe.height) // 2))
+          foreground.save(foreground_path, format="PNG")
+          Image.new("RGBA", (size, size), (0, 0, 0, 0)).save(background_path, format="PNG")
+
+          for path in (icon_path, foreground_path, background_path):
+              with Image.open(path) as generated:
+                  generated.verify()
+              print(f"Generated and verified {path}")
+          PY
+
+      - name: Generate custom launcher icon from the new app icon image
         run: |
           dart run flutter_launcher_icons
           sed -i 's#android:icon="@android:drawable/sym_def_app_icon"#android:icon="@mipmap/ic_launcher"#' android/app/src/main/AndroidManifest.xml
@@ -234,7 +267,7 @@ jobs:
           mkdir -p android/app/src/main/res/drawable-nodpi
           python - <<'PY'
           from PIL import Image
-          source = "assets/branding/orbit_two_logo_icon.png"
+          source = "assets/branding/orbit_two_app_icon_new_icon.png"
           target = "android/app/src/main/res/drawable-nodpi/orbit_logo.png"
           with Image.open(source) as image:
               image.load()
