@@ -129,41 +129,65 @@ jobs:
                   centering=(0.5, 0.5),
               ).convert("RGBA")
 
-          # Remove the black JPEG background while keeping colored and bright
-          # artwork intact. A soft alpha edge avoids a dark fringe on launchers.
+          # The source JPEG has a dark navy/black backdrop, not pure black.
+          # Flood-fill only the connected dark backdrop from the image edges.
+          # This preserves dark details enclosed by the bright Orbit artwork.
+          from collections import deque
           pixels = artwork.load()
-          for y in range(size):
-              for x in range(size):
-                  r, g, b, _ = pixels[x, y]
-                  maximum = max(r, g, b)
-                  minimum = min(r, g, b)
-                  if maximum <= 22 and maximum - minimum <= 18:
-                      pixels[x, y] = (r, g, b, 0)
-                  elif maximum <= 52 and maximum - minimum <= 18:
-                      alpha = int((maximum - 22) * 255 / 30)
-                      pixels[x, y] = (r, g, b, max(0, min(255, alpha)))
+          seed = pixels[0, 0][:3]
 
-          # Clean a thin white horizontal scan/streak artifact in the lower
-          # half only when the source contains a clear, unusually long line.
-          # Ordinary white logo details are left untouched.
+          def is_outer_background(x, y):
+              r, g, b, _ = pixels[x, y]
+              if max(r, g, b) > 112:
+                  return False
+              distance = ((r - seed[0]) ** 2 + (g - seed[1]) ** 2 + (b - seed[2]) ** 2) ** 0.5
+              return distance <= 62
+
+          queue = deque()
+          visited = bytearray(size * size)
+          for x in range(size):
+              queue.append((x, 0))
+              queue.append((x, size - 1))
+          for y in range(size):
+              queue.append((0, y))
+              queue.append((size - 1, y))
+
+          while queue:
+              x, y = queue.popleft()
+              index = y * size + x
+              if visited[index]:
+                  continue
+              visited[index] = 1
+              if not is_outer_background(x, y):
+                  continue
+              r, g, b, _ = pixels[x, y]
+              pixels[x, y] = (r, g, b, 0)
+              if x > 0: queue.append((x - 1, y))
+              if x + 1 < size: queue.append((x + 1, y))
+              if y > 0: queue.append((x, y - 1))
+              if y + 1 < size: queue.append((x, y + 1))
+
+          # Remove the long white scan-line artifact around the centre of the
+          # source. Search only the central band so the real lower logo stroke
+          # is not mistaken for the unwanted line.
           row_scores = []
-          for y in range(int(size * 0.48), int(size * 0.92)):
+          for y in range(int(size * 0.38), int(size * 0.62)):
               run = 0
               longest = 0
               for x in range(size):
                   r, g, b, a = pixels[x, y]
-                  if a > 0 and min(r, g, b) >= 232 and max(r, g, b) - min(r, g, b) <= 20:
+                  if a > 0 and min(r, g, b) >= 226 and max(r, g, b) - min(r, g, b) <= 24:
                       run += 1
                       longest = max(longest, run)
                   else:
                       run = 0
               row_scores.append((longest, y))
           longest, line_y = max(row_scores, default=(0, 0))
-          if longest >= int(size * 0.22):
+          if longest >= int(size * 0.18):
               for y in range(max(0, line_y - 1), min(size, line_y + 2)):
                   for x in range(size):
                       r, g, b, a = pixels[x, y]
-                      if a > 0 and min(r, g, b) >= 232 and max(r, g, b) - min(r, g, b) <= 20:
+                      if a > 0 and min(r, g, b) >= 226 and max(r, g, b) - min(r, g, b) <= 24:
                           pixels[x, y] = (r, g, b, 0)
 
           artwork.save(out / "orbit_two_logo_icon.png", format="PNG")
