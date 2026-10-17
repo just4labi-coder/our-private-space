@@ -864,6 +864,18 @@ class SpaceSyncService {
     final safeName = name.replaceAll(RegExp(r'[/\\\x00-\x1F]'), '_');
     final durableFile = File('${pendingDir.path}/${id}_$safeName');
 
+    // Show queued/starting state before copying large files into durable storage.
+    uploadProgress.value = [
+      ...uploadProgress.value.where((item) => item.id != id),
+      UploadProgress(
+        id: id,
+        fileName: safeName,
+        progress: 0,
+        bytesPerSecond: 0,
+        isUploading: true,
+      ),
+    ];
+
     await file.copy(durableFile.path);
 
     final pending = <String, dynamic>{
@@ -881,17 +893,6 @@ class SpaceSyncService {
     };
 
     await _upsertPendingUpload(pending);
-
-    uploadProgress.value = [
-      ...uploadProgress.value,
-      UploadProgress(
-        id: id,
-        fileName: safeName,
-        progress: 0,
-        bytesPerSecond: 0,
-        isUploading: true,
-      ),
-    ];
 
     try {
       return await _uploadFile(
