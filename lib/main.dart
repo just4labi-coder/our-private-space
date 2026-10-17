@@ -8768,6 +8768,33 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: NotificationPrivacySettings.hideDetails,
+          builder: (context, hideDetails, _) => Card(
+            color: surfaceColor,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.visibility_off_outlined, color: pinkColor),
+              title: const Text('Hide message details'),
+              subtitle: Text(
+                hideDetails
+                    ? 'নোটিফিকেশনে শুধু ব্যক্তিগত সতর্কবার্তা দেখাবে।'
+                    : 'নোটিফিকেশনে মেসেজের বিবরণ দেখা যাবে।',
+              ),
+              value: hideDetails,
+              activeColor: pinkColor,
+              onChanged: (value) async {
+                try {
+                  await NotificationPrivacySettings.setHideDetails(value);
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Privacy setting could not be saved.')),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
         const SizedBox(height: 20),
         const SectionHeading(title: 'App information'),
         const SizedBox(height: 10),
