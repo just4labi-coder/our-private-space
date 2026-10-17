@@ -11,6 +11,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
@@ -30,6 +32,9 @@ import 'services/auth_service.dart';
 import 'services/relationship_service.dart';
 import 'services/private_space_service.dart';
 import 'services/push_notification_service.dart';
+
+final ValueNotifier<String?> orbitSharedText = ValueNotifier<String?>(null);
+const MethodChannel orbitShareChannel = MethodChannel('com.privatespace.ourspace/share_intent');
 
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
@@ -1468,7 +1473,34 @@ class _MainScreenState extends State<MainScreen>
     _startUnreadWatcher();
     _updatePresence(true);
     _startConnectionWatcher();
+    orbitShareChannel.setMethodCallHandler((call) async {
+      if (call.method == 'sharedText') {
+        final shared = '${call.arguments ?? ''}'.trim();
+        if (shared.isNotEmpty && mounted) _handleIncomingSharedText(shared);
+      }
+    });
+    unawaited(_loadInitialSharedText());
     _recoverPendingUploads();
+  }
+
+  Future<void> _loadInitialSharedText() async {
+    try {
+      final shared = await orbitShareChannel.invokeMethod<String>('getInitialSharedText');
+      if (shared != null && shared.trim().isNotEmpty && mounted) _handleIncomingSharedText(shared.trim());
+    } catch (error) {
+      debugPrint('Initial shared text unavailable: $error');
+    }
+  }
+
+  void _handleIncomingSharedText(String shared) {
+    if (partnerTwo.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('লিংক শেয়ার করতে আগে Partner-এর সঙ্গে Connect করো।')),
+      );
+      return;
+    }
+    orbitSharedText.value = shared;
+    setState(() { selectedIndex = 1; hasUnreadChat = false; orbitChatVisible = true; });
   }
 
   Future<void> _recoverPendingUploads() async {
@@ -2890,6 +2922,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     scrollController.addListener(_updateChatScrollPosition);
     _appIsResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    orbitSharedText.addListener(_handleSharedTextDraft);
     unawaited(_restoreDraft());
     SpaceSyncService.uploadProgress.addListener(
       _handleUploadProgressChanged,
@@ -2943,6 +2976,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   String get _draftKey => 'chatDraft_${_currentUid.isEmpty ? 'guest' : _currentUid}';
+
+  void _handleSharedTextDraft() {
+    final shared = orbitSharedText.value;
+    if (shared == null || shared.trim().isEmpty || !mounted) return;
+    controller.text = shared;
+    controller.selection = TextSelection.collapsed(offset: controller.text.length);
+    orbitSharedText.value = null;
+    _scheduleDraftSave(controller.text);
+    unawaited(_persistDraft(controller.text));
+  }
 
   Future<void> _restoreDraft() async {
     try {
@@ -3172,6 +3215,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     orbitChatVisible = false;
+    orbitSharedText.removeListener(_handleSharedTextDraft);
     WidgetsBinding.instance.removeObserver(this);
     scrollController.removeListener(_updateChatScrollPosition);
     _messageHighlightTimer?.cancel();
@@ -4194,6 +4238,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ),
                 ),
               ListTile(
+                enabled: !unsent && '${message['type'] ?? 'text'}' == 'text' && '${message['text'] ?? ''}'.trim().isNotEmpty,
+                leading: Icon(Icons.copy_rounded, color: unsent ? Colors.white24 : pinkColor),
+                title: const Text('Copy message'),
+                onTap: unsent || '${message['type'] ?? 'text'}' != 'text' || '${message['text'] ?? ''}'.trim().isEmpty
+                    ? null
+                    : () async {
+                        await Clipboard.setData(ClipboardData(text: '${message['text'] ?? ''}'));
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('মেসেজ কপি হয়েছে')));
+                      },
+              ),
+              ListTile(
                 enabled: !unsent,
                 leading: Icon(
                   Icons.reply_rounded,
@@ -4924,12 +4980,5036 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
     }
 
+    final linkRegex = RegExp(r'((https?:\/\/|www\.)[^\s]+)', caseSensitive: false);
+    final spans = <InlineSpan>[];
+    var last = 0;
+    for (final match in linkRegex.allMatches(path)) {
+      if (match.start > last) spans.add(TextSpan(text: path.substring(last, match.start)));
+      var rawUrl = match.group(0)!;
+      var trailing = '';
+      while (rawUrl.isNotEmpty && RegExp(r'[.,!?;:)]
+  }
+
+  Widget _buildPendingMediaMessage() {
+    final fileName = _pendingMediaName ?? 'মিডিয়া ফাইল';
+    final progress =
+        _pendingMediaProgress.clamp(0.0, 1.0).toDouble();
+    final percent = (progress * 100).round();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Flexible(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+              ),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF453078),
+                border: Border.all(
+                  color: pinkColor.withValues(alpha: 0.35),
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _pendingMediaVideo
+                            ? Icons.videocam_rounded
+                            : Icons.image_rounded,
+                        color: pinkColor,
+                        size: 25,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          fileName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$percent%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 5,
+                      backgroundColor: Colors.white12,
+                      valueColor:
+                          const AlwaysStoppedAnimation<Color>(pinkColor),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'আপলোড হচ্ছে...',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        _formatChatUploadSpeed(_pendingMediaSpeed),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  DateTime? _messageDate(dynamic value) {
+    if (value is Timestamp) return value.toDate().toLocal();
+    if (value is DateTime) return value.toLocal();
+    return DateTime.tryParse('${value ?? ''}')?.toLocal();
+  }
+
+  bool _shouldShowTimeDivider(int index) {
+    if (index <= 0 || index >= messages.length) return false;
+    final previous = messages[index - 1];
+    final current = messages[index];
+    if ('${previous['senderUid'] ?? ''}' == '${current['senderUid'] ?? ''}') return false;
+    final previousDate = _messageDate(previous['time']);
+    final currentDate = _messageDate(current['time']);
+    if (previousDate == null || currentDate == null) return false;
+    return currentDate.difference(previousDate) > const Duration(minutes: 10);
+  }
+
+  int _emojiDisplayCount(String value) {
+    var count = 0;
+    for (final rune in value.trim().runes) {
+      if (rune == 0x20 ||
+          rune == 0x00A0 ||
+          rune == 0x200D ||
+          rune == 0xFE0E ||
+          rune == 0xFE0F ||
+          rune == 0x20E3 ||
+          (rune >= 0x1F3FB && rune <= 0x1F3FF) ||
+          (rune >= 0xE0020 && rune <= 0xE007F)) {
+        continue;
+      }
+      count++;
+    }
+    return count;
+  }
+
+  bool _isEmojiOnlyText(String value) {
+    final runes = value.trim().runes.toList();
+    if (runes.isEmpty) return false;
+
+    final hasKeycap = runes.contains(0x20E3);
+    const emojiSymbols = <int>{
+      0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139,
+      0x3030, 0x303D, 0x3297, 0x3299, 0x24C2,
+    };
+    var foundEmoji = false;
+
+    for (final rune in runes) {
+      if (rune == 0x20 ||
+          rune == 0x00A0 ||
+          rune == 0x200D ||
+          rune == 0xFE0E ||
+          rune == 0xFE0F ||
+          rune == 0x20E3 ||
+          (rune >= 0xE0020 && rune <= 0xE007F)) {
+        continue;
+      }
+
+      final isEmojiCodePoint =
+          (rune >= 0x1F000 && rune <= 0x1FAFF) ||
+          (rune >= 0x2600 && rune <= 0x27BF) ||
+          (rune >= 0x2300 && rune <= 0x23FF) ||
+          emojiSymbols.contains(rune) ||
+          (hasKeycap &&
+              ((rune >= 0x30 && rune <= 0x39) ||
+                  rune == 0x23 ||
+                  rune == 0x2A));
+
+      if (!isEmojiCodePoint) return false;
+      foundEmoji = true;
+    }
+
+    return foundEmoji;
+  }
+
+  static const Map<String, List<String>> _reactionEmojiCategories = {
+    'সাম্প্রতিক': ['❤️', '😂', '🥹', '😍', '😮', '😢', '🔥', '👍', '🙏', '🎉', '💯', '🫶'],
+    'হৃদয়': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'],
+    'মুখ': ['😀', '😃', '😄', '😁', '😆', '🥹', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😜', '🤪', '🤗', '🤭', '🫢', '🤫', '🤔', '🫡', '😎', '🥳', '😭', '😢', '😤', '😡', '😱', '😮', '😴', '🤒', '🥺'],
+    'হাত': ['👍', '👎', '👏', '🙌', '🫶', '🤝', '🙏', '🤲', '💪', '✌️', '🤞', '🤟', '🤘', '👌', '🫰', '👋', '🤚', '✋', '🖐️', '☝️', '👇', '👆'],
+    'ফুল': ['🌹', '🌷', '🌸', '🌺', '🌻', '🌼', '💐', '🪷', '🪻', '🌱', '🌿', '🍀', '☘️', '🌵', '🌴', '🌳', '🌲', '🍁', '🍂', '🍃'],
+    'খাবার': ['🍎', '🍓', '🍒', '🍉', '🍇', '🍑', '🥭', '🍍', '🥥', '🥝', '🍌', '🍋', '🍊', '🥑', '🍕', '🍔', '🍟', '🌭', '🍿', '🍩', '🍪', '🎂', '🍰', '🧁', '🍫', '🍭', '☕', '🧋'],
+    'প্রকৃতি': ['🔥', '✨', '⭐', '🌟', '💫', '⚡', '☀️', '🌈', '☁️', '🌧️', '❄️', '🌙', '🌍', '🌊', '💧', '🎉', '🎊', '💯', '🏆', '🎁'],
+  };
+
+  static const List<String> _quickReactionEmojis = [
+    '❤️', '😂', '🥹', '😍', '😮', '😢', '🔥', '👍', '🙏', '🎉', '💯', '🫶',
+  ];
+
+  Future<void> _setMessageReaction(
+    String messageId,
+    String emoji,
+  ) async {
+    try {
+      await ChatSyncService.setMessageReaction(
+        messageId: messageId,
+        emoji: emoji,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('রিঅ্যাকশন দেওয়া যায়নি: ${error}')),
+      );
+    }
+  }
+
+  Future<void> _showReactionPicker(
+    Map<String, dynamic> message,
+  ) async {
+    if (message['unsent'] == true) return;
+    final messageId = '${message['id'] ?? ''}'.trim();
+    if (messageId.isEmpty) return;
+
+    final categories = _reactionEmojiCategories.keys.toList();
+    var selectedCategory = categories.first;
+    final selectedEmoji = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final emojis = _reactionEmojiCategories[selectedCategory]!;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(context).height * 0.48,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Center(
+                      child: Text(
+                        'ইমোজি দিয়ে রিঅ্যাক্ট করো',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: categories.map((category) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              label: Text(category),
+                              selected: selectedCategory == category,
+                              onSelected: (_) => setSheetState(() => selectedCategory = category),
+                              selectedColor: pinkColor.withValues(alpha: 0.28),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: GridView.builder(
+                        itemCount: emojis.length,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 7,
+                          mainAxisSpacing: 2,
+                          crossAxisSpacing: 2,
+                        ),
+                        itemBuilder: (context, index) {
+                          final emoji = emojis[index];
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => Navigator.pop(sheetContext, emoji),
+                            child: Center(
+                              child: Text(emoji, style: const TextStyle(fontSize: 27)),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (selectedEmoji != null) {
+      await _setMessageReaction(messageId, selectedEmoji);
+    }
+  }
+
+  Widget _buildReactionSummary(
+    Map<String, dynamic> message,
+    bool mine,
+  ) {
+    if (message['unsent'] == true) return const SizedBox.shrink();
+    final raw = message['reactions'];
+    if (raw is! Map || raw.isEmpty) return const SizedBox.shrink();
+
+    final reactions = <String, String>{};
+    for (final entry in raw.entries) {
+      final emoji = '${entry.value}'.trim();
+      if (emoji.isNotEmpty) reactions['${entry.key}'] = emoji;
+    }
+    if (reactions.isEmpty) return const SizedBox.shrink();
+
+    final grouped = <String, int>{};
+    for (final emoji in reactions.values) {
+      grouped[emoji] = (grouped[emoji] ?? 0) + 1;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          children: grouped.entries.map((entry) {
+            final selectedByMe = reactions[_currentUid] == entry.key;
+            return InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _setMessageReaction(
+                '${message['id'] ?? ''}',
+                selectedByMe ? '' : entry.key,
+              ),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: selectedByMe
+                      ? pinkColor.withValues(alpha: 0.22)
+                      : Colors.white.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: selectedByMe
+                        ? pinkColor.withValues(alpha: 0.7)
+                        : Colors.white12,
+                  ),
+                ),
+                child: Text(
+                  '${entry.key} ${entry.value}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessage(Map<String, dynamic> message, int index) {
+    final mine = _isMine(message);
+    final senderUid = '${message['senderUid'] ?? ''}';
+    final messageId = '${message['id'] ?? index}';
+    final dragOffset = (_replyDragOffsets[messageId] ?? 0).clamp(0.0, 104.0).toDouble();
+    final expanded = _expandedMessageTimes.contains(messageId);
+    final messageText = '${message['text'] ?? ''}';
+    final isEmojiOnly = message['unsent'] != true &&
+        '${message['type'] ?? 'text'}' == 'text' &&
+        _isEmojiOnlyText(messageText) &&
+        _emojiDisplayCount(messageText) <= 3;
+
+    final row = Row(
+      mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (!mine) ...[
+          ProfileAvatar(
+            name: _profileNameForUid(senderUid, 'Partner'),
+            photoBase64: _photoBase64ForUid(senderUid),
+            radius: 16,
+            color: purpleColor,
+          ),
+          const SizedBox(width: 7),
+        ],
+        Flexible(
+          child: Column(
+            crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (isEmojiOnly)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      child: Text(
+                        '${message['text'] ?? ''}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 40, height: 1.08),
+                      ),
+                    )
+                  else
+                    Container(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: mine ? const Color(0xFF453078) : surfaceColor,
+                        border: Border.all(
+                          color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
+                        ),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(index > 0 &&
+                                  '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : 18),
+                          topRight: Radius.circular(index > 0 &&
+                                  '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : 18),
+                          bottomLeft: Radius.circular(index + 1 < messages.length &&
+                                  '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : (mine ? 18 : 5)),
+                          bottomRight: Radius.circular(index + 1 < messages.length &&
+                                  '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
+                              ? 7 : (mine ? 5 : 18)),
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildReplyQuote(message),
+                          _messageContent(message),
+                        ],
+                      ),
+                    ),
+                  if (expanded && message['unsent'] != true)
+                    Positioned(
+                      bottom: -8,
+                      left: mine ? 0 : null,
+                      right: mine ? null : 0,
+                      child: Material(
+                        color: surfaceColor,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => _showReactionPicker(message),
+                          child: const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: Icon(Icons.add_reaction_outlined, size: 17, color: pinkColor),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              _buildReactionSummary(message, mine),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: expanded
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _formatTime(message['time']),
+                          style: const TextStyle(fontSize: 10, color: Colors.white54),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              if (mine && index == _lastOwnMessageIndex)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3, right: 2),
+                  child: Builder(
+                    builder: (context) {
+                      final rawSeenBy = message['seenBy'];
+                      final wasSeen = rawSeenBy is Map &&
+                          rawSeenBy.entries.any((entry) =>
+                              '${entry.key}' != _currentUid && entry.value == true);
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            wasSeen ? Icons.done_all_rounded : Icons.done_rounded,
+                            size: 13,
+                            color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            wasSeen ? 'Seen' : 'Sent',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: wasSeen ? const Color(0xFF53D9FF) : Colors.white54,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (mine) ...[
+          const SizedBox(width: 7),
+          ProfileAvatar(
+            name: _profileNameForUid(
+              _currentUid,
+              FirebaseAuth.instance.currentUser?.displayName ??
+                  FirebaseAuth.instance.currentUser?.email?.split('@').first ??
+                  'You',
+            ),
+            photoBase64: _photoBase64ForUid(_currentUid),
+            radius: 16,
+            color: pinkColor,
+          ),
+        ],
+      ],
+    );
+
+    return RepaintBoundary(
+      key: ValueKey<String>('chat-row-$messageId'),
+      child: KeyedSubtree(
+        key: _messageKeys.putIfAbsent(messageId, () => GlobalKey()),
+        child: Column(
+          children: [
+        if (_shouldShowTimeDivider(index))
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 5),
+            child: Center(
+              child: Text(
+                _formatTime(message['time']),
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              if (expanded) {
+                _expandedMessageTimes.remove(messageId);
+              } else {
+                _expandedMessageTimes.add(messageId);
+              }
+            });
+          },
+          onLongPress: () => _showMessageOptions(message),
+          onDoubleTap: () => unawaited(
+            _setMessageReaction(messageId, '❤️'),
+          ),
+          onHorizontalDragUpdate: (details) {
+            final currentOffset = _replyDragOffsets[messageId] ?? 0;
+            // Messenger-এর মতো reply করতে স্পষ্টভাবে ডানদিকে টানতে হবে;
+            // অল্প/তির্যক swipe-এ মেসেজ সরবে না।
+            if (details.delta.dx <= 0 && currentOffset <= 0) return;
+            if (details.delta.dx.abs() < details.delta.dy.abs() * 1.15 &&
+                currentOffset < 18) {
+              return;
+            }
+            setState(() {
+              _replyDragOffsets[messageId] =
+                  (currentOffset + details.delta.dx).clamp(0.0, 104.0).toDouble();
+            });
+          },
+          onHorizontalDragEnd: (_) {
+            final offset = _replyDragOffsets[messageId] ?? 0;
+            if (offset >= 78 && message['unsent'] != true) {
+              unawaited(InteractionFeedbackSettings.vibrate());
+              _setReplyTo(message);
+            }
+            setState(() => _replyDragOffsets[messageId] = 0);
+          },
+          child: Container(
+            transform: Matrix4.identity()..scale(_highlightedMessageId == messageId ? 1.025 : 1.0),
+            transformAlignment: Alignment.center,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: _highlightedMessageId == messageId ? pinkColor.withValues(alpha: 0.13) : Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Stack(
+              alignment: Alignment.centerLeft,
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 2,
+                  child: AnimatedOpacity(
+                    opacity: dragOffset >= 22 ? 1 : 0,
+                    duration: const Duration(milliseconds: 100),
+                    child: const Icon(Icons.reply_rounded, color: pinkColor, size: 22),
+                  ),
+                ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 90),
+                  curve: Curves.easeOut,
+                  transform: Matrix4.translationValues(dragOffset, 0, 0),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      row,
+                    ],
+                  ),
+                ),
+              ],
+              ),
+            ),
+          ),
+        ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatHeader() {
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _spaceStream,
+      builder: (context, spaceSnapshot) {
+        final space = spaceSnapshot.data ?? <String, dynamic>{};
+        final rawMembers = space['memberUids'];
+        final members = rawMembers is List
+            ? rawMembers.whereType<String>().toList()
+            : <String>[];
+        String partnerUid = '';
+        for (final uid in members) {
+          if (uid != _currentUid) {
+            partnerUid = uid;
+            break;
+          }
+        }
+        if (partnerUid.isEmpty) {
+          return _chatHeaderContent(
+            name: 'Partner',
+            photoBase64: '',
+            isOnline: false,
+            isTyping: false,
+            lastSeen: null,
+          );
+        }
+        return StreamBuilder<Map<String, dynamic>?>(
+          stream: ChatSyncService.watchPresence(partnerUid),
+          builder: (context, presenceSnapshot) {
+            final presence = presenceSnapshot.data;
+            final isOnline = presence?['isOnline'] == true;
+            return StreamBuilder<Map<String, dynamic>?>(
+              stream: ChatSyncService.watchMemberTyping(partnerUid),
+              builder: (context, typingSnapshot) {
+                final isTyping = typingSnapshot.data?['isTyping'] == true;
+                return _chatHeaderContent(
+                  name: _profileNameForUid(partnerUid, 'Partner'),
+                  photoBase64: _photoBase64ForUid(partnerUid),
+                  isOnline: isOnline,
+                  isTyping: isTyping,
+                  lastSeen: presence?['lastSeen'],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _chatHeaderContent({
+    required String name,
+    required String photoBase64,
+    required bool isOnline,
+    required bool isTyping,
+    dynamic lastSeen,
+  }) {
+    final avatar = ProfileAvatar(
+      name: name,
+      photoBase64: photoBase64,
+      radius: 23,
+      color: purpleColor,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      child: Row(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              avatar,
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: isOnline
+                        ? Colors.greenAccent
+                        : Colors.grey,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: backgroundColor,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                PresenceStatusLabel(
+                  isTyping: isTyping,
+                  isOnline: isOnline,
+                  lastSeen: lastSeen,
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.lock_outline_rounded,
+            color: pinkColor,
+            size: 21,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _spaceStream,
+      builder: (context, spaceSnapshot) {
+        final rawMembers = spaceSnapshot.data?['memberUids'];
+        final members = rawMembers is List ? rawMembers.whereType<String>().toList() : <String>[];
+        String partnerUid = '';
+        for (final uid in members) {
+          if (uid != _currentUid) {
+            partnerUid = uid;
+            break;
+          }
+        }
+        if (partnerUid.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return StreamBuilder<Map<String, dynamic>?>(
+          stream: ChatSyncService.watchMemberTyping(partnerUid),
+          builder: (context, snapshot) {
+            if (snapshot.data?['isTyping'] != true) {
+              return const SizedBox.shrink();
+            }
+            return const Padding(
+              padding: EdgeInsets.only(
+                left: 18,
+                right: 18,
+                top: 2,
+                bottom: 8,
+              ),
+              child: Row(
+                children: [
+                  TypingDotsIndicator(),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _buildChatHeader(),
+        const Divider(height: 1, color: Colors.white10),
+        Expanded(
+          child: messages.isEmpty && _pendingMediaName == null
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.forum_outlined,
+                        size: 48,
+                        color: Colors.white30,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'একটি সুন্দর কথোপকথন শুরু করো ❤️',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                )
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification is ScrollStartNotification &&
+                        notification.dragDetails != null) {
+                      _userIsScrolling = true;
+                      _scrollRequestToken++;
+                      if (scrollController.hasClients) {
+                        final distanceFromBottom =
+                            scrollController.position.maxScrollExtent -
+                                scrollController.position.pixels;
+                        if (distanceFromBottom > 24) {
+                          _userHasScrolledAwayFromBottom = true;
+                        }
+                      }
+                    } else if (notification is ScrollEndNotification) {
+                      _userIsScrolling = false;
+                    }
+                    if (notification is ScrollUpdateNotification ||
+                        notification is ScrollEndNotification) {
+                      _updateChatScrollPosition();
+                      if (scrollController.hasClients) {
+                        final distanceFromBottom =
+                            scrollController.position.maxScrollExtent -
+                                scrollController.position.pixels;
+                        // Clear auto-follow lock only when genuinely back at
+                        // the bottom, not merely within the 120px UI threshold.
+                        if (distanceFromBottom <= 24) {
+                          _userHasScrolledAwayFromBottom = false;
+                        } else if (notification is ScrollUpdateNotification &&
+                            notification.dragDetails != null) {
+                          // Any manual drag away from the bottom pauses
+                          // automatic following while the user reads history.
+                          _userHasScrolledAwayFromBottom = true;
+                        }
+                      }
+                      final shouldShow = !_isNearChatBottom;
+                      if (shouldShow != _showJumpToBottom && mounted) {
+                        setState(() => _showJumpToBottom = shouldShow);
+                      }
+                    }
+                    return false;
+                  },
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ListView.builder(
+                    key: const PageStorageKey<String>('couple-zone-chat-list'),
+                    controller: scrollController,
+                    physics: const ClampingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
+                    // কম off-screen row তৈরি রাখি, যাতে ছবি/ভিডিও/ভয়েসের
+                    // decode ও download একসঙ্গে শুরু হয়ে scroll frame drop না করে।
+                    cacheExtent: 80,
+                    addAutomaticKeepAlives: false,
+                    addRepaintBoundaries: true,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    itemCount:
+                        messages.length + (_pendingMediaName != null ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index >= messages.length) {
+                        return _buildPendingMediaMessage();
+                      }
+
+                      final message = messages[index];
+                      final messageId = '${message['id'] ?? index}';
+                      return KeyedSubtree(
+                        key: ValueKey<String>('chat-message-$messageId'),
+                        child: _buildMessage(message, index),
+                      );
+                    },
+                        ),
+                      ),
+                      if (_showJumpToBottom)
+                        Positioned(
+                          right: 16,
+                          bottom: 14,
+                          child: Material(
+                            color: pinkColor,
+                            elevation: 7,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () {
+                                  _userHasScrolledAwayFromBottom = false;
+                                  _scrollToBottom();
+                                },
+                              child: const SizedBox(
+                                width: 48,
+                                height: 48,
+                                child: Icon(
+                                  Icons.keyboard_double_arrow_down_rounded,
+                                  color: Colors.white,
+                                  size: 27,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+        ),
+        _buildTypingIndicator(),
+        SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(7, 8, 7, 8),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              border: Border(
+                top: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_replyToMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.reply_rounded, color: pinkColor, size: 18),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Reply: ${_replyToMessage!['type'] == 'text' ? (_replyToMessage!['text'] ?? '') : (_replyToMessage!['type'] == 'video' ? 'ভিডিও' : 'ছবি')}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Reply বাতিল',
+                          onPressed: () => setState(() => _replyToMessage = null),
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                        ),
+                      ],
+                    ),
+                  ),
+                _buildVoiceRecordingPanel(),
+                Row(
+                  children: [
+                    PopupMenuButton<String>(
+                      tooltip: 'ছবি, ভিডিও বা ক্যামেরা',
+                      onOpened: () {
+                        if (mounted) setState(() => _attachmentMenuOpen = true);
+                      },
+                      onCanceled: () {
+                        if (mounted) setState(() => _attachmentMenuOpen = false);
+                      },
+                      onSelected: (choice) {
+                        setState(() => _attachmentMenuOpen = false);
+                        if (choice == 'image') {
+                          _sendMedia(false);
+                        } else if (choice == 'video') {
+                          _sendMedia(true);
+                        } else if (choice == 'camera') {
+                          _sendMedia(false, source: ImageSource.camera);
+                        } else if (choice == 'voice') {
+                          _startVoiceRecording();
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'image',
+                          child: ListTile(
+                            leading: Icon(Icons.image_outlined),
+                            title: Text('ছবি'),
+                            dense: true,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'video',
+                          child: ListTile(
+                            leading: Icon(Icons.video_library_outlined),
+                            title: Text('ভিডিও'),
+                            dense: true,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'camera',
+                          child: ListTile(
+                            leading: Icon(Icons.camera_alt_outlined),
+                            title: Text('ক্যামেরা'),
+                            dense: true,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'voice',
+                          child: ListTile(
+                            leading: Icon(Icons.mic_none_rounded),
+                            title: Text('ভয়েস রেকর্ড'),
+                            dense: true,
+                          ),
+                        ),
+                      ],
+                      icon: AnimatedRotation(
+                        turns: _attachmentMenuOpen ? 0.125 : 0,
+                        duration: const Duration(milliseconds: 160),
+                        child: const Icon(Icons.add_rounded, color: pinkColor),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: _isRecordingVoice ? 'রেকর্ড বন্ধ' : 'ভয়েস রেকর্ড',
+                      onPressed: _toggleVoiceRecording,
+                      icon: Icon(
+                        _isRecordingVoice ? Icons.stop_circle_rounded : Icons.mic_none_rounded,
+                        color: _isRecordingVoice ? Colors.redAccent : pinkColor,
+                      ),
+                    ),
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    minLines: 1,
+                    maxLines: 4,
+                    textCapitalization: TextCapitalization.sentences,
+                    onChanged: _handleTypingChanged,
+                    onSubmitted: (_) => _sendText(),
+                    decoration: InputDecoration(
+                      hintText: 'মেসেজ লেখো...',
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 15,
+                        vertical: 11,
+                      ),
+                      filled: true,
+                      fillColor: surfaceColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                IconButton.filled(
+                  tooltip: 'পাঠাও',
+                  onPressed: _sendText,
+                  style: IconButton.styleFrom(
+                    backgroundColor: pinkColor,
+                  ),
+                  icon: const Icon(Icons.send_rounded),
+                ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================
+// GALLERY
+// ============================================================
+
+class GalleryPage extends StatefulWidget {
+  const GalleryPage({super.key});
+
+  @override
+  State<GalleryPage> createState() => _GalleryPageState();
+}
+
+class _GalleryPageState extends State<GalleryPage> {
+  List<Map<String, dynamic>> folders = [];
+  List<Map<String, dynamic>> media = [];
+
+  @override
+  void initState() {
+    super.initState();
+    SpaceStore.syncVersion.addListener(_handleGallerySyncChanged);
+
+    folders = SpaceStore.readList('galleryFolders');
+    media = SpaceStore.readList('galleryMedia');
+
+    if (folders.isEmpty) {
+      folders = [
+        {'id': 'all', 'name': 'All Memories'},
+        {'id': 'favorites', 'name': 'Favorites'},
+      ];
+
+      SpaceStore.saveList('galleryFolders', folders);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_preloadGalleryMedia());
+    });
+  }
+
+  Future<void> _preloadGalleryMedia() async {
+    final items = List<Map<String, dynamic>>.from(media);
+    for (final item in items) {
+      if (!mounted) return;
+      final fileId = '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+      final localPath = '${item['path'] ?? ''}'.trim();
+      if (fileId.isEmpty && localPath.isEmpty) continue;
+      try {
+        await _resolveLocalPath(item);
+      } catch (error) {
+        debugPrint('Gallery media pre-download skipped: $error');
+      }
+    }
+  }
+
+  void _handleGallerySyncChanged() {
+    if (!mounted) return;
+
+    final latestFolders = SpaceStore.readList('galleryFolders');
+    final latestMedia = SpaceStore.readList('galleryMedia');
+
+    setState(() {
+      folders = latestFolders;
+      media = latestMedia;
+    });
+    unawaited(_preloadGalleryMedia());
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleGallerySyncChanged);
+    super.dispose();
+  }
+
+  String _currentCreatorName() {
+    final user = FirebaseAuth.instance.currentUser;
+    final savedName = SpaceStore.readString('myDisplayName').trim();
+    final displayName = user?.displayName?.trim() ?? '';
+    final emailName = user?.email?.split('@').first.trim() ?? '';
+
+    if (savedName.isNotEmpty) return savedName;
+    if (displayName.isNotEmpty) return displayName;
+    if (emailName.isNotEmpty) return emailName;
+
+    return 'অজানা';
+  }
+
+  Future<void> _save() async {
+    final foldersToSave = folders
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    final mediaToSave = media
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    await SpaceStore.saveList('galleryMedia', mediaToSave);
+    await SpaceStore.saveList('galleryFolders', foldersToSave);
+  }
+
+  Future<void> _createFolder() async {
+    final controller = TextEditingController();
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('New folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Folder name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, controller.text.trim());
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (name == null || name.isEmpty) return;
+
+    setState(() {
+      folders.add({
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'name': name,
+        'createdByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
+        'createdByName': _currentCreatorName(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+    });
+
+    await _save();
+  }
+
+  Future<void> _showFolderMenu(Map<String, dynamic> folder) async {
+    final id = '${folder['id']}';
+    final isDefault = id == 'all' || id == 'favorites';
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Details'),
+              onTap: () => Navigator.pop(sheetContext, 'details'),
+            ),
+            if (!isDefault)
+              ListTile(
+                leading: const Icon(Icons.drive_file_rename_outline),
+                title: const Text('Rename'),
+                onTap: () => Navigator.pop(sheetContext, 'rename'),
+              ),
+            if (!isDefault)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: Colors.redAccent,
+                ),
+                title: const Text('Delete'),
+                onTap: () => Navigator.pop(sheetContext, 'delete'),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == 'details') {
+      final count = _itemsForFolder(id).length;
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: surfaceColor,
+          title: const Text('Folder details'),
+          content: Text(
+            'Name: ${folder['name']}\n'
+            'Items: $count\n'
+            'Created by: ${folder['createdByName'] ?? 'অজানা (পুরোনো ফোল্ডার)'}\n'
+            'Created: ${folder['createdAt'] ?? 'Unknown'}\n'
+            'Folder ID: $id',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } else if (action == 'rename') {
+      await _renameFolder(folder);
+    } else if (action == 'delete') {
+      await _deleteFolder(folder);
+    }
+  }
+
+  Future<void> _renameFolder(Map<String, dynamic> folder) async {
+    final id = '${folder['id']}';
+
+    if (id == 'all' || id == 'favorites') return;
+
+    final controller = TextEditingController(
+      text: '${folder['name'] ?? ''}',
+    );
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Rename folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 40,
+          decoration: const InputDecoration(
+            labelText: 'Folder name',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, controller.text.trim());
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (name == null || name.isEmpty || !mounted) return;
+
+    setState(() {
+      final index = folders.indexWhere((item) => '${item['id']}' == id);
+
+      if (index != -1) {
+        folders[index]['name'] = name;
+      }
+    });
+
+    await _save();
+  }
+
+  Future<void> _deleteFolder(Map<String, dynamic> folder) async {
+    final id = '${folder['id']}';
+
+    if (id == 'all' || id == 'favorites') return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Delete folder?'),
+        content: Text(
+          '“${folder['name']}” ফোল্ডারটি মুছে যাবে। '
+          'এর ছবি ও ভিডিও All Memories-এ থাকবে।',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      for (final item in media) {
+        if ('${item['folderId']}' == id) {
+          item['folderId'] = 'all';
+        }
+      }
+
+      folders.removeWhere((item) => '${item['id']}' == id);
+    });
+
+    await _save();
+  }
+
+  Future<Map<String, dynamic>?> _addMedia(
+    String folderId,
+    bool video,
+  ) async {
+    final picker = ImagePicker();
+
+    final picked = video
+        ? await picker.pickVideo(source: ImageSource.gallery)
+        : await picker.pickImage(source: ImageSource.gallery, imageQuality: 88, maxWidth: 2560, maxHeight: 2560);
+
+    if (picked == null) return null;
+    if (!mounted) return null;
+
+    File uploadFile = File(picked.path);
+    if (video) {
+      try {
+        uploadFile = await _makeCompatibleVideo(uploadFile);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ভিডিও অপটিমাইজ করা যায়নি; অন্য ভিডিও দিয়ে চেষ্টা করুন।')),
+          );
+        }
+        return null;
+      }
+    }
+
+    final itemId = DateTime.now().microsecondsSinceEpoch.toString();
+    final uploadCreatedAt = DateTime.now().toIso8601String();
+    final creatorUid =
+        FirebaseAuth.instance.currentUser?.uid ?? '';
+    final creatorName = _currentCreatorName();
+
+    Map<String, String> uploaded;
+
+    try {
+      uploaded = await SpaceSyncService.uploadSharedMedia(
+        uploadFile,
+        metadata: {
+          'purpose': 'gallery',
+          'itemId': itemId,
+          'type': video ? 'video' : 'image',
+          'folderId': folderId,
+          'createdByUid': creatorUid,
+          'createdByName': creatorName,
+          'createdAt': uploadCreatedAt,
+          'fileName': uploadFile.uri.pathSegments.last,
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Drive-এ আপলোড হয়নি: $e')),
+        );
+      }
+      return null;
+    }
+
+    // Upload সফল হলে picker-এর অস্থায়ী path-এর ওপর নির্ভর না করে
+    // একই ফাইলকে স্থায়ী media cache-এ রাখো।
+    var galleryLocalPath = uploadFile.path;
+    try {
+      final fileId = (
+        uploaded['fileId'] ??
+        uploaded['driveFileId'] ??
+        ''
+      ).toString().trim();
+
+      final sourceFile = uploadFile;
+
+      if (fileId.isNotEmpty &&
+          await sourceFile.exists() &&
+          await sourceFile.length() > 0) {
+        final size = await sourceFile.length();
+        final support = await getApplicationSupportDirectory();
+        final cacheDirectory = Directory(
+          '${support.path}/eternal_space_media',
+        );
+        await cacheDirectory.create(recursive: true);
+
+        final safeId = fileId.replaceAll(
+          RegExp(r'[^A-Za-z0-9_-]'),
+          '_',
+        );
+        final uploadName = uploadFile.uri.pathSegments.last;
+        final dot = uploadName.lastIndexOf('.');
+        final extension = dot > 0 && uploadName.length - dot <= 10
+            ? uploadName.substring(dot).toLowerCase()
+            : '';
+
+        final cachedFile = File(
+          '${cacheDirectory.path}/media_shared_${safeId}__${extension}',
+        );
+        final tempFile = File('${cachedFile.path}.part');
+        final marker = File('${cachedFile.path}.complete');
+
+        if (await marker.exists()) await marker.delete();
+        if (await tempFile.exists()) await tempFile.delete();
+
+        await sourceFile.copy(tempFile.path);
+
+        if (await tempFile.length() != size) {
+          throw Exception('লোকাল ক্যাশ যাচাই করা যায়নি।');
+        }
+
+        if (await cachedFile.exists()) await cachedFile.delete();
+        await tempFile.rename(cachedFile.path);
+        await marker.writeAsString('$size', flush: true);
+
+        galleryLocalPath = cachedFile.path;
+      }
+    } catch (error) {
+      // লোকাল ক্যাশে ব্যর্থ হলেও সফল Drive upload নষ্ট করবে না।
+      debugPrint('Gallery local cache copy failed: $error');
+    }
+
+    final item = <String, dynamic>{
+      'id': itemId,
+      'path': galleryLocalPath,
+      'type': video ? 'video' : 'image',
+      'folderId': folderId,
+      'createdAt': uploadCreatedAt,
+      'createdByUid': creatorUid,
+      'createdByName': creatorName,
+      ...uploaded,
+    };
+
+    setState(() {
+      media.add(item);
+    });
+
+    await _save();
+    
+    final taskId = uploaded['_uploadTaskId'] ?? '';
+    if (taskId.isNotEmpty) {
+      await SpaceSyncService.acknowledgeUpload(taskId);
+    }
+
+    return item;
+  }
+
+  Future<void> _deleteMediaItem(
+    Map<String, dynamic> item, {
+    bool fromFavorites = false,
+  }) async {
+    final driveId = (
+      item['fileId'] ??
+      item['driveFileId'] ??
+      ''
+    ).toString().trim();
+
+    final itemId = '${item['id'] ?? ''}';
+    final originalIndex = media.indexWhere(
+      (m) => '${m['id'] ?? ''}' == itemId,
+    );
+
+    if (originalIndex == -1) return;
+
+    final removedItem = Map<String, dynamic>.from(
+      media[originalIndex],
+    );
+
+    // পছন্দের ছবি অন্য ফোল্ডার থেকে সরালে Drive ফাইল মুছবে না;
+    // সেটি Favorites-এ রেখে দেবে।
+    if (removedItem['favorite'] == true && !fromFavorites) {
+      setState(() {
+        media[originalIndex]['folderId'] = 'favorites';
+      });
+      await _save();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ছবিটি Favorites-এ রাখা হয়েছে।')),
+        );
+      }
+      return;
+    }
+
+    // আগে গ্যালারি থেকে সরিয়ে দাও।
+    setState(() {
+      media.removeAt(originalIndex);
+    });
+
+    try {
+      await _save();
+
+      // Drive-এ থাকা ফাইলটি পেছনে মুছে ফেলো।
+      if (driveId.isNotEmpty) {
+        await SpaceSyncService.deleteSharedMedia(driveId);
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('গ্যালারি থেকে সরানো হয়েছে।'),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Gallery delete failed: $error');
+
+      // সার্ভারে মুছতে ব্যর্থ হলে আইটেমটি ফিরিয়ে দাও।
+      if (!mounted) return;
+
+      setState(() {
+        if (!media.any((m) => '${m['id'] ?? ''}' == itemId)) {
+          final insertIndex = originalIndex.clamp(0, media.length);
+          media.insert(insertIndex, removedItem);
+        }
+      });
+
+      try {
+        await _save();
+      } catch (saveError) {
+        debugPrint('Gallery restore failed: $saveError');
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'ফাইলটি মুছতে সমস্যা হয়েছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleFavorite(Map<String, dynamic> item) async {
+    final id = '${item['id'] ?? ''}';
+    final index = media.indexWhere((entry) => '${entry['id'] ?? ''}' == id);
+    if (index < 0) return;
+
+    final wasFavorite = media[index]['favorite'] == true;
+    setState(() {
+      media[index]['favorite'] = !wasFavorite;
+      if (wasFavorite && media[index]['folderId'] == 'favorites') {
+        media[index]['folderId'] = 'all';
+      }
+    });
+    await _save();
+  }
+
+  Future<void> _showMediaMenu(
+    Map<String, dynamic> item, {
+    bool fromFavorites = false,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: surfaceColor,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: Icon(
+                item['favorite'] == true ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                color: Colors.redAccent,
+              ),
+              title: Text(item['favorite'] == true ? 'Remove from Favorites' : 'Add to Favorites'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await _toggleFavorite(item);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Details'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showMediaDetails(item);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline,
+                color: Colors.redAccent,
+              ),
+              title: const Text('Delete'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    backgroundColor: surfaceColor,
+                    title: const Text('Delete memory?'),
+                    content: const Text(
+                      'This item will be removed from this gallery.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(dialogContext, false);
+                        },
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () {
+                          Navigator.pop(dialogContext, true);
+                        },
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirmed == true) {
+                  await _deleteMediaItem(item, fromFavorites: fromFavorites);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMediaDetails(Map<String, dynamic> item) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Memory details'),
+        content: Text(
+          'Type: ${item['type']}\n'
+          'Added: ${item['createdAt'] ?? 'Unknown'}\n'
+          'Added by: ${item['createdByName'] ?? 'অজানা (পুরোনো ফাইল)'}\n'
+          'Folder: ${_folderName('${item['folderId']}')}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _folderName(String id) {
+    return folders.firstWhere(
+      (folder) => folder['id'] == id,
+      orElse: () => {'name': 'Unknown'},
+    )['name'] as String;
+  }
+
+  Future<void> _openFolder(Map<String, dynamic> folder) async {
+    final id = '${folder['id']}';
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GalleryFolderPage(
+          title: '${folder['name']}',
+          folderId: id,
+          initialItems: _itemsForFolder(id),
+          onAdd: (video) => _addMedia(id, video),
+          onDelete: (item) async {
+            await _deleteMediaItem(item, fromFavorites: id == 'favorites');
+          },
+          onDetails: _showMediaDetails,
+          onFavorite: _toggleFavorite,
+          onLongPress: (item) => _showMediaMenu(
+            item,
+            fromFavorites: id == 'favorites',
+          ),
+        ),
+      ),
+    );
+
+    if (mounted) setState(() {});
+  }
+
+  List<Map<String, dynamic>> _itemsForFolder(String id) {
+    if (id == 'all') {
+      return media
+          .where((item) => item['folderId'] != 'favorites')
+          .toList();
+    }
+
+    if (id == 'favorites') {
+      return media
+          .where((item) =>
+              item['favorite'] == true || item['folderId'] == 'favorites')
+          .toList();
+    }
+
+    return media.where((item) => item['folderId'] == id).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Our Memories',
+                style: TextStyle(
+                  fontSize: 25,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            IconButton.filled(
+              onPressed: _createFolder,
+              icon: const Icon(Icons.create_new_folder_outlined),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Keep the little moments that mean everything.',
+          style: TextStyle(color: Colors.white54),
+        ),
+        const SizedBox(height: 22),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: folders.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.15,
+          ),
+          itemBuilder: (context, index) {
+            final folder = folders[index];
+            final count = _itemsForFolder('${folder['id']}').length;
+
+            return Material(
+              color: surfaceColor,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () => _openFolder(folder),
+                onLongPress: () => _showFolderMenu(folder),
+                child: Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.folder_rounded,
+                            size: 42,
+                            color: purpleColor,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '${folder['name']}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            '$count items',
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: IconButton(
+                        tooltip: 'Folder options',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _showFolderMenu(folder),
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class GalleryFolderPage extends StatefulWidget {
+  final String title;
+  final String folderId;
+  final List<Map<String, dynamic>> initialItems;
+  final Future<Map<String, dynamic>?> Function(bool video) onAdd;
+  final Future<void> Function(Map<String, dynamic>) onDelete;
+  final void Function(Map<String, dynamic>) onDetails;
+  final Future<void> Function(Map<String, dynamic>) onFavorite;
+  final Future<void> Function(Map<String, dynamic>) onLongPress;
+
+  const GalleryFolderPage({
+    super.key,
+    required this.title,
+    required this.folderId,
+    required this.initialItems,
+    required this.onAdd,
+    required this.onDelete,
+    required this.onDetails,
+    required this.onFavorite,
+    required this.onLongPress,
+  });
+
+  @override
+  State<GalleryFolderPage> createState() => _GalleryFolderPageState();
+}
+
+class _GalleryFolderPageState extends State<GalleryFolderPage> {
+  late List<Map<String, dynamic>> items;
+  final Map<String, Future<String?>> _pathFutures = {};
+  final Set<String> _selectedIds = <String>{};
+  bool _selectionMode = false;
+
+  final Map<String, Future<String?>> _videoThumbnailFutures = {};
+
+  Future<String?> _resolveCachedVideoPath(
+    Map<String, dynamic> item,
+  ) async {
+    try {
+      final localPath = '${item['path'] ?? ''}'.trim();
+
+      if (localPath.isNotEmpty &&
+          await _isUsableGalleryPath(localPath)) {
+        return localPath;
+      }
+
+      final fileId = (
+        item['fileId'] ??
+        item['driveFileId'] ??
+        ''
+      ).toString().trim();
+
+      if (fileId.isEmpty) return null;
+
+      final prefs = await SharedPreferences.getInstance();
+      final savedPaths = prefs.getString('galleryLocalPaths');
+
+      if (savedPaths != null && savedPaths.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(savedPaths);
+
+          if (decoded is Map) {
+            final savedPath = '${decoded[fileId] ?? ''}'.trim();
+
+            if (savedPath.isNotEmpty &&
+                await _isUsableGalleryPath(savedPath)) {
+              return savedPath;
+            }
+          }
+        } catch (_) {}
+      }
+
+      final safeId = fileId.replaceAll(
+        RegExp(r'[^A-Za-z0-9_-]'),
+        '_',
+      );
+
+      final isPersonal = item['storage'] == 'personal';
+      final prefix =
+          'media_${isPersonal ? 'personal' : 'shared'}_${safeId}__';
+
+      final support = await getApplicationSupportDirectory();
+      final directory = Directory(
+        '${support.path}/eternal_space_media',
+      );
+
+      if (!await directory.exists()) return null;
+
+      await for (final entity in directory.list()) {
+        if (entity is! File) continue;
+
+        final name = entity.uri.pathSegments.last;
+
+        if (!name.startsWith(prefix) ||
+            name.endsWith('.part') ||
+            name.endsWith('.complete')) {
+          continue;
+        }
+
+        final marker = File('${entity.path}.complete');
+
+        try {
+          if (!await marker.exists()) continue;
+
+          final length = await entity.length();
+          final recordedLength = int.tryParse(
+            (await marker.readAsString()).trim(),
+          );
+
+          if (length > 0 && recordedLength == length) {
+            return entity.path;
+          }
+        } catch (_) {}
+      }
+    } catch (error) {
+      debugPrint('Cached video lookup error: $error');
+    }
+
+    // ক্যাশে না থাকলে ডাউনলোড শুরু করবে না।
+    return null;
+  }
+
+  Future<String?> _resolveVideoThumbnailPath(
+    Map<String, dynamic> item,
+  ) {
+    final fileId = (
+      item['fileId'] ??
+      item['driveFileId'] ??
+      item['id'] ??
+      ''
+    ).toString().trim();
+
+    final existing = _videoThumbnailFutures[fileId];
+    if (existing != null) return existing;
+
+    late final Future<String?> future;
+
+    future = Future<String?>.microtask(() async {
+      try {
+        final videoPath = await _resolveCachedVideoPath(item);
+        if (videoPath == null) return null;
+
+        final videoFile = File(videoPath);
+        if (!await videoFile.exists()) return null;
+
+        // Temporary directory পরিষ্কার হয়ে যেতে পারে, তাই
+        // thumbnail স্থায়ী app-support directory-তে রাখো।
+        final support = await getApplicationSupportDirectory();
+        final safeId = fileId.replaceAll(
+          RegExp(r'[^A-Za-z0-9_-]'),
+          '_',
+        );
+        final thumbnailDirectory = Directory(
+          '${support.path}/eternal_space_video_thumbnails',
+        );
+        await thumbnailDirectory.create(recursive: true);
+
+        final thumbnailFile = File(
+          '${thumbnailDirectory.path}/video_thumb_$safeId.jpg',
+        );
+
+        if (await thumbnailFile.exists() &&
+            await thumbnailFile.length() > 0) {
+          return thumbnailFile.path;
+        }
+
+        final generatedPath = await VideoThumbnail.thumbnailFile(
+          video: videoPath,
+          thumbnailPath: thumbnailFile.path,
+          imageFormat: ImageFormat.JPEG,
+          maxHeight: 320,
+          quality: 70,
+        );
+
+        if (generatedPath == null || generatedPath.isEmpty) {
+          return null;
+        }
+
+        final generatedFile = File(generatedPath);
+
+        if (await generatedFile.exists() &&
+            await generatedFile.length() > 0) {
+          return generatedFile.path;
+        }
+      } catch (error) {
+        debugPrint('Video thumbnail error: $error');
+      }
+
+      return null;
+    });
+
+    _videoThumbnailFutures[fileId] = future;
+
+    future.then((path) {
+      if (path == null &&
+          identical(_videoThumbnailFutures[fileId], future)) {
+        _videoThumbnailFutures.remove(fileId);
+      }
+    });
+
+    return future;
+  }
+
+  String _mediaKey(Map<String, dynamic> item) {
+    return '${item['id'] ?? item['fileId'] ?? item['driveFileId'] ?? ''}';
+  }
+
+  void _toggleSelection(Map<String, dynamic> item) {
+    final key = _mediaKey(item);
+    if (key.isEmpty) return;
+
+    setState(() {
+      _selectionMode = true;
+
+      if (_selectedIds.contains(key)) {
+        _selectedIds.remove(key);
+      } else {
+        _selectedIds.add(key);
+      }
+
+      if (_selectedIds.isEmpty) {
+        _selectionMode = false;
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedItems() async {
+    final selectedItems = items
+        .where((item) => _selectedIds.contains(_mediaKey(item)))
+        .toList();
+
+    if (selectedItems.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('নির্বাচিত ফাইল মুছবে?'),
+        content: Text(
+          '${selectedItems.length}টি ছবি/ভিডিও গ্যালারি থেকে মুছে ফেলা হবে।',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('বাতিল'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('মুছে ফেলো'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    for (final item in selectedItems) {
+      try {
+        await widget.onDelete(item);
+      } catch (error) {
+        debugPrint('Multi-delete failed: $error');
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _selectedIds.clear();
+      _selectionMode = false;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    items = List<Map<String, dynamic>>.from(widget.initialItems);
+    SpaceStore.syncVersion.addListener(_handleFolderSyncChanged);
+  }
+
+  void _handleFolderSyncChanged() {
+    if (!mounted) return;
+
+    final latestMedia = SpaceStore.readList('galleryMedia');
+
+    final List<Map<String, dynamic>> updatedItems;
+
+    if (widget.folderId == 'all') {
+      updatedItems = latestMedia
+          .where((item) => item['folderId'] != 'favorites')
+          .toList();
+    } else if (widget.folderId == 'favorites') {
+      updatedItems = latestMedia
+          .where((item) =>
+              item['favorite'] == true || item['folderId'] == 'favorites')
+          .toList();
+    } else {
+      updatedItems = latestMedia
+          .where((item) => item['folderId'] == widget.folderId)
+          .toList();
+    }
+
+    setState(() {
+      items = List<Map<String, dynamic>>.from(updatedItems);
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleFolderSyncChanged);
+    super.dispose();
+  }
+
+  Future<bool> _isUsableGalleryPath(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return false;
+
+      final length = await file.length();
+      if (length <= 0) return false;
+
+      // App-এর স্থায়ী media cache হলে .complete marker-ও যাচাই করো।
+      // পুরোনো picker path-এ marker না থাকলেও সেটি গ্রহণযোগ্য।
+      if (path.contains('/eternal_space_media/')) {
+        final marker = File('$path.complete');
+        if (!await marker.exists()) return false;
+
+        final recordedLength = int.tryParse(
+          (await marker.readAsString()).trim(),
+        );
+
+        return recordedLength == length;
+      }
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<String?> _resolveLocalPath(
+    Map<String, dynamic> item,
+  ) {
+    final fileId =
+        (item['fileId'] ?? item['driveFileId'] ?? '').toString().trim();
+
+    final key = fileId.isNotEmpty
+        ? fileId
+        : (item['path'] ?? item['id'] ?? '').toString();
+
+    final existing = _pathFutures[key];
+    if (existing != null) return existing;
+
+    late final Future<String?> future;
+
+    future = Future<String?>.microtask(() async {
+      try {
+        // ১. আগে item-এর নিজের local path পরীক্ষা করো।
+        final localPath = (item['path'] ?? '').toString().trim();
+
+        if (localPath.isNotEmpty &&
+            await _isUsableGalleryPath(localPath)) {
+          return localPath;
+        }
+
+        if (fileId.isEmpty) return null;
+
+        final isPersonal = item['storage'] == 'personal';
+        final isShared = !isPersonal;
+
+        final prefs = await SharedPreferences.getInstance();
+        final savedPaths = prefs.getString('galleryLocalPaths');
+
+        Map<String, dynamic> pathMap = {};
+
+        if (savedPaths != null && savedPaths.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(savedPaths);
+
+            if (decoded is Map) {
+              pathMap = Map<String, dynamic>.from(decoded);
+            }
+          } catch (_) {}
+        }
+
+        // ২. SharedPreferences-এ সংরক্ষিত path পরীক্ষা করো।
+        final savedPath = (pathMap[fileId] ?? '').toString().trim();
+
+        if (savedPath.isNotEmpty &&
+            await _isUsableGalleryPath(savedPath)) {
+          return savedPath;
+        }
+
+        if (savedPath.isNotEmpty) {
+          pathMap.remove(fileId);
+        }
+
+        // ৩. আগের ডাউনলোডের স্থায়ী cache খোঁজো।
+        final cachedPath = await SpaceSyncService.getCachedMediaPath(
+          fileId,
+          shared: isShared,
+        );
+
+        if (cachedPath != null && cachedPath.isNotEmpty) {
+          final cachedFile = File(cachedPath);
+
+          if (await cachedFile.exists() &&
+              await cachedFile.length() > 0) {
+            pathMap[fileId] = cachedPath;
+            await prefs.setString(
+              'galleryLocalPaths',
+              jsonEncode(pathMap),
+            );
+
+            return cachedPath;
+          }
+        }
+
+        // ৪. Cache না থাকলেই শুধু ডাউনলোড করো।
+        final originalName =
+            (item['driveFileName'] ?? item['name'] ?? 'memory')
+                .toString();
+
+        final safeName = '${item['id'] ?? fileId}_$originalName';
+
+        final downloadedPath = isPersonal
+            ? await SpaceSyncService.downloadPersonalMedia(
+                fileId,
+                saveAs: safeName,
+              )
+            : await SpaceSyncService.downloadMedia(
+                fileId,
+                saveAs: safeName,
+              );
+
+        final downloadedFile = File(downloadedPath);
+
+        if (!await downloadedFile.exists() ||
+            await downloadedFile.length() == 0) {
+          throw Exception('ডাউনলোড করা ফাইল পাওয়া যায়নি।');
+        }
+
+        // ৫. ভবিষ্যতে পুনরায় ব্যবহার করার জন্য path সংরক্ষণ করো।
+        pathMap[fileId] = downloadedPath;
+
+        await prefs.setString(
+          'galleryLocalPaths',
+          jsonEncode(pathMap),
+        );
+
+        return downloadedPath;
+      } catch (error) {
+        debugPrint('Gallery download error: $error');
+        return null;
+      }
+    });
+
+    // সফল Future ক্যাশে রাখো, যাতে একই পেজ rebuild হলে আবার
+    // path lookup/download শুরু না হয়। ব্যর্থ হলে retry করার সুযোগ থাকবে।
+    future.then((path) {
+      if (path == null && identical(_pathFutures[key], future)) {
+        _pathFutures.remove(key);
+      }
+    });
+
+    _pathFutures[key] = future;
+    return future;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      appBar: AppBar(
+        backgroundColor: backgroundColor,
+        title: Text(widget.title),
+        actions: [
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'নির্বাচিত ফাইল মুছুন',
+              onPressed: _selectedIds.isEmpty ? null : _deleteSelectedItems,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _selectionMode = !_selectionMode;
+                _selectedIds.clear();
+              });
+            },
+            icon: Icon(
+              _selectionMode
+                  ? Icons.close_rounded
+                  : Icons.checklist_rounded,
+              color: pinkColor,
+            ),
+            label: Text(
+              _selectionMode ? 'বাতিল' : 'নির্বাচন',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+          ),
+          IconButton(
+            onPressed: _chooseAddType,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+          ),
+        ],
+      ),
+      body: items.isEmpty
+          ? const Center(
+              child: Text(
+                'No memories here yet.',
+                style: TextStyle(color: Colors.white54),
+              ),
+            )
+          : GridView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: items.length,
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 9,
+                mainAxisSpacing: 9,
+              ),
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final video = item['type'] == 'video';
+
+                return FutureBuilder<String?>(
+                  future: video
+                      ? Future<String?>.value(null)
+                      : _resolveLocalPath(item),
+                  builder: (context, snapshot) {
+                    final path = snapshot.data;
+
+                    return GestureDetector(
+                      onLongPress: () {
+                        if (!_selectionMode) {
+                          widget.onLongPress(item);
+                        }
+                      },
+                      onTap: () async {
+                        if (_selectionMode) {
+                          _toggleSelection(item);
+                          return;
+                        }
+
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => GalleryMediaViewerPage(
+                              items: List<Map<String, dynamic>>.from(items),
+                              initialIndex: index,
+                              resolvePath: _resolveLocalPath,
+                              onFavorite: widget.onFavorite,
+                              onDelete: widget.onDelete,
+                              onDetails: widget.onDetails,
+                            ),
+                          ),
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (video)
+                              FutureBuilder<String?>(
+                                future: _resolveVideoThumbnailPath(item),
+                                builder: (context, snapshot) {
+                                  final thumbnailPath = snapshot.data;
+
+                                  return Container(
+                                    color: surfaceColor,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      alignment: Alignment.center,
+                                      children: [
+                                        if (thumbnailPath != null)
+                                          Image.file(
+                                            File(thumbnailPath),
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) {
+                                              return const ColoredBox(
+                                                color: surfaceColor,
+                                                child: Icon(
+                                                  Icons.videocam_rounded,
+                                                  size: 42,
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        else
+                                          const Center(
+                                            child: Icon(
+                                              Icons.videocam_rounded,
+                                              size: 42,
+                                              color: Colors.white54,
+                                            ),
+                                          ),
+                                        const Center(
+                                          child: Icon(
+                                            Icons.play_circle_fill_rounded,
+                                            size: 50,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              )
+                            else if (path == null)
+                              Container(
+                                color: surfaceColor,
+                                child: Center(
+                                  child: snapshot.connectionState ==
+                                          ConnectionState.waiting
+                                      ? const CircularProgressIndicator()
+                                      : const Icon(
+                                          Icons.cloud_download_outlined,
+                                          size: 42,
+                                        ),
+                                ),
+                              )
+                            else
+                              Image.file(
+                                File(path),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) {
+                                  return const ColoredBox(
+                                    color: surfaceColor,
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                    ),
+                                  );
+                                },
+                              ),
+                            if (video)
+                              const Align(
+                                alignment: Alignment.bottomRight,
+                                child: Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.videocam_rounded),
+                                ),
+                              ),
+                            if (_selectionMode)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: _selectedIds.contains(_mediaKey(item))
+                                        ? pinkColor
+                                        : Colors.black54,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white70),
+                                  ),
+                                  child: Icon(
+                                    _selectedIds.contains(_mediaKey(item))
+                                        ? Icons.check_rounded
+                                        : Icons.circle_outlined,
+                                    size: 22,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+    );
+  }
+
+  Future<void> _chooseAddType() async {
+    final video = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: surfaceColor,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Add image'),
+              onTap: () => Navigator.pop(sheetContext, false),
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library_outlined),
+              title: const Text('Add video'),
+              onTap: () => Navigator.pop(sheetContext, true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (video == null) return;
+
+    final item = await widget.onAdd(video);
+
+    if (item != null && mounted) {
+      setState(() {
+        items.add(item);
+      });
+    }
+  }
+}
+
+// ============================================================
+// GALLERY MEDIA VIEWER & PLAYERS
+// ============================================================
+
+class GalleryMediaViewerPage extends StatefulWidget {
+  final List<Map<String, dynamic>> items;
+  final int initialIndex;
+  final Future<String?> Function(Map<String, dynamic>) resolvePath;
+  final Future<void> Function(Map<String, dynamic>) onFavorite;
+  final Future<void> Function(Map<String, dynamic>) onDelete;
+  final void Function(Map<String, dynamic>) onDetails;
+
+  const GalleryMediaViewerPage({
+    super.key,
+    required this.items,
+    required this.initialIndex,
+    required this.resolvePath,
+    required this.onFavorite,
+    required this.onDelete,
+    required this.onDetails,
+  });
+
+  @override
+  State<GalleryMediaViewerPage> createState() =>
+      _GalleryMediaViewerPageState();
+}
+
+class _GalleryMediaViewerPageState
+    extends State<GalleryMediaViewerPage> {
+  late final PageController _pageController;
+  late int currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: currentIndex);
+  }
+
+  int? _previousVideoIndex(int from) {
+    for (var i = from - 1; i >= 0; i--) {
+      if (widget.items[i]['type'] == 'video') return i;
+    }
+    return null;
+  }
+
+  int? _nextVideoIndex(int from) {
+    for (var i = from + 1; i < widget.items.length; i++) {
+      if (widget.items[i]['type'] == 'video') return i;
+    }
+    return null;
+  }
+
+  void _goTo(int? index) {
+    if (index == null) return;
+
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: Text('${currentIndex + 1} / ${widget.items.length}'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: widget.items[currentIndex]['favorite'] == true
+                ? 'Remove from Favorites'
+                : 'Add to Favorites',
+            onPressed: () async {
+              await widget.onFavorite(widget.items[currentIndex]);
+              if (mounted) setState(() {});
+            },
+            icon: Icon(
+              widget.items[currentIndex]['favorite'] == true
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              color: widget.items[currentIndex]['favorite'] == true
+                  ? Colors.redAccent
+                  : Colors.white,
+            ),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (action) async {
+              final item = widget.items[currentIndex];
+              if (action == 'details') {
+                widget.onDetails(item);
+              } else if (action == 'delete') {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    backgroundColor: surfaceColor,
+                    title: const Text('Delete memory?'),
+                    content: const Text('This item will be removed from the gallery.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await widget.onDelete(item);
+                  if (mounted) Navigator.pop(context);
+                }
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'details', child: Text('Details')),
+              PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
+        ],
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.items.length,
+        onPageChanged: (index) {
+          setState(() => currentIndex = index);
+        },
+        itemBuilder: (context, index) {
+          final item = widget.items[index];
+          final isVideo = item['type'] == 'video';
+
+          return FutureBuilder<String?>(
+            future: widget.resolvePath(item),
+            builder: (context, snapshot) {
+              final path = snapshot.data;
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              if (path == null) {
+                return const Center(
+                  child: Text(
+                    'ফাইল পাওয়া যায়নি। ইন্টারনেট ও Drive পরীক্ষা করো।',
+                    textAlign: TextAlign.center,
+                  ),
+                );
+              }
+
+              if (!isVideo) {
+                return Center(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 5,
+                    child: Image.file(
+                      File(path),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) {
+                        return const Text('ছবিটি খোলা যাচ্ছে না।');
+                      },
+                    ),
+                  ),
+                );
+              }
+
+              return _GalleryVideoPlayer(
+                key: ValueKey(path),
+                path: path,
+                onPrevious: () => _goTo(_previousVideoIndex(index)),
+                onNext: () => _goTo(_nextVideoIndex(index)),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _GalleryVideoPlayer extends StatefulWidget {
+  final String path;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  const _GalleryVideoPlayer({
+    super.key,
+    required this.path,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  @override
+  State<_GalleryVideoPlayer> createState() =>
+      _GalleryVideoPlayerState();
+}
+
+class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
+  VideoPlayerController? _controller;
+  String? _error;
+  String? _optimizedPath;
+  bool _isOptimizing = false;
+  bool _hasAttemptedOptimization = false;
+  bool _showControls = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize([String? sourcePath]) async {
+    final video = VideoPlayerController.file(File(sourcePath ?? _optimizedPath ?? widget.path));
+    _controller = video;
+
+    try {
+      await video.initialize();
+
+      if (!mounted) {
+        await video.dispose();
+        return;
+      }
+
+      setState(() {});
+      await video.play();
+    } catch (error) {
+      await video.dispose();
+      if (identical(_controller, video)) _controller = null;
+
+      if (!mounted) return;
+      if (!_hasAttemptedOptimization) {
+        // পুরোনো/HEVC ভিডিও প্রথমবার না চললে নিজে থেকেই MP4/H.264-এ রূপান্তর করো।
+        unawaited(_tryOptimizeAndPlay());
+        return;
+      }
+      setState(() {
+        _error = 'ভিডিও খোলা যায়নি। ফাইলটি অসম্পূর্ণ বা এই ডিভাইসে অসমর্থিত হতে পারে।';
+      });
+    }
+  }
+
+  Future<void> _tryOptimizeAndPlay({bool force = false}) async {
+    if (_isOptimizing || (_hasAttemptedOptimization && !force)) return;
+    _hasAttemptedOptimization = true;
+    setState(() {
+      _isOptimizing = true;
+      _error = null;
+    });
+    try {
+      final support = await getApplicationSupportDirectory();
+      final optimizedDirectory = Directory('${support.path}/orbit_optimized_videos');
+      await optimizedDirectory.create(recursive: true);
+      final sourceName = File(widget.path).uri.pathSegments.last
+          .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      final sourceHash = widget.path.codeUnits.fold<int>(
+        17,
+        (hash, unit) => (hash * 31 + unit) & 0x7fffffff,
+      );
+      final optimizedFile = File(
+        '${optimizedDirectory.path}/${sourceName}_${sourceHash}_720p.mp4',
+      );
+
+      if (force && await optimizedFile.exists()) {
+        await optimizedFile.delete();
+      }
+      if (!await optimizedFile.exists() || await optimizedFile.length() <= 0) {
+        final result = await VideoCompress.compressVideo(
+          widget.path,
+          quality: VideoQuality.Res1280x720Quality,
+          deleteOrigin: false,
+          includeAudio: true,
+        );
+        final compressed = result?.file;
+        if (compressed == null ||
+            !await compressed.exists() ||
+            await compressed.length() <= 0) {
+          throw Exception('অপটিমাইজ করা ফাইল পাওয়া যায়নি।');
+        }
+        if (await optimizedFile.exists()) await optimizedFile.delete();
+        await compressed.copy(optimizedFile.path);
+      }
+
+      if (await optimizedFile.length() <= 0) {
+        throw Exception('অপটিমাইজ করা ভিডিও খালি।');
+      }
+      _optimizedPath = optimizedFile.path;
+      await _controller?.dispose();
+      _controller = null;
+      await _initialize(optimizedFile.path);
+    } catch (error) {
+      debugPrint('Automatic video optimization failed: $error');
+      if (mounted) {
+        setState(() {
+          _error = 'ভিডিও স্বয়ংক্রিয়ভাবে অপটিমাইজ করা যায়নি। আবার চেষ্টা করুন।';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isOptimizing = false);
+    }
+  }
+
+  Future<void> _togglePlayback() async {
+    final video = _controller;
+    if (video == null || !video.value.isInitialized) return;
+
+    if (video.value.isPlaying) {
+      await video.pause();
+    } else {
+      await video.play();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final video = _controller;
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.video_file_outlined, size: 42, color: pinkColor),
+              const SizedBox(height: 10),
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: _isOptimizing ? null : () => _tryOptimizeAndPlay(force: true),
+                icon: _isOptimizing
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.auto_fix_high_rounded),
+                label: Text(_isOptimizing ? 'ভিডিও অপটিমাইজ হচ্ছে…' : 'অপটিমাইজ করে আবার চালাও'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (video == null || !video.value.isInitialized) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    return Center(
+      child: AspectRatio(
+        aspectRatio: video.value.aspectRatio,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _showControls = !_showControls),
+          child: Stack(
+          alignment: Alignment.center,
+          children: [
+            VideoPlayer(video),
+            if (_showControls)
+              Center(
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                  child: IconButton(
+                    tooltip: video.value.isPlaying ? 'Pause' : 'Play',
+                    onPressed: _togglePlayback,
+                    iconSize: 44,
+                    color: Colors.white,
+                    icon: Icon(video.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+                  ),
+                ),
+              ),
+            if (_showControls)
+              Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'আগের ভিডিও',
+                      onPressed: widget.onPrevious,
+                      icon: const Icon(Icons.skip_previous_rounded),
+                    ),
+                    Expanded(
+                      child: VideoProgressIndicator(
+                        video,
+                        allowScrubbing: true,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 4,
+                        ),
+                      ),
+                    ),
+                    ValueListenableBuilder<VideoPlayerValue>(
+                      valueListenable: video,
+                      builder: (context, value, child) {
+                        return IconButton(
+                          tooltip: value.isPlaying ? 'Pause' : 'Play',
+                          onPressed: _togglePlayback,
+                          icon: Icon(
+                            value.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                          ),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'পরের ভিডিও',
+                      onPressed: widget.onNext,
+                      icon: const Icon(Icons.skip_next_rounded),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class ChatVoicePlayer extends StatefulWidget {
+  const ChatVoicePlayer({
+    super.key,
+    required this.path,
+    this.durationMs,
+  });
+
+  final String path;
+  final int? durationMs;
+
+  @override
+  State<ChatVoicePlayer> createState() => _ChatVoicePlayerState();
+}
+
+class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
+  AudioPlayer? _player;
+  StreamSubscription<PlayerState>? _stateSubscription;
+  StreamSubscription<Duration>? _durationSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+  bool _isPlaying = false;
+  bool _isPreparing = false;
+  bool _sourceLoaded = false;
+  Future<void>? _sourceLoadFuture;
+  Duration? _duration;
+  Duration _position = Duration.zero;
+  double _playbackRate = 1.0;
+
+  String _formatDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final milliseconds = widget.durationMs ?? 0;
+    if (milliseconds > 0) {
+      _duration = Duration(milliseconds: milliseconds);
+    } else {
+      // Older voice messages do not contain duration metadata; read it in the
+      // background so the total duration appears before the user presses Play.
+      unawaited(_preloadDuration());
+    }
+  }
+
+  Future<void> _preloadDuration() async {
+    try {
+      final player = await _getPlayer();
+      await _loadSource(player);
+    } catch (error) {
+      debugPrint('Voice duration preload failed: $error');
+    }
+  }
+
+  Future<AudioPlayer> _getPlayer() async {
+    var player = _player;
+    if (player != null) return player;
+
+    player = AudioPlayer();
+    _player = player;
+    _stateSubscription = player.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      if (state == PlayerState.playing && !_isPlaying) {
+        unawaited(InteractionFeedbackSettings.vibrate());
+      }
+      setState(() {
+        _isPlaying = state == PlayerState.playing;
+        if (state == PlayerState.completed && _duration != null) {
+          _position = _duration!;
+        }
+      });
+    });
+    _durationSubscription = player.onDurationChanged.listen((duration) {
+      if (!mounted) return;
+      setState(() => _duration = duration);
+    });
+    _positionSubscription = player.onPositionChanged.listen((position) {
+      if (!mounted) return;
+      setState(() => _position = position);
+    });
+    await player.setPlaybackRate(_playbackRate);
+    return player;
+  }
+
+  Future<void> _loadSource(AudioPlayer player) {
+    if (_sourceLoaded) return Future<void>.value();
+    final existingLoad = _sourceLoadFuture;
+    if (existingLoad != null) return existingLoad;
+    final load = _loadSourceInternal(player);
+    _sourceLoadFuture = load;
+    return load;
+  }
+
+  Future<void> _loadSourceInternal(AudioPlayer player) async {
+    try {
+      await player.setSource(DeviceFileSource(widget.path));
+      _sourceLoaded = true;
+      final actualDuration = await player.getDuration();
+      if (actualDuration != null && mounted) {
+        setState(() => _duration = actualDuration);
+      }
+    } catch (_) {
+      _sourceLoadFuture = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _togglePlayback() async {
+    if (_isPreparing) return;
+    setState(() => _isPreparing = true);
+    try {
+      final player = await _getPlayer();
+
+      if (player.state == PlayerState.playing) {
+        await player.pause();
+      } else if (player.state == PlayerState.paused) {
+        await player.resume();
+      } else {
+        // Re-attach the file after completion because some Android audio backends
+        // can resume a completed native player without producing audible output.
+        if (player.state == PlayerState.completed) {
+          await player.stop();
+          _sourceLoaded = false;
+          _sourceLoadFuture = null;
+          await _loadSource(player);
+          if (mounted) setState(() => _position = Duration.zero);
+        } else {
+          await _loadSource(player);
+        }
+        await player.setPlaybackRate(_playbackRate);
+        await player.resume();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ভয়েস চালানো যায়নি: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isPreparing = false);
+    }
+  }
+
+  Future<void> _cyclePlaybackRate() async {
+    final nextRate = _playbackRate == 1.0
+        ? 2.0
+        : _playbackRate == 2.0
+            ? 4.0
+            : 1.0;
+
+    setState(() => _playbackRate = nextRate);
+
+    final player = _player;
+    if (player != null) {
+      try {
+        await player.setPlaybackRate(nextRate);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('প্লেব্যাক স্পিড বদলানো যায়নি: $error')),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _stateSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _positionSubscription?.cancel();
+    final player = _player;
+    if (player != null) unawaited(player.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _duration == null ? '--:--' : _formatDuration(_duration!);
+    final elapsed = _formatDuration(_position);
+    return Container(
+      width: 270,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: _isPlaying ? 'Pause voice message' : 'Play voice message',
+            onPressed: _isPreparing ? null : _togglePlayback,
+            icon: _isPreparing
+                ? const SizedBox(
+                    width: 25,
+                    height: 25,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: pinkColor,
+                    ),
+                  )
+                : Icon(
+                    _isPlaying
+                        ? Icons.pause_circle_filled_rounded
+                        : Icons.play_circle_fill_rounded,
+                    color: pinkColor,
+                    size: 34,
+                  ),
+          ),
+          Expanded(
+            child: Text(
+              '$elapsed / $total',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          TextButton(
+            onPressed: _cyclePlaybackRate,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(44, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(
+              '${_playbackRate.toInt()}×',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ImageViewerPage extends StatelessWidget {
+  final String path;
+
+  const ImageViewerPage({
+    super.key,
+    required this.path,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 5,
+          child: Image.file(
+            File(path),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) {
+              return const Text('ছবিটি পাওয়া যাচ্ছে না।');
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class VideoViewerPage extends StatelessWidget {
+  final String path;
+
+  const VideoViewerPage({
+    super.key,
+    required this.path,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black),
+      body: _GalleryVideoPlayer(
+        path: path,
+        onPrevious: null,
+        onNext: null,
+      ),
+    );
+  }
+}
+
+// ============================================================
+// SPECIAL DATES
+// ============================================================
+
+class SpecialDatesPage extends StatefulWidget {
+  const SpecialDatesPage({super.key});
+
+  @override
+  State<SpecialDatesPage> createState() => _SpecialDatesPageState();
+}
+
+class _SpecialDatesPageState extends State<SpecialDatesPage> {
+  List<Map<String, dynamic>> dates = [];
+
+  @override
+  void initState() {
+    super.initState();
+    dates = SpaceStore.readList('specialDates');
+    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
+  }
+
+  void _handleSyncVersionChanged() {
+    if (!mounted) return;
+
+    final latestDates = SpaceStore.readList('specialDates');
+
+    setState(() {
+      dates = latestDates;
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
+    super.dispose();
+  }
+
+  Future<void> _save() {
+    return SpaceStore.saveList('specialDates', dates);
+  }
+
+  Future<void> _addOrEdit({Map<String, dynamic>? existing}) async {
+    final titleController =
+        TextEditingController(text: '${existing?['title'] ?? ''}');
+    final noteController =
+        TextEditingController(text: '${existing?['note'] ?? ''}');
+
+    DateTime selectedDate =
+        DateTime.tryParse('${existing?['date'] ?? ''}') ?? DateTime.now();
+
+    bool yearly = existing?['yearly'] != false;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: surfaceColor,
+          title: Text(existing == null ? 'Add special date' : 'Edit date'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Event name',
+                    hintText: 'Our anniversary',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: noteController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Note (optional)',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_month_rounded),
+                  label: Text(
+                    '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+                  ),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+
+                    if (picked != null) {
+                      setDialogState(() => selectedDate = picked);
+                    }
+                  },
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: yearly,
+                  onChanged: (value) {
+                    setDialogState(() => yearly = value ?? true);
+                  },
+                  title: const Text('Repeat every year'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final title = titleController.text.trim();
+                if (title.isEmpty) return;
+
+                Navigator.pop(dialogContext, {
+                  'title': title,
+                  'note': noteController.text.trim(),
+                  'date': selectedDate.toIso8601String(),
+                  'yearly': yearly,
+                });
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    titleController.dispose();
+    noteController.dispose();
+
+    if (result == null) return;
+
+    final id =
+        '${existing?['id'] ?? DateTime.now().microsecondsSinceEpoch}';
+
+    result['id'] = id;
+
+    setState(() {
+      final index = dates.indexWhere((d) => d['id'] == id);
+
+      if (index >= 0) {
+        dates[index] = result;
+      } else {
+        dates.add(result);
+      }
+    });
+
+    await _save();
+    await _scheduleReminder(result);
+  }
+
+  Future<void> _scheduleReminder(Map<String, dynamic> item) async {
+    final date = DateTime.tryParse('${item['date']}');
+    if (date == null) return;
+
+    final now = DateTime.now();
+    final yearly = item['yearly'] != false;
+
+    DateTime reminderDate = DateTime(
+      yearly ? now.year : date.year,
+      date.month,
+      date.day,
+      9,
+    );
+
+    if (yearly) {
+      if (!reminderDate.isAfter(now)) {
+        reminderDate = DateTime(
+          now.year + 1,
+          date.month,
+          date.day,
+          9,
+        );
+      }
+    } else if (!reminderDate.isAfter(now)) {
+      return;
+    }
+
+    final id = '${item['id']}'.hashCode & 0x7fffffff;
+
+    await notifications.cancel(id);
+
+    await notifications.zonedSchedule(
+      id,
+      'A special day is coming 💗',
+      '${item['title']} — ${item['note'] ?? ''}',
+      tz.TZDateTime.from(reminderDate, tz.local),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'special_dates',
+          'Special Dates',
+          channelDescription: 'Reminders for your special days',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents:
+          yearly ? DateTimeComponents.dateAndTime : null,
+    );
+  }
+
+  Future<void> _delete(Map<String, dynamic> item) async {
+    final id = '${item['id']}'.hashCode & 0x7fffffff;
+
+    await notifications.cancel(id);
+
+    setState(() {
+      dates.removeWhere((d) => d['id'] == item['id']);
+    });
+
+    await _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...dates]
+      ..sort((a, b) => '${a['date']}'.compareTo('${b['date']}'));
+
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      appBar: AppBar(
+        backgroundColor: backgroundColor,
+        title: const Text('Special Dates'),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _addOrEdit(),
+        child: const Icon(Icons.add_rounded),
+      ),
+      body: sorted.isEmpty
+          ? const Center(
+              child: Text(
+                'Add the dates that mean the most to you.',
+                style: TextStyle(color: Colors.white54),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: sorted.length,
+              itemBuilder: (context, index) {
+                final item = sorted[index];
+                final date = DateTime.tryParse('${item['date']}');
+                final note = '${item['note'] ?? ''}';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: surfaceColor,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0x33FF5FA2),
+                      child: Icon(
+                        Icons.favorite_rounded,
+                        color: pinkColor,
+                      ),
+                    ),
+                    title: Text('${item['title']}'),
+                    subtitle: Text(
+                      '${date?.day}/${date?.month}/${date?.year}'
+                      '${item['yearly'] == true ? ' • Every year' : ''}'
+                      '${note.isNotEmpty ? '\n$note' : ''}',
+                    ),
+                    isThreeLine: note.isNotEmpty,
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _addOrEdit(existing: item);
+                        } else if (value == 'delete') {
+                          _delete(item);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Edit'),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ============================================================
+// LOVE NOTES
+// ============================================================
+
+class LoveNotesPage extends StatefulWidget {
+  const LoveNotesPage({super.key});
+
+  @override
+  State<LoveNotesPage> createState() => _LoveNotesPageState();
+}
+
+class _LoveNotesPageState extends State<LoveNotesPage> {
+  List<Map<String, dynamic>> notes = [];
+
+  @override
+  void initState() {
+    super.initState();
+    notes = SpaceStore.readList('loveNotes');
+    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
+  }
+
+  void _handleSyncVersionChanged() {
+    if (!mounted) return;
+
+    final latestNotes = SpaceStore.readList('loveNotes');
+
+    setState(() {
+      notes = latestNotes;
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
+    super.dispose();
+  }
+
+  Future<void> _addNote() async {
+    final controller = TextEditingController();
+
+    final text = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Write a love note'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Write from your heart...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, controller.text.trim());
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (text == null || text.isEmpty) return;
+
+    setState(() {
+      notes.insert(0, {
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'text': text,
+        'date': DateTime.now().toIso8601String(),
+      });
+    });
+
+    await SpaceStore.saveList('loveNotes', notes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      appBar: AppBar(
+        backgroundColor: backgroundColor,
+        title: const Text('Love Notes'),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addNote,
+        child: const Icon(Icons.edit_rounded),
+      ),
+      body: notes.isEmpty
+          ? const Center(
+              child: Text(
+                'Save little words of love here.',
+                style: TextStyle(color: Colors.white54),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: notes.length,
+              itemBuilder: (context, index) {
+                final note = notes[index];
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: surfaceColor,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: pinkColor.withValues(alpha: 0.14),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.favorite, color: pinkColor),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text('${note['text']}')),
+                      IconButton(
+                        onPressed: () async {
+                          setState(() => notes.removeAt(index));
+                          await SpaceStore.saveList('loveNotes', notes);
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+
+class SettingsPage extends StatefulWidget {
+  final String partnerOne;
+  final String partnerTwo;
+  final void Function(String first, String second) onSave;
+
+  const SettingsPage({
+    super.key,
+    required this.partnerOne,
+    required this.partnerTwo,
+    required this.onSave,
+  });
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text(
+          'Settings',
+          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Make your little space feel like yours.',
+          style: TextStyle(color: Colors.white54),
+        ),
+        const SizedBox(height: 25),
+        Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: blueColor,
+              child: Icon(Icons.privacy_tip_outlined, color: Colors.white),
+            ),
+            title: const Text('Privacy & account'),
+            subtitle: const Text('ইমেইল, পাসওয়ার্ড, নাম ও প্রোফাইল সেটিংস'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PrivacyPage(
+                    partnerOne: widget.partnerOne,
+                    partnerTwo: widget.partnerTwo,
+                    onSave: widget.onSave,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
+        const SectionHeading(title: 'Data & downloads'),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: DataSaverSettings.enabled,
+          builder: (context, enabled, _) {
+            return Card(
+              color: surfaceColor,
+              child: SwitchListTile(
+                secondary: Icon(
+                  enabled
+                      ? Icons.cloud_download_outlined
+                      : Icons.touch_app_outlined,
+                  color: pinkColor,
+                ),
+                title: const Text('Data Saver'),
+                subtitle: Text(
+                  enabled
+                      ? 'Disable auto-download for chat photos/videos'
+                      : 'Chat photos/videos will be downloaded automatically',
+                ),
+                value: enabled,
+                activeColor: pinkColor,
+                onChanged: (value) async {
+                  try {
+                    await DataSaverSettings.setEnabled(value);
+                  } catch (error) {
+                    if (!context.mounted) return;
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Data Saver সেটিং সংরক্ষণ করা যায়নি।',
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 20),
+        ValueListenableBuilder<bool>(
+          valueListenable: InteractionFeedbackSettings.soundsEnabled,
+          builder: (context, enabled, _) => Card(
+            color: surfaceColor,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined, color: pinkColor),
+              title: const Text('Typing sound'),
+              subtitle: const Text('সঙ্গী টাইপ করা শুরু করলে ছোট সিস্টেম সাউন্ড'),
+              value: enabled,
+              activeColor: pinkColor,
+              onChanged: (value) async {
+                try {
+                  await InteractionFeedbackSettings.setSoundsEnabled(value);
+                  if (value) await InteractionFeedbackSettings.playTypingSound();
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Sound setting could not be saved.')),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const SectionHeading(title: 'Notifications'),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: NotificationPrivacySettings.notificationsEnabled,
+          builder: (context, notificationsEnabled, _) {
+            final hideNotifications = !notificationsEnabled;
+            return Card(
+              color: surfaceColor,
+              child: SwitchListTile(
+                secondary: Icon(
+                  hideNotifications
+                      ? Icons.notifications_off_outlined
+                      : Icons.notifications_active_outlined,
+                  color: pinkColor,
+                ),
+                title: const Text('Message notifications'),
+                subtitle: Text(
+                  hideNotifications
+                      ? 'বন্ধ: নতুন মেসেজের নোটিফিকেশন আসবে না।'
+                      : 'চালু: নতুন মেসেজের নোটিফিকেশন আসবে।',
+                ),
+                value: hideNotifications,
+                activeColor: pinkColor,
+                onChanged: (hide) async {
+                  try {
+                    await NotificationPrivacySettings.setNotificationsEnabled(!hide);
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Notification setting could not be saved.'),
+                      ),
+                    );
+                  }
+                },
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: NotificationPrivacySettings.hideDetails,
+          builder: (context, hideDetails, _) => Card(
+            color: surfaceColor,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.visibility_off_outlined, color: pinkColor),
+              title: const Text('Hide message details'),
+              subtitle: Text(
+                hideDetails
+                    ? 'নোটিফিকেশনে শুধু ব্যক্তিগত সতর্কবার্তা দেখাবে।'
+                    : 'নোটিফিকেশনে মেসেজের বিবরণ দেখা যাবে।',
+              ),
+              value: hideDetails,
+              activeColor: pinkColor,
+              onChanged: (value) async {
+                try {
+                  await NotificationPrivacySettings.setHideDetails(value);
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Privacy setting could not be saved.')),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            onPressed: () async {
+              final shouldLogout = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  backgroundColor: surfaceColor,
+                  title: const Text('Log out?'),
+                  content: const Text('You can sign in again with the same account.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                      child: const Text('Log out'),
+                    ),
+                  ],
+                ),
+              );
+              if (shouldLogout != true || !context.mounted) return;
+              try {
+                await SpaceStore.stopRealtimeSync();
+                await PushNotificationService.unregisterCurrentToken();
+                await PrivateSpaceService.clearCachedSpaceData();
+                await AuthService.signOut();
+                if (!context.mounted) return;
+                rootNavigatorKey.currentState?.pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const SplashScreen()),
+                  (route) => false,
+                );
+              } catch (error) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Log out failed: $error')),
+                );
+              }
+            },
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            label: const Text('Log out', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Center(
+          child: Text(
+            'Orbit Two Made by Tawsif',
+            style: TextStyle(color: Colors.white60, fontSize: 11),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 48),
+          child: Divider(height: 1, thickness: 0.7, color: Colors.white24),
+        ),
+        const SizedBox(height: 8),
+        const Center(
+          child: Text(
+            'Made with love',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+
+class PrivacyPage extends StatefulWidget {
+  final String partnerOne;
+  final String partnerTwo;
+  final void Function(String first, String second) onSave;
+
+  const PrivacyPage({
+    super.key,
+    required this.partnerOne,
+    required this.partnerTwo,
+    required this.onSave,
+  });
+
+  @override
+  State<PrivacyPage> createState() => _PrivacyPageState();
+}
+
+class _PrivacyPageState extends State<PrivacyPage> {
+  late final TextEditingController firstController;
+
+  @override
+  void initState() {
+    super.initState();
+    firstController = TextEditingController(text: widget.partnerOne);
+  }
+
+  @override
+  void dispose() {
+    firstController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    final ownName = firstController.text.trim();
+
+    if (ownName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('নিজের নাম লিখতে হবে।')),
+      );
+      return;
+    }
+
+    try {
+      await RelationshipService.saveOwnName(ownName);
+      await SpaceStore.saveString('partnerOne', ownName);
+
+      widget.onSave(ownName, widget.partnerTwo);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('নিজের নাম সংরক্ষণ হয়েছে।')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('নাম সংরক্ষণ করা যায়নি: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickProfilePhoto() async {
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('আগে অ্যাকাউন্টে সাইন ইন করো।'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1000,
+        maxHeight: 1000,
+      );
+
+      if (!mounted || picked == null) return;
+
+      final sourceFile = File(picked.path);
+
+      if (!await sourceFile.exists() ||
+          await sourceFile.length() == 0) {
+        throw Exception('নির্বাচিত ছবিটি পাওয়া যায়নি।');
+      }
+
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(
+          ratioX: 1,
+          ratioY: 1,
+        ),
+        maxWidth: 384,
+        maxHeight: 384,
+        compressFormat: ImageCompressFormat.jpg,
+        compressQuality: 70,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'প্রোফাইল ছবি ঠিক করো',
+            toolbarColor: const Color(0xFF111026),
+            toolbarWidgetColor: Colors.white,
+            activeControlsWidgetColor: pinkColor,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+            cropStyle: CropStyle.circle,
+            showCropGrid: true,
+            hideBottomControls: false,
+          ),
+          IOSUiSettings(
+            title: 'প্রোফাইল ছবি ঠিক করো',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+            cropStyle: CropStyle.circle,
+          ),
+        ],
+      );
+
+      if (!mounted || cropped == null) return;
+
+      final croppedFile = File(cropped.path);
+
+      if (!await croppedFile.exists()) {
+        throw Exception('ক্রপ করা ছবিটি পাওয়া যায়নি।');
+      }
+
+      final bytes = await croppedFile.readAsBytes();
+
+      if (bytes.isEmpty || bytes.length > 500 * 1024) {
+        throw Exception(
+          'ছবিটি ৫০০ KB-এর বেশি। ছোট ছবি দিয়ে আবার চেষ্টা করো।',
+        );
+      }
+
+      final name = firstController.text.trim().isNotEmpty
+          ? firstController.text.trim()
+          : 'User';
+
+      await ChatSyncService.saveMyProfile(
+        name: name,
+        photoBase64: base64Encode(bytes),
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('প্রোফাইল ছবি সংরক্ষণ হয়েছে।'),
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Profile photo error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'প্রোফাইল ছবি সংরক্ষণ করা যায়নি: $error',
+          ),
+        ),
+      );
+    }
+  }
+
+
+  Future<void> _changeEmail() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showMessage('আগে অ্যাকাউন্টে সাইন ইন করো।');
+      return;
+    }
+
+    final controller = TextEditingController();
+    final newEmail = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('ইমেইল পরিবর্তন'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.emailAddress,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'নতুন ইমেইল',
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('বাতিল'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('ভেরিফিকেশন পাঠাও'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (newEmail == null || newEmail.trim().isEmpty || !mounted) return;
+    if (!newEmail.contains('@') || !newEmail.contains('.')) {
+      _showMessage('সঠিক ইমেইল ঠিকানা দাও।');
+      return;
+    }
+    if (newEmail.trim().toLowerCase() == (user.email ?? '').toLowerCase()) {
+      _showMessage('এটি তোমার বর্তমান ইমেইল।');
+      return;
+    }
+
+    try {
+      await user.verifyBeforeUpdateEmail(newEmail.trim());
+      if (!mounted) return;
+      _showMessage('নতুন ইমেইলে ভেরিফিকেশন লিংক পাঠানো হয়েছে। ইমেইল যাচাই করে আবার লগইন করো।');
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      final message = error.code == 'requires-recent-login'
+          ? 'নিরাপত্তার জন্য আবার লগইন করে ইমেইল পরিবর্তন করো।'
+          : error.code == 'email-already-in-use'
+              ? 'এই ইমেইলটি অন্য অ্যাকাউন্টে ব্যবহৃত হচ্ছে।'
+              : error.code == 'invalid-email'
+                  ? 'সঠিক ইমেইল ঠিকানা দাও।'
+                  : 'ইমেইল পরিবর্তনের অনুরোধ পাঠানো যায়নি: ${error.message ?? error.code}';
+      _showMessage(message);
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage('ইমেইল পরিবর্তনের অনুরোধ পাঠানো যায়নি। আবার চেষ্টা করো।');
+    }
+  }
+
+  Future<void> _sendPasswordReset() async {
+    final email = FirebaseAuth.instance.currentUser?.email?.trim() ?? '';
+    if (email.isEmpty) {
+      _showMessage('অ্যাকাউন্টের ইমেইল পাওয়া যায়নি।');
+      return;
+    }
+
+    try {
+      await AuthService.resetPassword(email);
+      if (!mounted) return;
+      _showMessage('পাসওয়ার্ড রিসেট করার লিংক ইমেইলে পাঠানো হয়েছে। Inbox/Spam দেখো।');
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      _showMessage(AuthService.friendlyError(error));
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage('রিসেট ইমেইল পাঠানো যায়নি। Firebase Authentication ও ইন্টারনেট পরীক্ষা করো।');
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Privacy & account'),
+        backgroundColor: backgroundColor,
+      ),
+      body: GlowBackground(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Text(
+              'Account security',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'তোমার অ্যাকাউন্ট ও ব্যক্তিগত প্রোফাইল এখানে পরিচালনা করো।',
+              style: TextStyle(color: Colors.white60),
+            ),
+            const SizedBox(height: 22),
+            const SectionHeading(title: 'Email'),
+            const SizedBox(height: 10),
+            Card(
+              color: surfaceColor,
+              child: ListTile(
+                leading: const Icon(Icons.email_outlined, color: pinkColor),
+                title: Text(user?.email ?? 'ইমেইল পাওয়া যায়নি'),
+                subtitle: const Text('বর্তমান অ্যাকাউন্ট ইমেইল'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _changeEmail,
+              icon: const Icon(Icons.mark_email_read_outlined),
+              label: const Text('ইমেইল পরিবর্তন করো'),
+            ),
+            const SizedBox(height: 20),
+            const SectionHeading(title: 'Password'),
+            const SizedBox(height: 10),
+            Card(
+              color: surfaceColor,
+              child: ListTile(
+                leading: const Icon(Icons.lock_reset_rounded, color: purpleColor),
+                title: const Text('পাসওয়ার্ড রিসেট'),
+                subtitle: const Text('ইমেইলে নিরাপদ রিসেট লিংক পাঠাবে'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: _sendPasswordReset,
+              ),
+            ),
+            const SizedBox(height: 22),
+            const SectionHeading(title: 'Profile'),
+            const SizedBox(height: 10),
+            TextField(
+              controller: firstController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'তোমার নাম',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _saveProfile,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('নাম সংরক্ষণ করো'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _pickProfilePhoto,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: const Text('প্রোফাইল ছবি সেট করো'),
+            ),
+            const SizedBox(height: 20),
+            const Card(
+              color: surfaceColor,
+              child: ListTile(
+                leading: Icon(Icons.verified_user_outlined, color: blueColor),
+                title: Text('তোমার অ্যাকাউন্ট সুরক্ষা'),
+                subtitle: Text('ইমেইল পরিবর্তন নিশ্চিত করতে ইমেইল ভেরিফিকেশন লাগবে।'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// ETERNAL SPACE - COMPLAINT MODEL
+// ============================================================
+
+class SpaceComplaint {
+  final String id;
+  final String author;
+  final String title;
+  final String details;
+  final String createdAt;
+  final String authorUid;
+  final List<String> readBy;
+
+  const SpaceComplaint({
+    required this.id,
+    required this.author,
+    required this.title,
+    required this.details,
+    required this.createdAt,
+    this.authorUid = '',
+    this.readBy = const [],
+  });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'author': author,
+        'title': title,
+        'details': details,
+        'createdAt': createdAt,
+        'authorUid': authorUid,
+        'readBy': readBy,
+      };
+
+  factory SpaceComplaint.fromMap(Map<String, dynamic> map) {
+    return SpaceComplaint(
+      id: map['id']?.toString() ?? '',
+      author: map['author']?.toString() ?? '',
+      title: map['title']?.toString() ?? '',
+      details: map['details']?.toString() ?? '',
+      createdAt: map['createdAt']?.toString() ?? '',
+      authorUid: map['authorUid']?.toString() ?? '',
+      readBy: (map['readBy'] is List)
+          ? List<String>.from(map['readBy'])
+          : const [],
+    );
+  }
+}
+
+// ============================================================
+// ETERNAL SPACE - COMPLAINTS PAGE
+// ============================================================
+
+class ComplaintsPage extends StatefulWidget {
+  const ComplaintsPage({super.key});
+
+  @override
+  State<ComplaintsPage> createState() => _ComplaintsPageState();
+}
+
+class _ComplaintsPageState extends State<ComplaintsPage> {
+  List<SpaceComplaint> complaints = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComplaints();
+    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
+  }
+
+  void _loadComplaints() {
+    final data = SpaceStore.readList('spaceComplaints');
+    complaints = data.map(SpaceComplaint.fromMap).toList();
+  }
+
+  void _handleSyncVersionChanged() {
+    if (!mounted) return;
+
+    final data = SpaceStore.readList('spaceComplaints');
+    final latestComplaints = data.map(SpaceComplaint.fromMap).toList();
+
+    setState(() {
+      complaints = latestComplaints;
+    });
+  }
+
+  @override
+  void dispose() {
+    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
+    super.dispose();
+  }
+
+  Future<void> _saveComplaints() async {
+    await SpaceStore.saveList(
+      'spaceComplaints',
+      complaints.map((item) => item.toMap()).toList(),
+    );
+  }
+
+  Future<void> _markComplaintRead(SpaceComplaint complaint) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty || complaint.readBy.contains(uid)) return;
+    final index = complaints.indexWhere((item) => item.id == complaint.id);
+    if (index < 0) return;
+    final updated = SpaceComplaint(
+      id: complaint.id,
+      author: complaint.author,
+      title: complaint.title,
+      details: complaint.details,
+      createdAt: complaint.createdAt,
+      authorUid: complaint.authorUid,
+      readBy: [...complaint.readBy, uid],
+    );
+    setState(() => complaints[index] = updated);
+    await _saveComplaints();
+  }
+
+  Future<void> _deleteComplaint(SpaceComplaint complaint) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: surfaceColor,
+        title: const Text('Delete complaint?'),
+        content: const Text('This complaint will be removed for both partners.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => complaints.removeWhere((item) => item.id == complaint.id));
+    await _saveComplaints();
+  }
+
+  Future<void> _editComplaint({SpaceComplaint? existing}) async {
+    final titleController = TextEditingController(text: existing?.title ?? '');
+    final detailsController =
+        TextEditingController(text: existing?.details ?? '');
+    String author = existing?.author ?? 'You';
+
+    final result = await showDialog<SpaceComplaint>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: surfaceColor,
+              title: Text(
+                existing == null ? 'New Complaint' : 'Edit Complaint',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'This complaint will be marked as yours automatically.',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Complaint title',
+                        hintText: 'What happened?',
+                      ),
+                      maxLength: 80,
+                    ),
+                    TextField(
+                      controller: detailsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Details',
+                        hintText: 'Explain the complaint...',
+                      ),
+                      maxLines: 4,
+                      maxLength: 1000,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final title = titleController.text.trim();
+                    final details = detailsController.text.trim();
+
+                    if (title.isEmpty || details.isEmpty) return;
+
+                    Navigator.pop(
+                      dialogContext,
+                      SpaceComplaint(
+                        id: existing?.id ??
+                            DateTime.now()
+                                .microsecondsSinceEpoch
+                                .toString(),
+                        author: author,
+                        title: title,
+                        details: details,
+                        createdAt: existing?.createdAt ??
+                            DateTime.now().toIso8601String(),
+                        authorUid: existing?.authorUid ??
+                            FirebaseAuth.instance.currentUser?.uid ?? '',
+                        readBy: existing?.readBy ??
+                            <String>[
+                              if ((FirebaseAuth.instance.currentUser?.uid ?? '').isNotEmpty)
+                                FirebaseAuth.instance.currentUser!.uid,
+                            ],
+                      ),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    titleController.dispose();
+    detailsController.dispose();
+
+    if (result == null) return;
+
+    setState(() {
+      final index = complaints.indexWhere((c) => c.id == result.id);
+      if (index == -1) {
+        complaints.insert(0, result);
+      } else {
+        complaints[index] = result;
+      }
+    });
+
+    await _saveComplaints();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      appBar: AppBar(
+        backgroundColor: backgroundColor,
+        title: const Text('Complaints Box'),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _editComplaint(),
+        icon: const Icon(Icons.add),
+        label: const Text('New Complaint'),
+      ),
+      body: complaints.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.chat_bubble_outline,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No complaints yet',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Share what is bothering you and talk it out together.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+              itemCount: complaints.length,
+              itemBuilder: (context, index) {
+                final complaint = complaints[index];
+
+                final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                final isOwnComplaint = complaint.authorUid.isNotEmpty
+                    ? complaint.authorUid == currentUid
+                    : complaint.author == 'You';
+                final isUnread = currentUid.isNotEmpty &&
+                    !isOwnComplaint &&
+                    !complaint.readBy.contains(currentUid);
+                final displayAuthor = isOwnComplaint ? 'You' : 'Partner';
+
+                return Card(
+                  color: surfaceColor,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: ListTile(
+                    leading: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: const Color(0x33FF5FA2),
+                          child: Icon(
+                            isOwnComplaint
+                                ? Icons.person
+                                : Icons.favorite_outline,
+                            color: pinkColor,
+                          ),
+                        ),
+                        if (isUnread)
+                          const Positioned(
+                            right: -2,
+                            top: -2,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: SizedBox(width: 10, height: 10),
+                            ),
+                          ),
+                      ],
+                    ),
+                    title: Text(
+                      complaint.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '$displayAuthor • ${complaint.details}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white54),
+                    ),
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _editComplaint(existing: complaint);
+                        } else if (value == 'delete') {
+                          _deleteComplaint(complaint);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                        ),
+                      ],
+                    ),
+                    onTap: () async {
+                      await _markComplaintRead(complaint);
+                      showDialog<void>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          backgroundColor: surfaceColor,
+                          title: Text(complaint.title),
+                          content: SingleChildScrollView(
+                            child: Text(
+                              'By: $displayAuthor\n\n'
+                              '${complaint.details}',
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _editComplaint(existing: complaint);
+                              },
+                              child: const Text('Edit'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ============================================================
+// FIREBASE COMPLAINT STORAGE
+// ============================================================
+
+class FirebaseComplaintStore {
+  static const String spaceId = 'REPLACE_WITH_SHARED_SPACE_ID';
+
+  static CollectionReference<Map<String, dynamic>> get complaintsRef =>
+      FirebaseFirestore.instance
+          .collection('privateSpaces')
+          .doc(spaceId)
+          .collection('complaints');
+
+  static Future<void> addComplaint(
+    SpaceComplaint complaint,
+  ) async {
+    await complaintsRef.doc(complaint.id).set({
+      ...complaint.toMap(),
+      'createdAt': complaint.createdAt,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> updateComplaint(
+    SpaceComplaint complaint,
+  ) async {
+    await complaintsRef.doc(complaint.id).update({
+      ...complaint.toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> deleteComplaint(String id) async {
+    await complaintsRef.doc(id).delete();
+  }
+
+  static Stream<List<SpaceComplaint>> watchComplaints() {
+    return complaintsRef
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(
+                (doc) => SpaceComplaint.fromMap({
+                  ...doc.data(),
+                  'id': doc.id,
+                }),
+              )
+              .toList(),
+        );
+  }
+}
+
+// ============================================================
+// TYPING DOTS INDICATOR WIDGET
+// ============================================================
+
+
+class PresenceStatusLabel extends StatefulWidget {
+  const PresenceStatusLabel({
+    super.key,
+    required this.isTyping,
+    required this.isOnline,
+    this.lastSeen,
+  });
+
+  final bool isTyping;
+  final bool isOnline;
+  final dynamic lastSeen;
+
+  @override
+  State<PresenceStatusLabel> createState() => _PresenceStatusLabelState();
+}
+
+class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
+  Timer? _clock;
+
+  @override
+  void initState() {
+    super.initState();
+    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && !widget.isOnline && !widget.isTyping) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant PresenceStatusLabel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isTyping && widget.isTyping) {
+      unawaited(InteractionFeedbackSettings.playTypingSound());
+    }
+    if (oldWidget.lastSeen != widget.lastSeen ||
+        oldWidget.isOnline != widget.isOnline ||
+        oldWidget.isTyping != widget.isTyping) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
+
+  DateTime? _lastSeenDate() {
+    final value = widget.lastSeen;
+    if (value is Timestamp) return value.toDate().toLocal();
+    if (value is DateTime) return value.toLocal();
+    return DateTime.tryParse('${value ?? ''}')?.toLocal();
+  }
+
+  String _label() {
+    if (widget.isTyping) return 'Typing...';
+    if (widget.isOnline) return 'Active now';
+
+    final lastSeen = _lastSeenDate();
+    if (lastSeen == null) return 'Offline';
+
+    final seconds = DateTime.now().difference(lastSeen).inSeconds;
+    if (seconds < 60) return 'Active ${seconds < 0 ? 0 : seconds} sec ago';
+    final minutes = seconds ~/ 60;
+    if (minutes < 60) return 'Active ${minutes} min ago';
+    final hours = minutes ~/ 60;
+    if (hours < 24) return 'Active ${hours} hr ago';
+    final days = hours ~/ 24;
+    return 'Active ${days} day${days == 1 ? '' : 's'} ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Text(
-      path,
+      _label(),
+      style: TextStyle(
+        fontSize: 11,
+        color: widget.isTyping
+            ? pinkColor
+            : (widget.isOnline ? Colors.greenAccent : Colors.white54),
+      ),
+    );
+  }
+}
+
+class TypingDotsIndicator extends StatefulWidget {
+  const TypingDotsIndicator({super.key});
+
+  @override
+  State<TypingDotsIndicator> createState() => _TypingDotsIndicatorState();
+}
+
+class _TypingDotsIndicatorState extends State<TypingDotsIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: surfaceColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: AnimatedBuilder(
+          animation: _controller,
+          child: const SizedBox.shrink(),
+          builder: (context, _) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (index) {
+                final phase = _controller.value * 2 * pi - index * (2 * pi / 3);
+                final lift = (sin(phase) + 1) / 2;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Transform.translate(
+                    offset: Offset(0, -4 * lift),
+                    child: Opacity(
+                      opacity: 0.4 + 0.6 * lift,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: pinkColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(rawUrl)) {
+        trailing = rawUrl.substring(rawUrl.length - 1) + trailing;
+        rawUrl = rawUrl.substring(0, rawUrl.length - 1);
+      }
+      final url = Uri.tryParse(rawUrl.startsWith('www.') ? 'https://$rawUrl' : rawUrl);
+      if (url != null && (url.scheme == 'http' || url.scheme == 'https') && url.host.isNotEmpty) {
+        spans.add(TextSpan(
+          text: rawUrl,
+          style: const TextStyle(color: Color(0xFF80CFFF), decoration: TextDecoration.underline),
+          recognizer: TapGestureRecognizer()..onTap = () async {
+            try { await launchUrl(url, mode: LaunchMode.externalApplication); }
+            catch (error) { debugPrint('Could not open chat link: $error'); }
+          },
+        ));
+      } else { spans.add(TextSpan(text: rawUrl)); }
+      if (trailing.isNotEmpty) spans.add(TextSpan(text: trailing));
+      last = match.end;
+    }
+    if (last < path.length) spans.add(TextSpan(text: path.substring(last)));
+    return RichText(
+      text: TextSpan(style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45), children: spans),
       softWrap: true,
       textWidthBasis: TextWidthBasis.parent,
-      overflow: TextOverflow.clip,
-      style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
     );
   }
 
@@ -8919,7 +13999,19 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 20),
         const Center(
           child: Text(
-            'Orbit Two • Made with love',
+            'Orbit Two Made by Tawsif',
+            style: TextStyle(color: Colors.white60, fontSize: 11),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 48),
+          child: Divider(height: 1, thickness: 0.7, color: Colors.white24),
+        ),
+        const SizedBox(height: 8),
+        const Center(
+          child: Text(
+            'Made with love',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
         ),
