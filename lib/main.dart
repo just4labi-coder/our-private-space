@@ -830,7 +830,23 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    final user = FirebaseAuth.instance.currentUser;
+    var user = FirebaseAuth.instance.currentUser;
+
+    // Cached Firebase sessions must also pass email verification.
+    if (user != null && user.email != null) {
+      try {
+        await user.reload();
+        user = FirebaseAuth.instance.currentUser;
+      } catch (error) {
+        debugPrint('Email verification status check failed: $error');
+      }
+
+      if (user != null && !user.emailVerified) {
+        await FirebaseAuth.instance.signOut();
+        user = null;
+      }
+    }
+
     if (!mounted) return;
 
     if (user != null) {
