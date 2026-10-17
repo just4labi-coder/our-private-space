@@ -111,6 +111,50 @@ jobs:
           print("Verified actual Orbit Two artwork for the native splash screen.")
           PY
 
+      - name: Generate Orbit Two F launcher icon and themed monochrome layer
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+
+          out = Path("assets/branding")
+          out.mkdir(parents=True, exist_ok=True)
+          size = 512
+          font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+          font = ImageFont.truetype(font_path, 380)
+
+          # Standard launcher: Facebook-like white F on a blue background.
+          icon = Image.new("RGBA", (size, size), "#1877F2")
+          draw = ImageDraw.Draw(icon)
+          bounds = draw.textbbox((0, 0), "F", font=font, stroke_width=0)
+          text_w = bounds[2] - bounds[0]
+          text_h = bounds[3] - bounds[1]
+          x = (size - text_w) // 2 - bounds[0] - 8
+          y = (size - text_h) // 2 - bounds[1] - 20
+          draw.text((x, y), "F", font=font, fill="#FFFFFF")
+          icon.save(out / "orbit_two_logo_icon.png")
+
+          # Transparent foreground lets Android apply its adaptive-icon mask.
+          foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+          ImageDraw.Draw(foreground).text((x, y), "F", font=font, fill="#FFFFFFFF")
+          foreground.save(out / "orbit_two_logo_foreground.png")
+
+          # Android themed icons tint this monochrome alpha layer to match
+          # the launcher's selected light/dark/theme palette.
+          monochrome = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+          ImageDraw.Draw(monochrome).text((x, y), "F", font=font, fill="#FFFFFFFF")
+          monochrome.save(out / "orbit_two_logo_monochrome.png")
+
+          for path in (
+              out / "orbit_two_logo_icon.png",
+              out / "orbit_two_logo_foreground.png",
+              out / "orbit_two_logo_monochrome.png",
+          ):
+              with Image.open(path) as image:
+                  image.verify()
+              print(f"Generated and verified {path}")
+          PY
+
       - name: Generate custom launcher icon from the verified Orbit Two logo
         run: |
           dart run flutter_launcher_icons
