@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# A new push supersedes older builds so only the latest source is packaged.
+concurrency:
+  group: orbit-two-main-apk
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
