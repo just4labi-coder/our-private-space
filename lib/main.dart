@@ -54,6 +54,74 @@ Future<File> _makeCompatibleVideo(File source) async {
 
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
+const String orbitNotificationChannelId = 'orbit_partner_updates_v2';
+
+@pragma('vm:entry-point')
+Future<void> orbitFirebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Android displays FCM messages containing a notification payload itself.
+  // Only create a local notification for data-only pushes to avoid duplicates.
+  if (message.notification != null) return;
+
+  try {
+    await Firebase.initializeApp();
+    final prefs = await SharedPreferences.getInstance();
+    final hideDetails = prefs.getBool('hideNotificationDetails') ?? false;
+    const plugin = FlutterLocalNotificationsPlugin();
+    const initSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@drawable/ic_stat_orbit'),
+    );
+    await plugin.initialize(initSettings);
+    const channel = AndroidNotificationChannel(
+      orbitNotificationChannelId,
+      'Orbit Two messages',
+      description: 'Messages and updates from your partner',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
+      showBadge: true,
+    );
+    await plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
+
+    final kind = message.data['kind']?.toString() ?? 'message';
+    final title = hideDetails
+        ? (message.data['privateTitle']?.toString() ?? 'Check message')
+        : (message.data['detailedTitle']?.toString() ?? 'Orbit Two');
+    final body = hideDetails
+        ? (message.data['privateBody']?.toString() ?? 'You have a new message.')
+        : (message.data['detailedBody']?.toString() ?? 'You have a new message.');
+    await plugin.show(
+      DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          orbitNotificationChannelId,
+          'Orbit Two messages',
+          channelDescription: 'Messages and updates from your partner',
+          importance: Importance.max,
+          priority: Priority.max,
+          playSound: true,
+          enableVibration: true,
+          vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
+          color: pinkColor,
+          category: kind == 'change'
+              ? AndroidNotificationCategory.status
+              : AndroidNotificationCategory.message,
+          styleInformation: BigTextStyleInformation(
+            body,
+            contentTitle: title,
+            summaryText: 'Orbit Two',
+          ),
+        ),
+      ),
+    );
+  } catch (error, stackTrace) {
+    debugPrint('Background notification error: $error\\n$stackTrace');
+  }
+}
+
 
 final FlutterLocalNotificationsPlugin notifications =
     FlutterLocalNotificationsPlugin();
@@ -101,11 +169,27 @@ Future<void> main() async {
       android: androidSettings,
     );
     await notifications.initialize(initializationSettings);
+    final androidNotifications = notifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    await androidNotifications?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'orbit_partner_updates_v2',
+        'Orbit Two messages',
+        description: 'Messages and updates from your partner',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
+        showBadge: true,
+      ),
+    );
   } catch (error) {
     debugPrint('Local notification initialization failed: $error');
   }
 
   if (firebaseReady) {
+    FirebaseMessaging.onBackgroundMessage(orbitFirebaseMessagingBackgroundHandler);
     try {
       await PushNotificationService.initialize();
     } catch (error) {
@@ -205,7 +289,7 @@ class NotificationPrivacySettings {
         android: AndroidNotificationDetails(
           'partner_updates',
           'Partner updates',
-          channelDescription: 'Messages and changes from your partner',
+          channelDescription: 'Messages and updates from your partner',
           importance: Importance.high,
           priority: Priority.high,
           playSound: true,
@@ -221,7 +305,7 @@ class NotificationPrivacySettings {
           ),
           groupKey: 'com.privatespace.ourspace.PARTNER_UPDATES',
           setAsGroupSummary: false,
-          onlyAlertOnce: true,
+          onlyAlertOnce: false,
         ),
       ),
     );
