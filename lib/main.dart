@@ -54,7 +54,7 @@ Future<File> _makeCompatibleVideo(File source) async {
 
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
-const String orbitNotificationChannelId = 'orbit_partner_updates_v3';
+const String orbitNotificationChannelId = 'orbit_partner_updates_v4';
 const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
 const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
 const int orbitMessageSummaryNotificationId = 7000;
@@ -156,7 +156,7 @@ Future<void> main() async {
             AndroidFlutterLocalNotificationsPlugin>();
     await androidNotifications?.createNotificationChannel(
       AndroidNotificationChannel(
-        'orbit_partner_updates_v3',
+        orbitNotificationChannelId,
         'Orbit Two messages',
         description: 'Messages and updates from your partner',
         importance: Importance.max,
@@ -1637,7 +1637,7 @@ class _MainScreenState extends State<MainScreen>
         }
         receivedInitialSnapshot = true;
 
-        if (selectedIndex != 1) {
+        if (!orbitChatVisible) {
           for (final message in incoming) {
             final text = '${message['text'] ?? ''}'.trim();
             final type = '${message['type'] ?? 'text'}';
@@ -1801,8 +1801,12 @@ class _MainScreenState extends State<MainScreen>
         onDestinationSelected: (index) {
           setState(() {
             selectedIndex = index;
+            orbitChatVisible = index == 1;
             if (index == 1) hasUnreadChat = false;
           });
+          if (index == 1) {
+            unawaited(NotificationPrivacySettings.clearMessageNotifications());
+          }
         },
         destinations: [
           const NavigationDestination(
@@ -2784,6 +2788,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    orbitChatVisible = true;
+    unawaited(NotificationPrivacySettings.clearMessageNotifications());
     WidgetsBinding.instance.addObserver(this);
     scrollController.addListener(_updateChatScrollPosition);
     _appIsResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
@@ -3007,7 +3013,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
           // শুধু প্রথম লোড বা নতুন মেসেজ এলে—প্রতিটি Seen/metadata আপডেটে নয়।
           if (shouldFollowTail) {
-            _scrollToBottom(animate: !firstSnapshot, settle: firstSnapshot);
+            // Directly settle to the final extent instead of animating a changing
+            // text/emoji/link layout; this prevents the chat list from shaking.
+            _scrollToBottom(animate: false, settle: true);
           }
         },
         onError: (Object error) {
@@ -3027,6 +3035,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    orbitChatVisible = false;
     WidgetsBinding.instance.removeObserver(this);
     scrollController.removeListener(_updateChatScrollPosition);
     _messageHighlightTimer?.cancel();
