@@ -187,6 +187,7 @@ jobs:
           if alpha_bounds is None:
               raise SystemExit("Orbit Two logo became fully transparent during background cleanup.")
           visible_artwork = artwork.crop(alpha_bounds)
+          visible_artwork.save(out / "orbit_two_logo_artwork.png", format="PNG")
           safe_size = 330
           safe_artwork = ImageOps.contain(
               visible_artwork,
@@ -209,6 +210,7 @@ jobs:
           monochrome.save(out / "orbit_two_logo_monochrome.png", format="PNG")
 
           for path in (
+              out / "orbit_two_logo_artwork.png",
               out / "orbit_two_logo_icon.png",
               out / "orbit_two_logo_foreground.png",
               out / "orbit_two_logo_background.png",
