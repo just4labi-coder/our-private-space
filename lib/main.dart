@@ -8177,6 +8177,9 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
       if (!mounted) return;
       setState(() => _position = position);
     });
+    // Keep the local audio source available after completion so replaying
+    // a voice message starts reliably from the beginning.
+    await player.setReleaseMode(ReleaseMode.stop);
     await player.setPlaybackRate(_playbackRate);
     return player;
   }
