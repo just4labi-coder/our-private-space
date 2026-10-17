@@ -7363,6 +7363,8 @@ class _GalleryVideoPlayer extends StatefulWidget {
 class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
   VideoPlayerController? _controller;
   String? _error;
+  String? _optimizedPath;
+  bool _isOptimizing = false;
 
   @override
   void initState() {
@@ -7370,8 +7372,8 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
     _initialize();
   }
 
-  Future<void> _initialize() async {
-    final video = VideoPlayerController.file(File(widget.path));
+  Future<void> _initialize([String? sourcePath]) async {
+    final video = VideoPlayerController.file(File(sourcePath ?? _optimizedPath ?? widget.path));
     _controller = video;
 
     try {
@@ -7393,6 +7395,40 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
           _error = 'ভিডিও খোলা যাচ্ছে না। আবার চেষ্টা করো।';
         });
       }
+    }
+  }
+
+  Future<void> _tryOptimizeAndPlay() async {
+    if (_isOptimizing) return;
+    setState(() {
+      _isOptimizing = true;
+      _error = null;
+    });
+    try {
+      final result = await VideoCompress.compressVideo(
+        widget.path,
+        quality: VideoQuality.Res1280x720Quality,
+        deleteOrigin: false,
+        includeAudio: true,
+      );
+      final optimized = result?.file;
+      if (optimized == null ||
+          !await optimized.exists() ||
+          await optimized.length() <= 0) {
+        throw Exception('অপটিমাইজ করা ফাইল পাওয়া যায়নি।');
+      }
+      _optimizedPath = optimized.path;
+      await _controller?.dispose();
+      _controller = null;
+      await _initialize(optimized.path);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = 'ভিডিওটি এই ফোনে চালানো যাচ্ছে না। আবার চেষ্টা করুন।';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isOptimizing = false);
     }
   }
 
@@ -7418,7 +7454,27 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
     final video = _controller;
 
     if (_error != null) {
-      return Center(child: Text(_error!));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.video_file_outlined, size: 42, color: pinkColor),
+              const SizedBox(height: 10),
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: _isOptimizing ? null : _tryOptimizeAndPlay,
+                icon: _isOptimizing
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.auto_fix_high_rounded),
+                label: Text(_isOptimizing ? 'ভিডিও অপটিমাইজ হচ্ছে…' : 'অপটিমাইজ করে আবার চালাও'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     if (video == null || !video.value.isInitialized) {
