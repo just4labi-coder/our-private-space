@@ -7749,28 +7749,41 @@ class ChatVoicePlayer extends StatefulWidget {
 }
 
 class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
-  // স্ক্রল করার সময় প্রতিটি ভয়েস বুদ্‌বুদের জন্য native audio player তৈরি কোরো না।
-  // ব্যবহারকারী Play চাপলেই player তৈরি হবে—এতে scrolling-এর চাপ কমবে।
   AudioPlayer? _player;
   StreamSubscription<PlayerState>? _stateSubscription;
+  StreamSubscription<Duration>? _durationSubscription;
   bool _isPlaying = false;
+  Duration? _duration;
+  double _playbackRate = 1.0;
 
-  @override
-  void initState() {
-    super.initState();
+  String _formatDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<AudioPlayer> _getPlayer() async {
+    var player = _player;
+    if (player != null) return player;
+
+    player = AudioPlayer();
+    _player = player;
+    _stateSubscription = player.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() => _isPlaying = state == PlayerState.playing);
+    });
+    _durationSubscription = player.onDurationChanged.listen((duration) {
+      if (!mounted) return;
+      setState(() => _duration = duration);
+    });
+    await player.setPlaybackRate(_playbackRate);
+    return player;
   }
 
   Future<void> _togglePlayback() async {
     try {
-      var player = _player;
-      if (player == null) {
-        player = AudioPlayer();
-        _player = player;
-        _stateSubscription = player.onPlayerStateChanged.listen((state) {
-          if (!mounted) return;
-          setState(() => _isPlaying = state == PlayerState.playing);
-        });
-      }
+      final player = await _getPlayer();
 
       if (player.state == PlayerState.playing) {
         await player.pause();
@@ -7778,6 +7791,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
         await player.resume();
       } else {
         await player.setVolume(1.0);
+        await player.setPlaybackRate(_playbackRate);
         await player.play(DeviceFileSource(widget.path));
       }
     } catch (error) {
@@ -7789,9 +7803,33 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
     }
   }
 
+  Future<void> _cyclePlaybackRate() async {
+    final nextRate = _playbackRate == 1.0
+        ? 2.0
+        : _playbackRate == 2.0
+            ? 4.0
+            : 1.0;
+
+    setState(() => _playbackRate = nextRate);
+
+    final player = _player;
+    if (player != null) {
+      try {
+        await player.setPlaybackRate(nextRate);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('প্লেব্যাক স্পিড বদলানো যায়নি: $error')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    _durationSubscription?.cancel();
     final player = _player;
     if (player != null) unawaited(player.dispose());
     super.dispose();
@@ -7800,8 +7838,8 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      width: 252,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
@@ -7810,19 +7848,39 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
+            tooltip: _isPlaying ? 'Pause voice message' : 'Play voice message',
             onPressed: _togglePlayback,
             icon: Icon(
-              _isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+              _isPlaying
+                  ? Icons.pause_circle_filled_rounded
+                  : Icons.play_circle_fill_rounded,
               color: pinkColor,
               size: 34,
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Voice message',
+              _duration == null ? 'Voice message' : _formatDuration(_duration!),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Colors.white, fontSize: 13),
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 4),
+          TextButton(
+            onPressed: _cyclePlaybackRate,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(44, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(
+              '${_playbackRate.toInt()}×',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
