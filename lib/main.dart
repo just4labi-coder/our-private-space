@@ -4983,14 +4983,57 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
     }
 
-    final linkRegex = RegExp(r'((https?:\/\/|www\.)[^\s]+)', caseSensitive: false);
+    final linkRegex = RegExp(r'(https?://\S+|www\.\S+)', caseSensitive: false);
     final spans = <InlineSpan>[];
     var last = 0;
     for (final match in linkRegex.allMatches(path)) {
-      if (match.start > last) spans.add(TextSpan(text: path.substring(last, match.start)));
-      var rawUrl = match.group(0)!;
-      var trailing = '';
-      while (rawUrl.isNotEmpty && RegExp(r'[.,!?;:)]
+      if (match.start > last) {
+        spans.add(TextSpan(text: path.substring(last, match.start)));
+      }
+      final rawUrl = match.group(0)!;
+      final url = Uri.tryParse(
+        rawUrl.startsWith('www.') ? 'https://$rawUrl' : rawUrl,
+      );
+      if (url != null &&
+          (url.scheme == 'http' || url.scheme == 'https') &&
+          url.host.isNotEmpty) {
+        spans.add(
+          TextSpan(
+            text: rawUrl,
+            style: const TextStyle(
+              color: Color(0xFF80CFFF),
+              decoration: TextDecoration.underline,
+            ),
+            recognizer: TapGestureRecognizer()
+              ..onTap = () async {
+                try {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                } catch (error) {
+                  debugPrint('Could not open chat link: $error');
+                }
+              },
+          ),
+        );
+      } else {
+        spans.add(TextSpan(text: rawUrl));
+      }
+      last = match.end;
+    }
+    if (last < path.length) {
+      spans.add(TextSpan(text: path.substring(last)));
+    }
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          height: 1.45,
+        ),
+        children: spans,
+      ),
+      softWrap: true,
+      textWidthBasis: TextWidthBasis.parent,
+    );
   }
 
   Widget _buildPendingMediaMessage() {
