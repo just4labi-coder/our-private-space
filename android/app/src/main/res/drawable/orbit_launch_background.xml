@@ -5,7 +5,10 @@
             <solid android:color="#070513" />
         </shape>
     </item>
-    <item
-        android:drawable="@drawable/orbit_two_mark"
-        android:gravity="center" />
+    <item>
+        <bitmap
+            android:src="@drawable/orbit_logo"
+            android:gravity="center"
+            android:filter="true" />
+    </item>
 </layer-list>
