@@ -7539,10 +7539,17 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
       await optimizedDirectory.create(recursive: true);
       final sourceName = File(widget.path).uri.pathSegments.last
           .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      final sourceHash = widget.path.codeUnits.fold<int>(
+        17,
+        (hash, unit) => (hash * 31 + unit) & 0x7fffffff,
+      );
       final optimizedFile = File(
-        '${optimizedDirectory.path}/${sourceName}_720p.mp4',
+        '${optimizedDirectory.path}/${sourceName}_${sourceHash}_720p.mp4',
       );
 
+      if (force && await optimizedFile.exists()) {
+        await optimizedFile.delete();
+      }
       if (!await optimizedFile.exists() || await optimizedFile.length() <= 0) {
         final result = await VideoCompress.compressVideo(
           widget.path,
