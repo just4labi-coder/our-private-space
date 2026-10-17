@@ -111,39 +111,73 @@ jobs:
           print("Verified actual Orbit Two artwork for the native splash screen.")
           PY
 
-      - name: Generate Orbit Two F launcher icon and themed monochrome layer
+      - name: Generate launcher icons from the original Orbit Two artwork
         run: |
           python - <<'PY'
           from pathlib import Path
-          from PIL import Image, ImageDraw, ImageFont
+          from PIL import Image, ImageDraw, ImageOps
 
           out = Path("assets/branding")
-          out.mkdir(parents=True, exist_ok=True)
+          source = out / "orbit_two_logo.jpg"
           size = 512
-          font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-          font = ImageFont.truetype(font_path, 380)
 
-          # Standard launcher: Facebook-like white F on a blue background.
-          icon = Image.new("RGBA", (size, size), "#1877F2")
-          draw = ImageDraw.Draw(icon)
-          bounds = draw.textbbox((0, 0), "F", font=font, stroke_width=0)
-          text_w = bounds[2] - bounds[0]
-          text_h = bounds[3] - bounds[1]
-          x = (size - text_w) // 2 - bounds[0] - 8
-          y = (size - text_h) // 2 - bounds[1] - 20
-          draw.text((x, y), "F", font=font, fill="#FFFFFF")
-          icon.save(out / "orbit_two_logo_icon.png")
+          with Image.open(source) as original:
+              artwork = ImageOps.fit(
+                  original.convert("RGB"),
+                  (size, size),
+                  method=Image.Resampling.LANCZOS,
+                  centering=(0.5, 0.5),
+              ).convert("RGBA")
 
-          # Transparent foreground lets Android apply its adaptive-icon mask.
-          foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-          ImageDraw.Draw(foreground).text((x, y), "F", font=font, fill="#FFFFFFFF")
-          foreground.save(out / "orbit_two_logo_foreground.png")
+          # Remove the black JPEG background while keeping colored and bright
+          # artwork intact. A soft alpha edge avoids a dark fringe on launchers.
+          pixels = artwork.load()
+          for y in range(size):
+              for x in range(size):
+                  r, g, b, _ = pixels[x, y]
+                  maximum = max(r, g, b)
+                  minimum = min(r, g, b)
+                  if maximum <= 22 and maximum - minimum <= 18:
+                      pixels[x, y] = (r, g, b, 0)
+                  elif maximum <= 52 and maximum - minimum <= 18:
+                      alpha = int((maximum - 22) * 255 / 30)
+                      pixels[x, y] = (r, g, b, max(0, min(255, alpha)))
 
-          # Android themed icons tint this monochrome alpha layer to match
-          # the launcher's selected light/dark/theme palette.
-          monochrome = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-          ImageDraw.Draw(monochrome).text((x, y), "F", font=font, fill="#FFFFFFFF")
-          monochrome.save(out / "orbit_two_logo_monochrome.png")
+          # Clean a thin white horizontal scan/streak artifact in the lower
+          # half only when the source contains a clear, unusually long line.
+          # Ordinary white logo details are left untouched.
+          row_scores = []
+          for y in range(int(size * 0.48), int(size * 0.92)):
+              run = 0
+              longest = 0
+              for x in range(size):
+                  r, g, b, a = pixels[x, y]
+                  if a > 0 and min(r, g, b) >= 232 and max(r, g, b) - min(r, g, b) <= 20:
+                      run += 1
+                      longest = max(longest, run)
+                  else:
+                      run = 0
+              row_scores.append((longest, y))
+          longest, line_y = max(row_scores, default=(0, 0))
+          if longest >= int(size * 0.22):
+              for y in range(max(0, line_y - 1), min(size, line_y + 2)):
+                  for x in range(size):
+                      r, g, b, a = pixels[x, y]
+                      if a > 0 and min(r, g, b) >= 232 and max(r, g, b) - min(r, g, b) <= 20:
+                          pixels[x, y] = (r, g, b, 0)
+
+          artwork.save(out / "orbit_two_logo_icon.png", format="PNG")
+
+          # Adaptive foreground uses the same original artwork, not a generated F.
+          foreground = artwork.copy()
+          foreground.save(out / "orbit_two_logo_foreground.png", format="PNG")
+
+          # The monochrome layer retains the artwork's transparency so Android
+          # can tint the logo for supported themed icons.
+          monochrome = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+          alpha = artwork.getchannel("A")
+          monochrome.putalpha(alpha)
+          monochrome.save(out / "orbit_two_logo_monochrome.png", format="PNG")
 
           for path in (
               out / "orbit_two_logo_icon.png",
