@@ -65,6 +65,11 @@ class MainActivity : FlutterActivity() {
                 "start" -> {
                     val serviceIntent =
                         Intent(this, MediaDownloadService::class.java)
+                    val arguments = call.arguments as? Map<*, *>
+                    val fileName = arguments?.get("fileName")?.toString()
+                    if (!fileName.isNullOrBlank()) {
+                        serviceIntent.putExtra("download_file_name", fileName)
+                    }
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         startForegroundService(serviceIntent)
