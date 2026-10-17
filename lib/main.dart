@@ -54,75 +54,53 @@ Future<File> _makeCompatibleVideo(File source) async {
 
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
-const String orbitNotificationChannelId = 'orbit_partner_updates_v2';
+const String orbitNotificationChannelId = 'orbit_partner_updates_v3';
+const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
+const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
+const int orbitMessageSummaryNotificationId = 7000;
+bool orbitChatVisible = false;
 
 @pragma('vm:entry-point')
 Future<void> orbitFirebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Android displays FCM messages containing a notification payload itself.
-  // Only create a local notification for data-only pushes to avoid duplicates.
-  if (message.notification != null) return;
-
   try {
     await Firebase.initializeApp();
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('notificationsEnabled') == false) return;
-    final hideDetails = prefs.getBool('hideNotificationDetails') ?? false;
-    final plugin = FlutterLocalNotificationsPlugin();
-    const initSettings = InitializationSettings(
+    await NotificationPrivacySettings.load();
+    const initializationSettings = InitializationSettings(
       android: AndroidInitializationSettings('@drawable/ic_stat_orbit'),
     );
-    await plugin.initialize(initSettings);
-    final channel = AndroidNotificationChannel(
-      orbitNotificationChannelId,
-      'Orbit Two messages',
-      description: 'Messages and updates from your partner',
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-      vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
-      showBadge: true,
-    );
-    await plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
-
-    final kind = message.data['kind']?.toString() ?? 'message';
-    final title = hideDetails
-        ? (message.data['privateTitle']?.toString() ?? 'Check message')
-        : (message.data['detailedTitle']?.toString() ?? 'Orbit Two');
-    final body = hideDetails
-        ? (message.data['privateBody']?.toString() ?? 'You have a new message.')
-        : (message.data['detailedBody']?.toString() ?? 'You have a new message.');
-    await plugin.show(
-      DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
-      title,
-      body,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          orbitNotificationChannelId,
-          'Orbit Two messages',
-          channelDescription: 'Messages and updates from your partner',
-          importance: Importance.max,
-          priority: Priority.max,
-          playSound: true,
-          enableVibration: true,
-          vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
-          color: pinkColor,
-          category: kind == 'change'
-              ? AndroidNotificationCategory.status
-              : AndroidNotificationCategory.message,
-          styleInformation: BigTextStyleInformation(
-            body,
-            contentTitle: title,
-            summaryText: 'Orbit Two',
-          ),
-        ),
+    await notifications.initialize(initializationSettings);
+    final androidNotifications = notifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    await androidNotifications?.createNotificationChannel(
+      AndroidNotificationChannel(
+        orbitNotificationChannelId,
+        'Orbit Two messages',
+        description: 'Messages and updates from your partner',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
+        showBadge: true,
       ),
     );
+    final data = message.data;
+    final kind = data['kind']?.toString() ?? 'message';
+    final messageId = data['messageId']?.toString() ?? '';
+    await NotificationPrivacySettings.showPartnerNotification(
+      detailedTitle: data['detailedTitle']?.toString() ?? message.notification?.title ?? 'Orbit Two',
+      detailedBody: data['detailedBody']?.toString() ?? message.notification?.body ?? 'You have a new message.',
+      privateTitle: data['privateTitle']?.toString() ?? (kind == 'change' ? 'Check change' : 'Check message'),
+      privateBody: data['privateBody']?.toString() ?? (kind == 'change' ? 'Your partner changed shared data.' : 'You have a new message.'),
+      kind: kind,
+      id: kind == 'message'
+          ? NotificationPrivacySettings.notificationIdForMessage(messageId.isNotEmpty ? messageId : DateTime.now().microsecondsSinceEpoch.toString())
+          : DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
+    );
   } catch (error, stackTrace) {
-    debugPrint('Background notification error: $error\\n$stackTrace');
+    debugPrint('Background notification error: $error\n$stackTrace');
   }
 }
-
 
 final FlutterLocalNotificationsPlugin notifications =
     FlutterLocalNotificationsPlugin();
@@ -200,16 +178,18 @@ Future<void> main() async {
     FirebaseMessaging.onMessage.listen((message) {
       final data = message.data;
       final kind = data['kind']?.toString() ?? 'message';
+      if (kind == 'message' && orbitChatVisible) {
+        unawaited(NotificationPrivacySettings.clearMessageNotifications());
+        return;
+      }
+      final messageId = data['messageId']?.toString() ?? '';
       unawaited(NotificationPrivacySettings.showPartnerNotification(
-        detailedTitle: data['detailedTitle']?.toString() ??
-            message.notification?.title ?? 'Orbit Two',
-        detailedBody: data['detailedBody']?.toString() ??
-            message.notification?.body ?? 'You have an update.',
-        privateTitle: kind == 'change' ? 'Check change' : 'Check message',
-        privateBody: kind == 'change'
-            ? 'Your partner changed shared data.'
-            : 'You have a new message.',
-        id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
+        detailedTitle: data['detailedTitle']?.toString() ?? message.notification?.title ?? 'Orbit Two',
+        detailedBody: data['detailedBody']?.toString() ?? message.notification?.body ?? 'You have an update.',
+        privateTitle: data['privateTitle']?.toString() ?? (kind == 'change' ? 'Check change' : 'Check message'),
+        privateBody: data['privateBody']?.toString() ?? (kind == 'change' ? 'Your partner changed shared data.' : 'You have a new message.'),
+        kind: kind,
+        id: kind == 'message' ? NotificationPrivacySettings.notificationIdForMessage(messageId.isNotEmpty ? messageId : DateTime.now().microsecondsSinceEpoch.toString()) : DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
       ));
     });
 
@@ -255,81 +235,103 @@ class DataSaverSettings {
 
 class NotificationPrivacySettings {
   NotificationPrivacySettings._();
-
   static const String _key = 'hideNotificationDetails';
   static const String _notificationsKey = 'notificationsEnabled';
+  static const String _messageIdsKey = 'orbitMessageNotificationIds';
+  static const String _messageLinesKey = 'orbitMessageNotificationLines';
   static final ValueNotifier<bool> hideDetails = ValueNotifier<bool>(false);
   static final ValueNotifier<bool> notificationsEnabled = ValueNotifier<bool>(true);
-
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     hideDetails.value = prefs.getBool(_key) ?? false;
     notificationsEnabled.value = prefs.getBool(_notificationsKey) ?? true;
   }
-
+  static int notificationIdForMessage(String messageId) {
+    var hash = 0;
+    for (final unit in messageId.codeUnits) { hash = (hash * 31 + unit) & 0x7fffffff; }
+    return hash == 0 ? 7001 : hash;
+  }
   static Future<void> setNotificationsEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_notificationsKey, value);
     notificationsEnabled.value = value;
     await PushNotificationService.setNotificationsEnabled(value);
+    if (!value) await clearMessageNotifications();
   }
-
   static Future<void> setHideDetails(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_key, value);
     hideDetails.value = value;
     await PushNotificationService.setHideDetails(value);
   }
-
+  static Future<void> clearMessageNotifications() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(_messageIdsKey) ?? <String>[];
+    for (final value in ids) {
+      final id = int.tryParse(value);
+      if (id != null && id != orbitMessageSummaryNotificationId) await notifications.cancel(id);
+    }
+    await notifications.cancel(orbitMessageSummaryNotificationId);
+    await prefs.remove(_messageIdsKey);
+    await prefs.remove(_messageLinesKey);
+  }
   static Future<void> showPartnerNotification({
-    required String detailedTitle,
-    required String detailedBody,
-    required String privateTitle,
-    required String privateBody,
-    int id = 7001,
+    required String detailedTitle, required String detailedBody,
+    required String privateTitle, required String privateBody,
+    int id = 7001, String kind = 'message',
   }) async {
     if (!notificationsEnabled.value) return;
     final hidden = hideDetails.value;
     final title = hidden ? privateTitle : detailedTitle;
     final body = hidden ? privateBody : detailedBody;
-
-    await notifications.show(
-      id,
-      title,
-      body,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          orbitNotificationChannelId,
-          'Orbit Two messages',
-          channelDescription: 'Messages and updates from your partner',
-          importance: Importance.max,
-          priority: Priority.max,
-          playSound: true,
-          enableVibration: true,
-          vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
-          enableLights: true,
-          ledColor: pinkColor,
-          ledOnMs: 1000,
-          ledOffMs: 500,
-          color: pinkColor,
-          category: AndroidNotificationCategory.message,
-          visibility: hidden
-              ? NotificationVisibility.private
-              : NotificationVisibility.public,
-          styleInformation: BigTextStyleInformation(
-            body,
-            contentTitle: title,
-            summaryText: 'Orbit Two',
-          ),
-          groupKey: 'com.privatespace.ourspace.PARTNER_UPDATES',
-          setAsGroupSummary: false,
-          onlyAlertOnce: false,
-        ),
-      ),
-    );
+    final isMessage = kind == 'message';
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(_messageIdsKey) ?? <String>[];
+    final lines = prefs.getStringList(_messageLinesKey) ?? <String>[];
+    if (isMessage) {
+      final idText = '$id';
+      final existingIndex = ids.indexOf(idText);
+      final line = hidden ? 'নতুন মেসেজ' : '$title: $body';
+      if (existingIndex >= 0) { if (existingIndex < lines.length) lines[existingIndex] = line; }
+      else { ids.add(idText); lines.add(line); }
+      while (ids.length > 20) { ids.removeAt(0); if (lines.isNotEmpty) lines.removeAt(0); }
+      await prefs.setStringList(_messageIdsKey, ids);
+      await prefs.setStringList(_messageLinesKey, lines);
+      await notifications.show(id, title, body, NotificationDetails(android: AndroidNotificationDetails(
+        orbitNotificationChannelId, 'Orbit Two messages',
+        channelDescription: 'Messages from your partner', importance: Importance.max, priority: Priority.max,
+        playSound: true, enableVibration: true, vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
+        enableLights: true, ledColor: pinkColor, ledOnMs: 1000, ledOffMs: 500, color: pinkColor,
+        category: AndroidNotificationCategory.message,
+        visibility: hidden ? NotificationVisibility.private : NotificationVisibility.public,
+        styleInformation: BigTextStyleInformation(body, contentTitle: title, summaryText: 'Orbit Two'),
+        groupKey: orbitMessageNotificationGroup, setAsGroupSummary: false, onlyAlertOnce: false, number: ids.length,
+      )));
+      final visibleLines = hidden ? List<String>.filled(lines.length, 'নতুন মেসেজ') : lines;
+      final summaryTitle = hidden ? 'Orbit Two' : 'Orbit Two • ${ids.length}টি মেসেজ';
+      final summaryBody = hidden ? '${ids.length}টি নতুন মেসেজ' : '${ids.length}টি মেসেজ এসেছে';
+      await notifications.show(orbitMessageSummaryNotificationId, summaryTitle, summaryBody, NotificationDetails(android: AndroidNotificationDetails(
+        orbitNotificationChannelId, 'Orbit Two messages',
+        channelDescription: 'Grouped messages from your partner', importance: Importance.max, priority: Priority.max,
+        playSound: false, enableVibration: false, enableLights: false, color: pinkColor,
+        category: AndroidNotificationCategory.message,
+        visibility: hidden ? NotificationVisibility.private : NotificationVisibility.public,
+        styleInformation: InboxStyleInformation(visibleLines, contentTitle: summaryTitle, summaryText: summaryBody),
+        groupKey: orbitMessageNotificationGroup, setAsGroupSummary: true, onlyAlertOnce: true, number: ids.length,
+      )));
+      return;
+    }
+    await notifications.show(id, title, body, NotificationDetails(android: AndroidNotificationDetails(
+      orbitNotificationChannelId, 'Orbit Two updates',
+      channelDescription: 'Changes and downloads', importance: Importance.max, priority: Priority.max,
+      playSound: true, enableVibration: true, vibrationPattern: Int64List.fromList([0, 350, 180, 350]), color: purpleColor,
+      category: AndroidNotificationCategory.status,
+      visibility: hidden ? NotificationVisibility.private : NotificationVisibility.public,
+      styleInformation: BigTextStyleInformation(body, contentTitle: title, summaryText: 'Orbit Two updates'),
+      groupKey: orbitUpdateNotificationGroup, setAsGroupSummary: false, onlyAlertOnce: true,
+    )));
   }
 }
-
 class FirebaseServices {
   static final auth = FirebaseAuth.instance;
   static final firestore = FirebaseFirestore.instance;
@@ -698,6 +700,7 @@ class SpaceStore {
         detailedBody: 'Changed: $readable',
         privateTitle: 'Check change',
         privateBody: 'Your partner changed shared data.',
+        kind: 'change',
         id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
       ).catchError((Object error) {
         debugPrint('Shared change notification error: $error');
@@ -1641,7 +1644,8 @@ class _MainScreenState extends State<MainScreen>
               detailedBody: content,
               privateTitle: 'Check message',
               privateBody: 'You have a new message.',
-              id: (('${message['id'] ?? ''}').hashCode & 0x7fffffff),
+              kind: 'message',
+              id: NotificationPrivacySettings.notificationIdForMessage(id),
             ).catchError((Object error) {
               debugPrint('Message notification error: $error');
             });
@@ -1713,8 +1717,12 @@ class _MainScreenState extends State<MainScreen>
         onNavigate: (index) {
           setState(() {
             selectedIndex = index;
+            orbitChatVisible = index == 1;
             if (index == 1) hasUnreadChat = false;
           });
+          if (index == 1) {
+            unawaited(NotificationPrivacySettings.clearMessageNotifications());
+          }
         },
         onOpenPartnerConnection: () async {
           await Navigator.push(
@@ -1759,7 +1767,10 @@ class _MainScreenState extends State<MainScreen>
       canPop: selectedIndex == 0,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop || selectedIndex == 0 || !mounted) return;
-        setState(() => selectedIndex = 0);
+        setState(() {
+          selectedIndex = 0;
+          orbitChatVisible = false;
+        });
       },
       child: Scaffold(
       body: Stack(
@@ -4779,11 +4790,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     return Text(
       path,
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 15,
-        height: 1.45,
-      ),
+      softWrap: true,
+      textWidthBasis: TextWidthBasis.parent,
+      overflow: TextOverflow.clip,
+      style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
     );
   }
 
@@ -5650,7 +5660,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         return _buildPendingMediaMessage();
                       }
 
-                      return _buildMessage(messages[index], index);
+                      final message = messages[index];
+                      final messageId = '${message['id'] ?? index}';
+                      return KeyedSubtree(
+                        key: ValueKey<String>('chat-message-$messageId'),
+                        child: _buildMessage(message, index),
+                      );
                     },
                         ),
                       ),
