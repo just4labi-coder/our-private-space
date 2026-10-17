@@ -247,36 +247,37 @@ class InteractionFeedbackSettings {
   static final ValueNotifier<bool> soundsEnabled = ValueNotifier<bool>(true);
 
   static Future<void> load() async {
+    // Chat feedback is always enabled; clear any previous saved opt-out.
+    hapticsEnabled.value = true;
+    soundsEnabled.value = true;
     final prefs = await SharedPreferences.getInstance();
-    hapticsEnabled.value = prefs.getBool(_hapticsKey) ?? true;
-    soundsEnabled.value = prefs.getBool(_soundsKey) ?? true;
+    await prefs.setBool(_hapticsKey, true);
+    await prefs.setBool(_soundsKey, true);
   }
 
   static Future<void> setHapticsEnabled(bool value) async {
+    hapticsEnabled.value = true;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hapticsKey, value);
-    hapticsEnabled.value = value;
+    await prefs.setBool(_hapticsKey, true);
   }
 
   static Future<void> setSoundsEnabled(bool value) async {
+    soundsEnabled.value = true;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_soundsKey, value);
-    soundsEnabled.value = value;
+    await prefs.setBool(_soundsKey, true);
   }
 
   static Future<void> vibrate() async {
-    if (!hapticsEnabled.value) return;
     try {
-      await HapticFeedback.selectionClick();
+      await HapticFeedback.mediumImpact();
     } catch (error) {
       debugPrint('Interaction haptic feedback unavailable: $error');
     }
   }
 
   static Future<void> playTypingSound() async {
-    if (!soundsEnabled.value) return;
     try {
-      await SystemSound.play(SystemSoundType.click);
+      await SystemSound.play(SystemSoundType.alert);
     } catch (error) {
       debugPrint('Typing sound unavailable: $error');
     }
@@ -355,7 +356,7 @@ class NotificationPrivacySettings {
         category: AndroidNotificationCategory.message,
         visibility: hidden ? NotificationVisibility.private : NotificationVisibility.public,
         styleInformation: BigTextStyleInformation(body, contentTitle: title, summaryText: 'Orbit Two'),
-        groupKey: orbitMessageNotificationGroup, setAsGroupSummary: false, onlyAlertOnce: false, number: ids.length,
+        groupKey: orbitMessageNotificationGroup, setAsGroupSummary: false, onlyAlertOnce: true, number: ids.length,
       )));
       final visibleLines = hidden ? List<String>.filled(lines.length, 'নতুন মেসেজ') : lines;
       final summaryTitle = hidden ? 'Orbit Two' : 'Orbit Two • ${ids.length}টি মেসেজ';
@@ -3017,6 +3018,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _preloadChatMedia(List<Map<String, dynamic>> latestMessages) async {
+    // Download all chat attachments after sync, including off-screen messages.
+    for (final message in latestMessages) {
+      if (!mounted) return;
+      final type = '${message['type'] ?? 'text'}';
+      if (message['unsent'] == true ||
+          !const {'image', 'video', 'voice'}.contains(type)) continue;
+      try {
+        await _resolveMediaPath(message);
+      } catch (error) {
+        debugPrint('Chat media pre-download skipped: $error');
+      }
+    }
+  }
+
   Future<void> _startChatSync() async {
     try {
       final stream = ChatSyncService.watchMessages();
@@ -3060,6 +3076,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             _cachedLastOwnMessageIndex = nextLastOwnMessageIndex;
           });
           _hasLoadedInitialMessages = true;
+
+          if (firstSnapshot) {
+            unawaited(_preloadChatMedia(latestMessages));
+          }
 
           if (_appIsResumed) {
             unawaited(
@@ -5945,6 +5965,24 @@ class _GalleryPageState extends State<GalleryPage> {
 
       SpaceStore.saveList('galleryFolders', folders);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_preloadGalleryMedia());
+    });
+  }
+
+  Future<void> _preloadGalleryMedia() async {
+    final items = List<Map<String, dynamic>>.from(media);
+    for (final item in items) {
+      if (!mounted) return;
+      final fileId = '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
+      final localPath = '${item['path'] ?? ''}'.trim();
+      if (fileId.isEmpty && localPath.isEmpty) continue;
+      try {
+        await _resolveLocalPath(item);
+      } catch (error) {
+        debugPrint('Gallery media pre-download skipped: $error');
+      }
+    }
   }
 
   void _handleGallerySyncChanged() {
@@ -5957,6 +5995,7 @@ class _GalleryPageState extends State<GalleryPage> {
       folders = latestFolders;
       media = latestMedia;
     });
+    unawaited(_preloadGalleryMedia());
   }
 
   @override
@@ -7963,11 +8002,16 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
       } else if (player.state == PlayerState.paused) {
         await player.resume();
       } else {
-        // Load metadata first so the full duration appears before playback starts.
-        await _loadSource(player);
+        // Re-attach the file after completion because some Android audio backends
+        // can resume a completed native player without producing audible output.
         if (player.state == PlayerState.completed) {
-          await player.seek(Duration.zero);
+          await player.stop();
+          _sourceLoaded = false;
+          _sourceLoadFuture = null;
+          await _loadSource(player);
           if (mounted) setState(() => _position = Duration.zero);
+        } else {
+          await _loadSource(player);
         }
         await player.setPlaybackRate(_playbackRate);
         await player.resume();
@@ -8678,57 +8722,6 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         const SizedBox(height: 20),
-        const SectionHeading(title: 'Chat feedback'),
-        const SizedBox(height: 10),
-        ValueListenableBuilder<bool>(
-          valueListenable: InteractionFeedbackSettings.hapticsEnabled,
-          builder: (context, enabled, _) => Card(
-            color: surfaceColor,
-            child: SwitchListTile(
-              secondary: const Icon(Icons.vibration_rounded, color: pinkColor),
-              title: const Text('Chat vibration'),
-              subtitle: const Text('ভয়েস চালু ও রিপ্লাই স্লাইড করলে হালকা ভাইব্রেশন'),
-              value: enabled,
-              activeColor: pinkColor,
-              onChanged: (value) async {
-                try {
-                  await InteractionFeedbackSettings.setHapticsEnabled(value);
-                  if (value) await InteractionFeedbackSettings.vibrate();
-                } catch (error) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Vibration setting could not be saved.')),
-                  );
-                }
-              },
-            ),
-          ),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: InteractionFeedbackSettings.soundsEnabled,
-          builder: (context, enabled, _) => Card(
-            color: surfaceColor,
-            child: SwitchListTile(
-              secondary: const Icon(Icons.volume_up_outlined, color: pinkColor),
-              title: const Text('Typing sound'),
-              subtitle: const Text('সঙ্গী টাইপ করা শুরু করলে ছোট সিস্টেম সাউন্ড'),
-              value: enabled,
-              activeColor: pinkColor,
-              onChanged: (value) async {
-                try {
-                  await InteractionFeedbackSettings.setSoundsEnabled(value);
-                  if (value) await InteractionFeedbackSettings.playTypingSound();
-                } catch (error) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Sound setting could not be saved.')),
-                  );
-                }
-              },
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
         const SectionHeading(title: 'Notifications'),
         const SizedBox(height: 10),
         ValueListenableBuilder<bool>(
@@ -8793,42 +8786,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   );
                 }
               },
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        const SectionHeading(title: 'App information'),
-        const SizedBox(height: 10),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(Icons.lock_outline, color: blueColor),
-            title: Text('Private by design'),
-            subtitle: Text(
-              'This version stores supported app data locally on this device.',
-            ),
-          ),
-        ),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(Icons.cloud_outlined, color: purpleColor),
-            title: Text('Firebase Sync'),
-            subtitle: Text(
-              'Firebase sync is active with partner connection.',
-            ),
-          ),
-        ),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(
-              Icons.notifications_active_outlined,
-              color: pinkColor,
-            ),
-            title: Text('Special date reminders'),
-            subtitle: Text(
-              'Reminders can be scheduled for dates you add.',
             ),
           ),
         ),
