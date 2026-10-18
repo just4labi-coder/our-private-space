@@ -480,7 +480,7 @@ class StartupErrorScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
-                  'assets/branding/orbit_two_logo_artwork.png',
+                  'assets/branding/orbit_two_logo.jpg',
                   width: 100,
                   height: 100,
                   fit: BoxFit.contain,
@@ -1016,30 +1016,26 @@ class _SplashScreenState extends State<SplashScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 152,
+                width: 228,
                 height: 152,
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF171026),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: pinkColor.withValues(alpha: 0.55), width: 1.5),
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(18),
                   boxShadow: [
-                    BoxShadow(color: pinkColor.withValues(alpha: 0.28), blurRadius: 28, spreadRadius: 2),
-                    BoxShadow(color: purpleColor.withValues(alpha: 0.22), blurRadius: 42, spreadRadius: 4),
+                    BoxShadow(color: pinkColor.withValues(alpha: 0.20), blurRadius: 24, spreadRadius: 1),
+                    BoxShadow(color: purpleColor.withValues(alpha: 0.18), blurRadius: 34, spreadRadius: 2),
                   ],
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(22),
-                  child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
-                    width: 132,
-                    height: 132,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
-                      Icons.favorite_rounded,
-                      size: 72,
-                      color: pinkColor,
-                    ),
+                child: Image.asset(
+                  'assets/branding/orbit_two_logo.jpg',
+                  width: 220,
+                  height: 147,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.favorite_rounded,
+                    size: 72,
+                    color: pinkColor,
                   ),
                 ),
               ),
