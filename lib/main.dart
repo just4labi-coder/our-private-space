@@ -1082,7 +1082,7 @@ class _AnimatedOrbitTitleState extends State<AnimatedOrbitTitle>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     // Slower, smoother ambient movement across the whole screen.
-    duration: const Duration(seconds: 24),
+    duration: const Duration(seconds: 16),
   )..repeat();
 
   @override
