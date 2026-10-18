@@ -10070,7 +10070,13 @@ class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
   void initState() {
     super.initState();
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && !widget.isOnline && !widget.isTyping) setState(() {});
+      if (!mounted) return;
+      if (widget.isTyping) {
+        // Messenger-like short typing ticks while the partner is actively typing.
+        unawaited(InteractionFeedbackSettings.playTypingSound());
+      } else if (!widget.isOnline) {
+        setState(() {});
+      }
     });
   }
 
