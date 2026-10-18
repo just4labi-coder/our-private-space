@@ -502,7 +502,7 @@ class StartupErrorScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Firebase সংযোগে সমস্যা হয়েছে। ইন্টারনেট সংযোগ পরীক্ষা করে অ্যাপটি আবার খুলুন।',
+                  'সাময়িকভাবে সংযোগ স্থাপন করা যাচ্ছে না। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white70),
                 ),
@@ -2638,7 +2638,7 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('সংরক্ষণ করা যায়নি: $e')),
+        SnackBar(content: Text('পরিবর্তনগুলো সংরক্ষণ করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।')),
       );
     } finally {
       if (mounted) setState(() => saving = false);
@@ -2676,7 +2676,7 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('মুছতে পারিনি: $e')),
+        SnackBar(content: Text('মুছে ফেলা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।')),
       );
     } finally {
       if (mounted) setState(() => saving = false);
@@ -3313,14 +3313,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         onError: (Object error) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('চ্যাট সিঙ্ক সমস্যা: $error')),
+            SnackBar(content: Text('চ্যাট আপডেট করা যাচ্ছে না। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।')),
           );
         },
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('চ্যাট চালু হয়নি: $error')),
+        SnackBar(content: Text('চ্যাট চালু করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।')),
       );
     }
   }
@@ -3731,7 +3731,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       debugPrint('Voice recording start failed: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ভয়েস রেকর্ড শুরু হয়নি: $error')),
+          SnackBar(content: Text('ভয়েস রেকর্ড শুরু করা যায়নি। মাইক্রোফোনের অনুমতি পরীক্ষা করে আবার চেষ্টা করুন।')),
         );
       }
     }
@@ -3767,7 +3767,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (mounted) {
         setState(() => _isRecordingVoice = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ভয়েস রেকর্ড বন্ধ হয়নি: $error')),
+          SnackBar(content: Text('ভয়েস রেকর্ড শেষ করা যায়নি। আবার চেষ্টা করুন।')),
         );
       }
     }
@@ -3793,7 +3793,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await _voicePreviewPlayer.play(DeviceFileSource(path));
       }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ভয়েস চালানো যায়নি: $error')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ভয়েস মেসেজ চালানো যায়নি। আবার চেষ্টা করুন।')));
     }
   }
 
@@ -4065,7 +4065,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       debugPrint('Voice upload failed: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ভয়েস পাঠানো যায়নি: $error')),
+          SnackBar(content: Text('ভয়েস মেসেজ পাঠানো যায়নি। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।')),
         );
       }
     } finally {
@@ -4380,7 +4380,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     try {
                       await ChatSyncService.setMessagePinned(messageId: messageId, pinned: message['pinned'] != true);
                     } catch (error) {
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pin করা যায়নি: $error')));
+                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('মেসেজটি পিন করা যায়নি। আবার চেষ্টা করুন।')));
                     }
                   },
                 ),
@@ -4485,7 +4485,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     } catch (error) {
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('আনসেন্ড করা যায়নি: $error')),
+                        SnackBar(content: Text('মেসেজটি সরানো যায়নি। আবার চেষ্টা করুন।')),
                       );
                     }
                   },
@@ -4657,7 +4657,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             Duration(milliseconds: 700 * (attempt + 1)),
           );
         }
-        throw Exception('ডাউনলোড ব্যর্থ: $lastDownloadError');
+        throw Exception('ফাইল ডাউনলোড করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।');
       } catch (error) {
         debugPrint('Chat media download error: $error');
         return null;
@@ -5349,7 +5349,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('রিঅ্যাকশন দেওয়া যায়নি: ${error}')),
+        SnackBar(content: Text('রিঅ্যাকশন যোগ করা যায়নি। আবার চেষ্টা করুন।')),
       );
     }
   }
@@ -6669,7 +6669,7 @@ class _GalleryPageState extends State<GalleryPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Drive-এ আপলোড হয়নি: $e')),
+          SnackBar(content: Text('ফাইল আপলোড করা যায়নি। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।')),
         );
       }
       return null;
@@ -8429,7 +8429,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ভয়েস চালানো যায়নি: $error')),
+          SnackBar(content: Text('ভয়েস মেসেজ চালানো যায়নি। আবার চেষ্টা করুন।')),
         );
       }
     } finally {
@@ -8453,7 +8453,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('প্লেব্যাক স্পিড বদলানো যায়নি: $error')),
+            SnackBar(content: Text('প্লেব্যাকের গতি পরিবর্তন করা যায়নি। আবার চেষ্টা করুন।')),
           );
         }
       }
@@ -9309,7 +9309,7 @@ class _SettingsPageState extends State<SettingsPage> {
               } catch (error) {
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Log out failed: $error')),
+                  SnackBar(content: Text('সাইন আউট করা যায়নি। আবার চেষ্টা করুন।')),
                 );
               }
             },
@@ -9386,7 +9386,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('নাম সংরক্ষণ করা যায়নি: $e')),
+        SnackBar(content: Text('নাম সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।')),
       );
     }
   }
@@ -9494,7 +9494,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'প্রোফাইল ছবি সংরক্ষণ করা যায়নি: $error',
+            'প্রোফাইল ছবি সংরক্ষণ করা যায়নি। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।',
           ),
         ),
       );
