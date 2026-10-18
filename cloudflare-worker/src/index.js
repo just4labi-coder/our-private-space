@@ -214,7 +214,7 @@ async function sendFcm(accessToken, token, title, body, details) {
             priority: "HIGH",
             ttl: "86400s",
             notification: {
-              channel_id: "orbit_partner_updates_v6",
+              channel_id: "orbit_partner_updates_v7",
               sound: "default",
               visibility: "PRIVATE",
             },
