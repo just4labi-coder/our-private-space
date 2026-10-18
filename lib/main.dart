@@ -185,7 +185,11 @@ Future<void> main() async {
   if (firebaseReady) {
     FirebaseMessaging.onBackgroundMessage(orbitFirebaseMessagingBackgroundHandler);
     try {
-      await PushNotificationService.initialize();
+      await PushNotificationService.initialize().timeout(
+        const Duration(seconds: 4),
+      );
+    } on TimeoutException {
+      debugPrint('Push notification initialization timed out; continuing startup.');
     } catch (error) {
       debugPrint('Push notification initialization failed: $error');
     }
@@ -837,6 +841,26 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _networkUnavailable = false;
+
+  Future<bool> _hasNetworkConnection() async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 4);
+    try {
+      final request = await client
+          .getUrl(Uri.parse('https://www.google.com/generate_204'))
+          .timeout(const Duration(seconds: 4));
+      final response =
+          await request.close().timeout(const Duration(seconds: 4));
+      await response.drain<void>();
+      return response.statusCode >= 200 && response.statusCode < 500;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -844,7 +868,14 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _start() async {
+    if (_networkUnavailable && mounted) {
+      setState(() => _networkUnavailable = false);
+    }
     await SpaceStore.init();
+    if (!await _hasNetworkConnection()) {
+      if (mounted) setState(() => _networkUnavailable = true);
+      return;
+    }
     await Future.delayed(const Duration(milliseconds: 1500));
 
     if (!mounted) return;
@@ -870,13 +901,23 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (user != null) {
       try {
-        await SpaceStore.syncFromFirebase();
+        await SpaceStore.syncFromFirebase().timeout(
+          const Duration(seconds: 6),
+        );
+      } on TimeoutException {
+        if (mounted) setState(() => _networkUnavailable = true);
+        return;
       } catch (error) {
         debugPrint('Startup sync error: $error');
       }
 
       try {
-        await SpaceStore.startRealtimeSync();
+        await SpaceStore.startRealtimeSync().timeout(
+          const Duration(seconds: 6),
+        );
+      } on TimeoutException {
+        if (mounted) setState(() => _networkUnavailable = true);
+        return;
       } catch (error) {
         debugPrint('Startup realtime sync error: $error');
       }
@@ -923,6 +964,51 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_networkUnavailable) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.wifi_off_rounded,
+                    size: 68,
+                    color: pinkColor,
+                  ),
+                  const SizedBox(height: 22),
+                  const Text(
+                    'Check Your Network Connection',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 21,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'ইন্টারনেট সংযোগ চালু করে আবার চেষ্টা করুন।',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _start,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Try Again'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: GlowBackground(
         child: Center(
