@@ -418,6 +418,26 @@ class ChatSyncService {
     });
   }
 
+  /// চ্যাটের যেকোনো মেসেজ shared pinned state-এ রাখে বা সরায়।
+  static Future<void> setMessagePinned({
+    required String messageId,
+    required bool pinned,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('আগে সাইন ইন করো।');
+    final cleanId = messageId.trim();
+    if (cleanId.isEmpty) throw Exception('মেসেজ ID পাওয়া যায়নি।');
+    final ref = await _messagesRef();
+    final doc = ref.doc(cleanId);
+    final snapshot = await doc.get();
+    if (!snapshot.exists) throw Exception('মেসেজটি পাওয়া যায়নি।');
+    await doc.update({
+      'pinned': pinned,
+      'pinnedBy': pinned ? user.uid : FieldValue.delete(),
+      'pinnedAt': pinned ? FieldValue.serverTimestamp() : FieldValue.delete(),
+    });
+  }
+
   /// নিজের পাঠানো মেসেজ সবার জন্য Unsend করে।
   static Future<void> unsendMessage(String messageId) async {
     final user = _auth.currentUser;
