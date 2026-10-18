@@ -302,15 +302,9 @@ class InteractionFeedbackSettings {
   static Future<void> playSeenSound() =>
       _playAssetSound('sounds/orbit_seen.wav');
 
-  // Outgoing message confirmation uses the system click sound, never the Seen asset.
-  static Future<void> playSentSound() async {
-    if (!soundsEnabled.value) return;
-    try {
-      await SystemSound.play(SystemSoundType.click);
-    } catch (error) {
-      debugPrint('Sent sound unavailable: $error');
-    }
-  }
+  // Use a dedicated bundled sound; Android system clicks can be silent.
+  static Future<void> playSentSound() =>
+      _playAssetSound('sounds/orbit_sent.wav');
 }
 
 class NotificationPrivacySettings {
