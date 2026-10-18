@@ -4270,7 +4270,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   onTap: () async {
                     Navigator.pop(sheetContext);
                     try {
-                      await ChatSyncService.updateMessage(messageId, {'pinned': message['pinned'] != true});
+                      await ChatSyncService.setMessagePinned(messageId: messageId, pinned: message['pinned'] != true);
                     } catch (error) {
                       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pin করা যায়নি: $error')));
                     }
