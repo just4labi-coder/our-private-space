@@ -1068,7 +1068,7 @@ class _GlowBackgroundState extends State<GlowBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 18),
+    duration: const Duration(seconds: 12),
   )..repeat();
 
   @override
