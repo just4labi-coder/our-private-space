@@ -100,7 +100,7 @@ jobs:
           from PIL import Image, ImageDraw, ImageOps
 
           out = Path("assets/branding")
-          source = out / "orbit_two_logo.jpg"
+          source = out / "orbit_two_app_icon_new.jpg"
           size = 512
 
           # Remove the connected dark backdrop on the original image before
