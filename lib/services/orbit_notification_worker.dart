@@ -12,7 +12,7 @@ class OrbitNotificationWorker {
 
   static const String _workerUrl = String.fromEnvironment(
     'ORBIT_WORKER_URL',
-    defaultValue: 'https://our-private-space.just4labi.workers.dev',
+    defaultValue: 'https://orbit-two-notifications.just4labi.workers.dev',
   );
 
   static Future<void> notifyNewMessage({
