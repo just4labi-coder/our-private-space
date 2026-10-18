@@ -4297,6 +4297,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     await _saveChatMediaToGallery(message);
                   },
                 ),
+              if (!unsent)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
+                  title: const Text('Delete for me'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    final local = SpaceStore.readList('chatMessages');
+                    local.removeWhere((item) => '${item['id'] ?? ''}' == messageId);
+                    await SpaceStore.saveList('chatMessages', local);
+                    if (mounted) setState(() {
+                      messages.removeWhere((item) => '${item['id'] ?? ''}' == messageId);
+                    });
+                  },
+                ),
               if (mine && !unsent)
                 ListTile(
                   leading: const Icon(
@@ -5010,7 +5024,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final percent = (progress * 100).round();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -5544,7 +5558,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               }
             });
           },
-          onLongPress: () => _showMessageOptions(message),
+          onLongPress: () {
+            unawaited(InteractionFeedbackSettings.vibrate());
+            if (mine || message['unsent'] != true) _showMessageOptions(message);
+          },
           onDoubleTap: () => unawaited(
             _setMessageReaction(messageId, '❤️'),
           ),
