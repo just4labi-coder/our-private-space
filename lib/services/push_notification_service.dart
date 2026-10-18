@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Per-device FCM registration. Privacy choice is stored per installation,
@@ -12,6 +13,7 @@ class PushNotificationService {
   PushNotificationService._();
 
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   static StreamSubscription<String>? _tokenSubscription;
   static StreamSubscription<User?>? _authSubscription;
   static bool _hideDetails = false;
@@ -47,7 +49,7 @@ class PushNotificationService {
               settings.authorizationStatus == AuthorizationStatus.provisional,
         );
       }
-      final androidPlugin = notifications.resolvePlatformSpecificImplementation<
+      final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
       await androidPlugin?.requestNotificationsPermission();
     } catch (error) {
