@@ -2847,6 +2847,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Map<String, dynamic>? _replyToMessage;
   final Set<String> _expandedMessageTimes = <String>{};
   final Set<String> _seenSoundPlayedFor = <String>{};
+  final Set<String> _locallyDeletedMessageIds = <String>{};
   final Map<String, double> _replyDragOffsets = <String, double>{};
   final AudioRecorder _voiceRecorder = AudioRecorder();
   final AudioPlayer _voicePreviewPlayer = AudioPlayer();
@@ -2936,6 +2937,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       },
     );
 
+    unawaited(_loadLocallyDeletedMessageIds());
     _startChatSync();
     orbitSharedText.addListener(_handleSharedTextDraft);
     _handleSharedTextDraft();
@@ -3110,6 +3112,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadLocallyDeletedMessageIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    _locallyDeletedMessageIds.addAll(prefs.getStringList('orbitDeletedForMeMessageIds') ?? const <String>[]);
+    if (mounted) setState(() {
+      messages.removeWhere((item) => _locallyDeletedMessageIds.contains('${item['id'] ?? ''}'));
+    });
+  }
+
   Future<void> _startChatSync() async {
     try {
       final stream = ChatSyncService.watchMessages();
@@ -3173,7 +3183,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           }
 
           setState(() {
-            messages = latestMessages;
+            messages = latestMessages.where((item) => !_locallyDeletedMessageIds.contains('${item['id'] ?? ''}')).toList();
             _cachedLastOwnMessageIndex = nextLastOwnMessageIndex;
           });
           _hasLoadedInitialMessages = true;
@@ -4303,9 +4313,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   title: const Text('Delete for me'),
                   onTap: () async {
                     Navigator.pop(sheetContext);
-                    final local = SpaceStore.readList('chatMessages');
-                    local.removeWhere((item) => '${item['id'] ?? ''}' == messageId);
-                    await SpaceStore.saveList('chatMessages', local);
+                    _locallyDeletedMessageIds.add(messageId);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setStringList('orbitDeletedForMeMessageIds', _locallyDeletedMessageIds.toList());
                     if (mounted) setState(() {
                       messages.removeWhere((item) => '${item['id'] ?? ''}' == messageId);
                     });
