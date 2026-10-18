@@ -60,7 +60,7 @@ Future<File> _makeCompatibleVideo(File source) async {
 
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
-const String orbitNotificationChannelId = 'orbit_partner_updates_v6';
+const String orbitNotificationChannelId = 'orbit_partner_updates_v7';
 const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
 const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
 const int orbitMessageSummaryNotificationId = 7000;
