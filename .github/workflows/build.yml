@@ -22,7 +22,7 @@ jobs:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      ORBIT_WORKER_URL: ${{ vars.ORBIT_WORKER_URL || 'https://our-private-space.just4labi.workers.dev' }}
+      ORBIT_WORKER_URL: ${{ vars.ORBIT_WORKER_URL || 'https://orbit-two-notifications.just4labi.workers.dev' }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
@@ -190,7 +190,7 @@ jobs:
               raise SystemExit("Orbit Two logo became fully transparent during background cleanup.")
           visible_artwork = artwork.crop(alpha_bounds)
           visible_artwork.save(out / "orbit_two_logo_artwork.png", format="PNG")
-          safe_size = 330
+          safe_size = 430
           safe_artwork = ImageOps.contain(
               visible_artwork,
               (safe_size, safe_size),
@@ -223,50 +223,33 @@ jobs:
               print(f"Generated and verified {path}")
           PY
 
-      - name: Prepare the new image for app icon and splash only
+      - name: Generate transparent monochrome notification icon
         run: |
+          mkdir -p android/app/src/main/res/drawable
           python - <<'PY'
           from pathlib import Path
           from PIL import Image, ImageOps
-
-          branding = Path("assets/branding")
-          source = branding / "orbit_two_app_icon_new.jpg"
-          icon_path = branding / "orbit_two_app_icon_new_icon.png"
-          foreground_path = branding / "orbit_two_app_icon_new_foreground.png"
-          background_path = branding / "orbit_two_app_icon_new_background.png"
-          size = 512
-
+          source = Path("assets/branding/orbit_two_logo_artwork.png")
+          target = Path("android/app/src/main/res/drawable/ic_stat_orbit.png")
           with Image.open(source) as image:
               image.load()
-              image = image.convert("RGBA")
-          # Fill the app icon/splash canvas for a clearer, zoomed presentation.
-          # The separate in-app logo asset remains unchanged.
-          square = ImageOps.fit(
-              image,
-              (size, size),
-              method=Image.Resampling.LANCZOS,
-              centering=(0.5, 0.5),
-          )
-          square.save(icon_path, format="PNG")
-
-          foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-          safe = ImageOps.fit(
-              image,
-              (330, 330),
-              method=Image.Resampling.LANCZOS,
-              centering=(0.5, 0.5),
-          )
-          foreground.alpha_composite(safe, ((size - safe.width) // 2, (size - safe.height) // 2))
-          foreground.save(foreground_path, format="PNG")
-          Image.new("RGBA", (size, size), (0, 0, 0, 0)).save(background_path, format="PNG")
-
-          for path in (icon_path, foreground_path, background_path):
-              with Image.open(path) as generated:
-                  generated.verify()
-              print(f"Generated and verified {path}")
+              alpha = image.convert("RGBA").getchannel("A")
+              bounds = alpha.getbbox()
+              if bounds is None:
+                  raise SystemExit("Orbit logo has no visible pixels for notification icon.")
+              alpha = alpha.crop(bounds)
+              alpha.thumbnail((72, 72), Image.Resampling.LANCZOS)
+              canvas_alpha = Image.new("L", (96, 96), 0)
+              canvas_alpha.paste(alpha, ((96 - alpha.width) // 2, (96 - alpha.height) // 2))
+              icon = Image.new("RGBA", (96, 96), (255, 255, 255, 0))
+              icon.putalpha(canvas_alpha)
+              icon.save(target, "PNG")
+          with Image.open(target) as image:
+              image.verify()
+          print("Generated verified transparent white Android notification icon.")
           PY
 
-      - name: Generate custom launcher icon from the new app icon image
+      - name: Generate custom launcher icon from the cleaned Orbit Two logo
         run: |
           dart run flutter_launcher_icons
           sed -i 's#android:icon="@android:drawable/sym_def_app_icon"#android:icon="@mipmap/ic_launcher"#' android/app/src/main/AndroidManifest.xml
@@ -279,14 +262,14 @@ jobs:
           mkdir -p android/app/src/main/res/drawable-nodpi
           python - <<'PY'
           from PIL import Image
-          source = "assets/branding/orbit_two_app_icon_new_icon.png"
+          source = "assets/branding/orbit_two_logo_icon.png"
           target = "android/app/src/main/res/drawable-nodpi/orbit_logo.png"
           with Image.open(source) as image:
               image.load()
               image.convert("RGBA").resize((360, 360), Image.Resampling.LANCZOS).save(target, "PNG")
           with Image.open(target) as image:
               image.verify()
-          print("Verified transparent, proportion-preserving Orbit Two artwork for native splash.")
+          print("Verified transparent, proportion-preserving Orbit Two logo for native splash.")
           PY
 
       - name: Check Cloudflare Worker JavaScript syntax
