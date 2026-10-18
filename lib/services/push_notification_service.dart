@@ -27,19 +27,31 @@ class PushNotificationService {
 
     // Ask on the first run only. The system may not show another prompt after
     // denial; users can re-enable permission in Android App info settings.
-    final permissionAsked = prefs.getBool(_permissionAskedKey) ?? false;
-    if (!permissionAsked) {
-      try {
-        await _messaging.requestPermission(
+    try {
+      var settings = await _messaging.getNotificationSettings();
+      final needsPermission = settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional;
+      final permissionAsked = prefs.getBool(_permissionAskedKey) ?? false;
+      if (needsPermission && !permissionAsked) {
+        settings = await _messaging.requestPermission(
           alert: true,
           badge: true,
           sound: true,
           provisional: false,
         );
-        await prefs.setBool(_permissionAskedKey, true);
-      } catch (error) {
-        debugPrint('Notification permission request failed: $error');
+        // Don't mark denied permission as completed. Android may still require
+        // manually enabling notifications in App info after a denial.
+        await prefs.setBool(
+          _permissionAskedKey,
+          settings.authorizationStatus == AuthorizationStatus.authorized ||
+              settings.authorizationStatus == AuthorizationStatus.provisional,
+        );
       }
+      final androidPlugin = notifications.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
+    } catch (error) {
+      debugPrint('Notification permission request failed: $error');
     }
 
     _authSubscription ??= FirebaseAuth.instance.authStateChanges().listen(

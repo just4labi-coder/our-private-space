@@ -201,17 +201,18 @@ Future<void> main() async {
         unawaited(NotificationPrivacySettings.clearMessageNotifications());
         return;
       }
-      final messageId = data['messageId']?.toString() ?? '';
-      // Older deployed Worker versions omit messageId; Firestore's real-time
-      // listener supplies the same notification with a stable ID instead.
-      if (kind == 'message' && messageId.isEmpty) return;
+      final messageId = data['messageId']?.toString() ??
+          message.messageId ??
+          'foreground-${DateTime.now().microsecondsSinceEpoch}';
+      // Cloud Functions may send notification payloads without a data messageId.
+      // Still show the foreground notification instead of silently dropping it.
       unawaited(NotificationPrivacySettings.showPartnerNotification(
         detailedTitle: data['detailedTitle']?.toString() ?? message.notification?.title ?? 'Orbit Two',
         detailedBody: data['detailedBody']?.toString() ?? message.notification?.body ?? 'You have an update.',
         privateTitle: data['privateTitle']?.toString() ?? (kind == 'change' ? 'Check change' : 'Check message'),
         privateBody: data['privateBody']?.toString() ?? (kind == 'change' ? 'Your partner changed shared data.' : 'You have a new message.'),
         kind: kind,
-        id: kind == 'message' ? NotificationPrivacySettings.notificationIdForMessage(messageId.isNotEmpty ? messageId : DateTime.now().microsecondsSinceEpoch.toString()) : DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
+        id: kind == 'message' ? NotificationPrivacySettings.notificationIdForMessage(messageId) : DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
       ));
     });
 
@@ -2000,28 +2001,9 @@ class _MainScreenState extends State<MainScreen>
         children: [
           Positioned.fill(
             child: GlowBackground(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                reverseDuration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) {
-                  final slide = Tween<Offset>(
-                    begin: const Offset(0.018, 0),
-                    end: Offset.zero,
-                  ).animate(animation);
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: slide,
-                      child: child,
-                    ),
-                  );
-                },
-                child: KeyedSubtree(
-                  key: ValueKey<int>(selectedIndex),
-                  child: pages[selectedIndex],
-                ),
+              child: IndexedStack(
+                index: selectedIndex,
+                children: pages,
               ),
             ),
           ),
@@ -2305,7 +2287,7 @@ class HomePage extends StatelessWidget {
                 child: ColoredBox(
                   color: const Color(0xFF070513),
                   child: Image.asset(
-                    'assets/branding/orbit_two_app_icon_new.jpg',
+                    'assets/branding/orbit_two_logo.jpg',
                     width: 64,
                     height: 64,
                     fit: BoxFit.contain,
