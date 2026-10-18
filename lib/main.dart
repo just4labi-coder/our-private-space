@@ -449,6 +449,15 @@ class EternalSpaceApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white.withValues(alpha: 0.055),
@@ -1879,23 +1888,33 @@ class _MainScreenState extends State<MainScreen>
       clipBehavior: Clip.none,
       children: [
         Icon(iconData),
-        if (hasUnreadChat)
-          Positioned(
-            right: -3,
-            top: -3,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: Colors.redAccent,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: surfaceColor,
-                  width: 1.5,
+        Positioned(
+          right: -3,
+          top: -3,
+          child: IgnorePointer(
+            child: AnimatedScale(
+              scale: hasUnreadChat ? 1 : 0,
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutBack,
+              child: AnimatedOpacity(
+                opacity: hasUnreadChat ? 1 : 0,
+                duration: const Duration(milliseconds: 140),
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: surfaceColor,
+                      width: 1.5,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
+        ),
       ],
     );
   }
@@ -1978,7 +1997,29 @@ class _MainScreenState extends State<MainScreen>
         children: [
           Positioned.fill(
             child: GlowBackground(
-              child: pages[selectedIndex],
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                reverseDuration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final slide = Tween<Offset>(
+                    begin: const Offset(0.018, 0),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: slide,
+                      child: child,
+                    ),
+                  );
+                },
+                child: KeyedSubtree(
+                  key: ValueKey<int>(selectedIndex),
+                  child: pages[selectedIndex],
+                ),
+              ),
             ),
           ),
           if (selectedIndex == 2)
