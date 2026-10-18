@@ -1031,7 +1031,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(22),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo_artwork.png',
+                    'assets/branding/orbit_two_logo.jpg',
                     width: 132,
                     height: 132,
                     fit: BoxFit.contain,
@@ -1148,7 +1148,7 @@ class _GlowBackgroundState extends State<GlowBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 12),
+    duration: const Duration(seconds: 9),
   )..repeat();
 
   @override
@@ -1210,18 +1210,18 @@ class _GlowBackgroundState extends State<GlowBackground>
                 child: _glow(340, const Color(0xFF8B1D62).withValues(alpha: 0.34)),
               ),
               Positioned(
-                bottom: -145 + cos(phase * 0.8) * 34,
-                right: -120 + sin(phase * 0.8) * 30,
+                bottom: -145 + cos(phase) * 34,
+                right: -120 + sin(phase) * 30,
                 child: _glow(370, const Color(0xFF6826A8).withValues(alpha: 0.34)),
               ),
               Positioned(
-                top: 210 + cos(phase * 0.65) * 25,
-                right: -165 + sin(phase * 0.65) * 24,
+                top: 210 + cos(phase * 2) * 25,
+                right: -165 + sin(phase * 2) * 24,
                 child: _glow(310, const Color(0xFFB51E72).withValues(alpha: 0.22)),
               ),
               Positioned(
-                bottom: 70 + sin(phase * 0.7) * 26,
-                left: -175 + cos(phase * 0.7) * 25,
+                bottom: 70 + sin(phase * 2) * 26,
+                left: -175 + cos(phase * 2) * 25,
                 child: _glow(300, const Color(0xFF5424B8).withValues(alpha: 0.24)),
               ),
               if (child != null) Positioned.fill(child: child),
@@ -2196,7 +2196,7 @@ class HomePage extends StatelessWidget {
                 child: ColoredBox(
                   color: const Color(0xFF070513),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo_artwork.png',
+                    'assets/branding/orbit_two_logo.jpg',
                     width: 64,
                     height: 64,
                     fit: BoxFit.contain,
