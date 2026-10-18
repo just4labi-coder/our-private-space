@@ -1196,36 +1196,48 @@ class _GlowBackgroundState extends State<GlowBackground>
           ],
         ),
       ),
-      child: AnimatedBuilder(
-        animation: _controller,
-        child: SafeArea(child: RepaintBoundary(child: widget.child)),
-        builder: (context, child) {
-          final phase = _controller.value * 2 * pi;
-          return Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned(
-                top: -125 + sin(phase) * 30,
-                left: -115 + cos(phase) * 28,
-                child: _glow(340, const Color(0xFF8B1D62).withValues(alpha: 0.34)),
-              ),
-              Positioned(
-                bottom: -145 + cos(phase) * 34,
-                right: -120 + sin(phase) * 30,
-                child: _glow(370, const Color(0xFF6826A8).withValues(alpha: 0.34)),
-              ),
-              Positioned(
-                top: 210 + cos(phase * 2) * 25,
-                right: -165 + sin(phase * 2) * 24,
-                child: _glow(310, const Color(0xFFB51E72).withValues(alpha: 0.22)),
-              ),
-              Positioned(
-                bottom: 70 + sin(phase * 2) * 26,
-                left: -175 + cos(phase * 2) * 25,
-                child: _glow(300, const Color(0xFF5424B8).withValues(alpha: 0.24)),
-              ),
-              if (child != null) Positioned.fill(child: child),
-            ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
+          return AnimatedBuilder(
+            animation: _controller,
+            child: SafeArea(child: RepaintBoundary(child: widget.child)),
+            builder: (context, child) {
+              final phase = _controller.value * 2 * pi;
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  // Each glow follows a different full-screen orbital path.
+                  Positioned(
+                    left: width * 0.02 + cos(phase) * width * 0.24,
+                    top: height * 0.04 + sin(phase) * height * 0.24,
+                    child: _glow(340, const Color(0xFF8B1D62).withValues(alpha: 0.34)),
+                  ),
+                  Positioned(
+                    right: width * 0.01 + sin(phase) * width * 0.22,
+                    bottom: height * 0.02 + cos(phase) * height * 0.25,
+                    child: _glow(370, const Color(0xFF6826A8).withValues(alpha: 0.34)),
+                  ),
+                  Positioned(
+                    left: width * 0.28 + cos(phase * 2 + 1.2) * width * 0.28,
+                    top: height * 0.30 + sin(phase * 2 + 1.2) * height * 0.30,
+                    child: _glow(310, const Color(0xFFB51E72).withValues(alpha: 0.22)),
+                  ),
+                  Positioned(
+                    right: width * 0.18 + sin(phase * 2 + 2.4) * width * 0.26,
+                    top: height * 0.18 + cos(phase * 2 + 2.4) * height * 0.32,
+                    child: _glow(300, const Color(0xFF5424B8).withValues(alpha: 0.24)),
+                  ),
+                  Positioned(
+                    left: width * 0.12 + sin(phase * 3 + 0.7) * width * 0.34,
+                    top: height * 0.50 + cos(phase * 3 + 0.7) * height * 0.34,
+                    child: _glow(250, const Color(0xFF3B82F6).withValues(alpha: 0.15)),
+                  ),
+                  if (child != null) Positioned.fill(child: child),
+                ],
+              );
+            },
           );
         },
       ),
