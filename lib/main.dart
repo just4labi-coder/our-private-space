@@ -3042,7 +3042,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         unawaited(InteractionFeedbackSettings.playTypingSound());
         _typingSoundTimer?.cancel();
         _typingSoundTimer = Timer.periodic(const Duration(milliseconds: 650), (_) {
-          if (!mounted || !_appIsResumed || controller.text.trim().isEmpty || _typingIdleTimer == null) return;
+          if (!mounted || !_appIsResumed || controller.text.trim().isEmpty || !_isTypingSent) return;
           unawaited(InteractionFeedbackSettings.playTypingSound());
         });
         unawaited(ChatSyncService.setTyping(isTyping: true).catchError(
@@ -4263,6 +4263,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('মেসেজ কপি হয়েছে')));
                 },
               ),
+              if (!unsent)
+                ListTile(
+                  leading: Icon(Icons.push_pin_rounded, color: message['pinned'] == true ? pinkColor : Colors.white70),
+                  title: Text(message['pinned'] == true ? 'Unpin' : 'Pin'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    try {
+                      await ChatSyncService.updateMessage(messageId, {'pinned': message['pinned'] != true});
+                    } catch (error) {
+                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pin করা যায়নি: $error')));
+                    }
+                  },
+                ),
               ListTile(
                 enabled: !unsent,
                 leading: Icon(
@@ -5606,7 +5619,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               borderRadius: BorderRadius.circular(18),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
+              padding: EdgeInsets.only(top: index > 0 && '${messages[index - 1]['senderUid'] ?? ''}' == senderUid ? 1 : 5, bottom: index + 1 < messages.length && '${messages[index + 1]['senderUid'] ?? ''}' == senderUid ? 1 : 5),
               child: Stack(
               alignment: Alignment.centerLeft,
               clipBehavior: Clip.none,
@@ -5755,12 +5768,48 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               ],
             ),
           ),
-          const Icon(
-            Icons.lock_outline_rounded,
-            color: pinkColor,
-            size: 21,
+          IconButton(
+            tooltip: 'Pinned messages',
+            onPressed: _showPinnedMessages,
+            icon: const Icon(Icons.push_pin_rounded, color: pinkColor, size: 21),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showPinnedMessages() async {
+    final pinned = messages.where((message) => message['pinned'] == true && message['unsent'] != true).toList();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: surfaceColor,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (sheetContext) => SafeArea(
+        child: pinned.isEmpty
+            ? const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('এখনো কোনো মেসেজ Pin করা হয়নি।')))
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: pinned.length,
+                itemBuilder: (context, index) {
+                  final item = pinned[index];
+                  final id = '${item['id'] ?? ''}';
+                  final body = '${item['text'] ?? (item['type'] == 'voice' ? 'Voice message' : 'Media message')}';
+                  return ListTile(
+                    leading: const Icon(Icons.push_pin_rounded, color: pinkColor),
+                    title: Text(body, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      final key = _messageKeys[id];
+                      final target = key?.currentContext;
+                      if (target != null) Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 350), curve: Curves.easeInOut, alignment: 0.25);
+                      setState(() => _highlightedMessageId = id);
+                      _messageHighlightTimer?.cancel();
+                      _messageHighlightTimer = Timer(const Duration(seconds: 2), () { if (mounted) setState(() => _highlightedMessageId = null); });
+                    },
+                  );
+                },
+              ),
       ),
     );
   }
