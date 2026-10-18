@@ -3075,6 +3075,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         },
       );
     } else {
+      _typingSoundTimer?.cancel();
+      _typingSoundTimer = null;
       _typingIdleTimer?.cancel();
       _typingIdleTimer = null;
       _typingHeartbeatTimer?.cancel();
@@ -3091,6 +3093,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _stopTyping() async {
+    _typingSoundTimer?.cancel();
+    _typingSoundTimer = null;
     _typingHeartbeatTimer?.cancel();
     _typingHeartbeatTimer = null;
     _typingIdleTimer?.cancel();
@@ -4206,9 +4210,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final message = Map<String, dynamic>.from(sourceMessage);
     final messageId = '${message['id'] ?? ''}';
     final senderUid = '${message['senderUid'] ?? ''}';
-    final mine = _isMine(message) ||
-        message['mine'] == true ||
-        (_currentUid.isNotEmpty && senderUid == _currentUid);
+    // Firestore senderUid is authoritative for permission-sensitive actions.
+    final mine = senderUid.isNotEmpty && _currentUid.isNotEmpty &&
+        senderUid == _currentUid;
     final unsent = message['unsent'] == true;
 
     await showModalBottomSheet<void>(
@@ -5436,7 +5440,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   else
                     Container(
                       constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
                       decoration: BoxDecoration(
                         color: mine ? const Color(0xFF453078) : surfaceColor,
                         border: Border.all(
@@ -5445,16 +5449,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         borderRadius: BorderRadius.only(
                           topLeft: Radius.circular(index > 0 &&
                                   '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
-                              ? 7 : 18),
+                              ? 9 : 20),
                           topRight: Radius.circular(index > 0 &&
                                   '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
-                              ? 7 : 18),
+                              ? 9 : 20),
                           bottomLeft: Radius.circular(index + 1 < messages.length &&
                                   '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
-                              ? 7 : (mine ? 18 : 5)),
+                              ? 9 : (mine ? 20 : 6)),
                           bottomRight: Radius.circular(index + 1 < messages.length &&
                                   '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
-                              ? 7 : (mine ? 5 : 18)),
+                              ? 9 : (mine ? 6 : 20)),
                         ),
                       ),
                       child: Column(
@@ -5619,7 +5623,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               borderRadius: BorderRadius.circular(18),
             ),
             child: Padding(
-              padding: EdgeInsets.only(top: index > 0 && '${messages[index - 1]['senderUid'] ?? ''}' == senderUid ? 1 : 5, bottom: index + 1 < messages.length && '${messages[index + 1]['senderUid'] ?? ''}' == senderUid ? 1 : 5),
+              padding: EdgeInsets.only(top: index > 0 && '${messages[index - 1]['senderUid'] ?? ''}' == senderUid ? 0 : 3, bottom: index + 1 < messages.length && '${messages[index + 1]['senderUid'] ?? ''}' == senderUid ? 0 : 3),
               child: Stack(
               alignment: Alignment.centerLeft,
               clipBehavior: Clip.none,
@@ -8389,15 +8393,60 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
                   ),
           ),
           Expanded(
-            child: Text(
-              '$elapsed / $total',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: 32,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final durationMs = (_duration?.inMilliseconds ?? 0).clamp(0, 1 << 31);
+                      final positionMs = _position.inMilliseconds.clamp(0, durationMs);
+                      final progress = durationMs <= 0 ? 0.0 : positionMs / durationMs;
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CustomPaint(
+                            size: Size(constraints.maxWidth, 30),
+                            painter: _VoiceWaveformPainter(progress: progress),
+                          ),
+                          SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 1,
+                              activeTrackColor: Colors.transparent,
+                              inactiveTrackColor: Colors.transparent,
+                              thumbColor: pinkColor,
+                              overlayColor: pinkColor.withValues(alpha: 0.16),
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 11),
+                            ),
+                            child: Slider(
+                              min: 0,
+                              max: durationMs > 0 ? durationMs.toDouble() : 1,
+                              value: durationMs > 0 ? positionMs.toDouble() : 0,
+                              onChanged: durationMs <= 0 ? null : (value) {
+                                final target = Duration(milliseconds: value.round());
+                                setState(() => _position = target);
+                                unawaited(_player?.seek(target) ?? Future<void>.value());
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                Text(
+                  '$elapsed / $total',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 4),
@@ -8421,6 +8470,31 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
       ),
     );
   }
+}
+
+class _VoiceWaveformPainter extends CustomPainter {
+  _VoiceWaveformPainter({required this.progress});
+  final double progress;
+  static const List<double> _heights = [
+    0.28, 0.52, 0.38, 0.72, 0.46, 0.88, 0.58, 0.34, 0.66, 0.95,
+    0.43, 0.61, 0.31, 0.78, 0.50, 0.90, 0.40, 0.64, 0.35, 0.82,
+    0.55, 0.29, 0.70, 0.48, 0.93, 0.37, 0.59, 0.76, 0.42, 0.67,
+    0.33, 0.86, 0.51, 0.73, 0.39, 0.62, 0.97, 0.44, 0.56, 0.30,
+  ];
+  @override
+  void paint(Canvas canvas, Size size) {
+    final active = Paint()..color = pinkColor..strokeWidth = 2.2..strokeCap = StrokeCap.round;
+    final inactive = Paint()..color = Colors.white38..strokeWidth = 2.2..strokeCap = StrokeCap.round;
+    final step = size.width / _heights.length;
+    final playedWidth = size.width * progress.clamp(0.0, 1.0);
+    for (var i = 0; i < _heights.length; i++) {
+      final x = step * i + step / 2;
+      final h = 5 + _heights[i] * (size.height - 7);
+      canvas.drawLine(Offset(x, (size.height - h) / 2), Offset(x, (size.height + h) / 2), x <= playedWidth ? active : inactive);
+    }
+  }
+  @override
+  bool shouldRepaint(covariant _VoiceWaveformPainter oldDelegate) => oldDelegate.progress != progress;
 }
 
 class ImageViewerPage extends StatelessWidget {
