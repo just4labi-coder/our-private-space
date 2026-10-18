@@ -2196,7 +2196,7 @@ class HomePage extends StatelessWidget {
                 child: ColoredBox(
                   color: const Color(0xFF070513),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
+                    'assets/branding/orbit_two_app_icon_new.jpg',
                     width: 64,
                     height: 64,
                     fit: BoxFit.contain,
