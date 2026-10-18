@@ -75,7 +75,7 @@ Future<void> orbitFirebaseMessagingBackgroundHandler(RemoteMessage message) asyn
     await Firebase.initializeApp();
     await NotificationPrivacySettings.load();
     const initializationSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@drawable/ic_stat_orbit'),
+      android: AndroidInitializationSettings('@drawable/ic_stat_orbit_custom'),
     );
     await notifications.initialize(initializationSettings);
     final androidNotifications = notifications
