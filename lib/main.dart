@@ -449,6 +449,9 @@ class EternalSpaceApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        splashFactory: InkRipple.splashFactory,
+        splashColor: pinkColor.withValues(alpha: 0.10),
+        highlightColor: Colors.white.withValues(alpha: 0.035),
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {
             TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
