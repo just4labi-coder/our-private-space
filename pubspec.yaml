@@ -46,6 +46,7 @@ flutter:
     - assets/branding/orbit_two_logo_artwork.png
     - assets/sounds/orbit_typing.wav
     - assets/sounds/orbit_seen.wav
+    - assets/sounds/orbit_sent.wav
 
 flutter_launcher_icons:
   android: true
