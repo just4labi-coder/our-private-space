@@ -50,7 +50,7 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/branding/orbit_two_app_icon_new_icon.png"
-  adaptive_icon_background: "assets/branding/orbit_two_app_icon_new_background.png"
-  adaptive_icon_foreground: "assets/branding/orbit_two_app_icon_new_foreground.png"
+  image_path: "assets/branding/orbit_two_logo_icon.png"
+  adaptive_icon_background: "assets/branding/orbit_two_logo_background.png"
+  adaptive_icon_foreground: "assets/branding/orbit_two_logo_foreground.png"
   min_sdk_android: 23
