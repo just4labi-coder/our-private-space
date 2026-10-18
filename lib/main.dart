@@ -301,6 +301,16 @@ class InteractionFeedbackSettings {
 
   static Future<void> playSeenSound() =>
       _playAssetSound('sounds/orbit_seen.wav');
+
+  // Outgoing message confirmation uses the system click sound, never the Seen asset.
+  static Future<void> playSentSound() async {
+    if (!soundsEnabled.value) return;
+    try {
+      await SystemSound.play(SystemSoundType.click);
+    } catch (error) {
+      debugPrint('Sent sound unavailable: $error');
+    }
+  }
 }
 
 class NotificationPrivacySettings {
@@ -1042,7 +1052,7 @@ class _AnimatedOrbitTitleState extends State<AnimatedOrbitTitle>
 // BACKGROUND
 // ============================================================
 
-class GlowBackground extends StatelessWidget {
+class GlowBackground extends StatefulWidget {
   final Widget child;
 
   const GlowBackground({
@@ -1050,21 +1060,40 @@ class GlowBackground extends StatelessWidget {
     required this.child,
   });
 
+  @override
+  State<GlowBackground> createState() => _GlowBackgroundState();
+}
+
+class _GlowBackgroundState extends State<GlowBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 18),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   Widget _glow(double size, Color color) {
     return IgnorePointer(
       child: RepaintBoundary(
-        child: Container(
+        child: SizedBox(
           width: size,
           height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                color,
-                color.withValues(alpha: 0.55),
-                color.withValues(alpha: 0),
-              ],
-              stops: const [0.0, 0.38, 1.0],
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  color,
+                  color.withValues(alpha: 0.48),
+                  color.withValues(alpha: 0),
+                ],
+                stops: const [0.0, 0.4, 1.0],
+              ),
             ),
           ),
         ),
@@ -1074,9 +1103,6 @@ class GlowBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Keep the decorative background completely static. The old repeating
-    // animation continuously moved four large gradients while media and chat
-    // rows were being laid out, wasting frames on mid-range phones.
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -1090,45 +1116,38 @@ class GlowBackground extends StatelessWidget {
           ],
         ),
       ),
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          Positioned(
-            top: -125,
-            left: -115,
-            child: _glow(
-              340,
-              const Color(0xFF8B1D62).withValues(alpha: 0.34),
-            ),
-          ),
-          Positioned(
-            bottom: -145,
-            right: -120,
-            child: _glow(
-              370,
-              const Color(0xFF6826A8).withValues(alpha: 0.34),
-            ),
-          ),
-          Positioned(
-            top: 210,
-            right: -165,
-            child: _glow(
-              310,
-              const Color(0xFFB51E72).withValues(alpha: 0.22),
-            ),
-          ),
-          Positioned(
-            bottom: 70,
-            left: -175,
-            child: _glow(
-              300,
-              const Color(0xFF5424B8).withValues(alpha: 0.24),
-            ),
-          ),
-          SafeArea(
-            child: RepaintBoundary(child: child),
-          ),
-        ],
+      child: AnimatedBuilder(
+        animation: _controller,
+        child: SafeArea(child: RepaintBoundary(child: widget.child)),
+        builder: (context, child) {
+          final phase = _controller.value * 2 * pi;
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                top: -125 + sin(phase) * 30,
+                left: -115 + cos(phase) * 28,
+                child: _glow(340, const Color(0xFF8B1D62).withValues(alpha: 0.34)),
+              ),
+              Positioned(
+                bottom: -145 + cos(phase * 0.8) * 34,
+                right: -120 + sin(phase * 0.8) * 30,
+                child: _glow(370, const Color(0xFF6826A8).withValues(alpha: 0.34)),
+              ),
+              Positioned(
+                top: 210 + cos(phase * 0.65) * 25,
+                right: -165 + sin(phase * 0.65) * 24,
+                child: _glow(310, const Color(0xFFB51E72).withValues(alpha: 0.22)),
+              ),
+              Positioned(
+                bottom: 70 + sin(phase * 0.7) * 26,
+                left: -175 + cos(phase * 0.7) * 25,
+                child: _glow(300, const Color(0xFF5424B8).withValues(alpha: 0.24)),
+              ),
+              if (child != null) Positioned.fill(child: child),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3037,12 +3056,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (shouldType) {
       if (!_isTypingSent) {
         _isTypingSent = true;
-        unawaited(InteractionFeedbackSettings.playTypingSound());
         _typingSoundTimer?.cancel();
-        _typingSoundTimer = Timer.periodic(const Duration(milliseconds: 650), (_) {
-          if (!mounted || !_appIsResumed || controller.text.trim().isEmpty || !_isTypingSent) return;
-          unawaited(InteractionFeedbackSettings.playTypingSound());
-        });
         unawaited(ChatSyncService.setTyping(isTyping: true).catchError(
           (Object error) {
             debugPrint('Typing status update failed: $error');
@@ -3328,6 +3342,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     try {
       await ChatSyncService.sendMessage(message);
+      unawaited(InteractionFeedbackSettings.playSentSound());
       if (mounted) {
         setState(() {
           if (_replyToMessage?['id'] == replyTo?['id']) {
@@ -3519,6 +3534,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (sendError != null) {
         throw Exception('মেসেজ পাঠানো যায়নি। আবার চেষ্টা করো।');
       }
+      unawaited(InteractionFeedbackSettings.playSentSound());
       
       if (mounted) {
         setState(() {
@@ -3938,6 +3954,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         'unsent': false,
         'time': createdAt,
       });
+      unawaited(InteractionFeedbackSettings.playSentSound());
       final taskId = uploaded['_uploadTaskId'] ?? '';
       if (taskId.toString().isNotEmpty) {
         await SpaceSyncService.acknowledgeUpload(taskId.toString());
@@ -5447,16 +5464,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         borderRadius: BorderRadius.only(
                           topLeft: Radius.circular(index > 0 &&
                                   '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
-                              ? 9 : 20),
+                              ? 18 : 24),
                           topRight: Radius.circular(index > 0 &&
                                   '${messages[index - 1]['senderUid'] ?? ''}' == senderUid
-                              ? 9 : 20),
+                              ? 18 : 24),
                           bottomLeft: Radius.circular(index + 1 < messages.length &&
                                   '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
-                              ? 9 : (mine ? 20 : 6)),
+                              ? 18 : (mine ? 24 : 18)),
                           bottomRight: Radius.circular(index + 1 < messages.length &&
                                   '${messages[index + 1]['senderUid'] ?? ''}' == senderUid
-                              ? 9 : (mine ? 6 : 20)),
+                              ? 18 : (mine ? 18 : 24)),
                         ),
                       ),
                       child: Column(
@@ -5815,12 +5832,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     title: Text(body, maxLines: 2, overflow: TextOverflow.ellipsis),
                     onTap: () {
                       Navigator.pop(sheetContext);
-                      final key = _messageKeys[id];
-                      final target = key?.currentContext;
-                      if (target != null) Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 350), curve: Curves.easeInOut, alignment: 0.25);
-                      setState(() => _highlightedMessageId = id);
-                      _messageHighlightTimer?.cancel();
-                      _messageHighlightTimer = Timer(const Duration(seconds: 2), () { if (mounted) setState(() => _highlightedMessageId = null); });
+                      unawaited(_jumpToMessage(id));
                     },
                   );
                 },
