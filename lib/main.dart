@@ -41,1291 +41,463 @@ const Color surfaceColor = Color(0xFF111026);
 const Color blueColor = Color(0xFF172554);
 Future<File> _makeCompatibleVideo(File source) async {
   if (!await source.exists() || await source.length() <= 0) {
-    throw Exception('à¦­à¦¿à¦¡à¦¿à¦“ à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿ à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-  }
-
-  // MP4/H.264 720p output is broadly supported on Android devices.
-  final result = await VideoCompress.compressVideo(
-    source.path,
-    quality: VideoQuality.Res1280x720Quality,
-    deleteOrigin: false,
-    includeAudio: true,
-  );
-  final output = result?.file;
-  if (output == null || !await output.exists() || await output.length() <= 0) {
-    throw Exception('à¦­à¦¿à¦¡à¦¿à¦“ à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-  }
-  return output;
-}
-
-const Color pinkColor = Color(0xFFFF2E93);
-const Color purpleColor = Color(0xFF8B5CF6);
-const String orbitNotificationChannelId = 'orbit_partner_updates_v7';
-const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
-const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
-const int orbitMessageSummaryNotificationId = 7000;
-bool orbitChatVisible = false;
-
-@pragma('vm:entry-point')
-Future<void> orbitFirebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Keep compatibility with the currently deployed Worker: Android already shows
-  // notification-payload pushes. Data-only pushes use the grouped local handler below.
-  if (message.notification != null) return;
-  try {
-    await Firebase.initializeApp();
-    await NotificationPrivacySettings.load();
-    const initializationSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@drawable/ic_stat_orbit_custom'),
-    );
-    await notifications.initialize(initializationSettings);
-    final androidNotifications = notifications
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidNotifications?.createNotificationChannel(
-      AndroidNotificationChannel(
-        orbitNotificationChannelId,
-        'Orbit Two messages',
-        description: 'Messages and updates from your partner',
-        importance: Importance.max,
-        playSound: true,
-        enableVibration: true,
-        vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
-        showBadge: true,
-      ),
-    );
-    final data = message.data;
-    final kind = data['kind']?.toString() ?? 'message';
-    final messageId = data['messageId']?.toString() ?? '';
-    await NotificationPrivacySettings.showPartnerNotification(
-      detailedTitle: data['detailedTitle']?.toString() ?? message.notification?.title ?? 'Orbit Two',
-      detailedBody: data['detailedBody']?.toString() ?? message.notification?.body ?? 'You have a new message.',
-      privateTitle: data['privateTitle']?.toString() ?? (kind == 'change' ? 'Check change' : 'Check message'),
-      privateBody: data['privateBody']?.toString() ?? (kind == 'change' ? 'Your partner changed shared data.' : 'You have a new message.'),
-      kind: kind,
-      id: kind == 'message'
-          ? NotificationPrivacySettings.notificationIdForMessage(messageId.isNotEmpty ? messageId : DateTime.now().microsecondsSinceEpoch.toString())
-          : DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
-    );
-  } catch (error, stackTrace) {
-    debugPrint('Background notification error: $error\n$stackTrace');
-  }
-}
-
-final FlutterLocalNotificationsPlugin notifications =
-    FlutterLocalNotificationsPlugin();
-
-final GlobalKey<NavigatorState> rootNavigatorKey =
-    GlobalKey<NavigatorState>();
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  String? startupError;
-  var firebaseReady = false;
-
-  // Firebase failure must not leave the app stuck on a blank white screen.
-  try {
-    await Firebase.initializeApp();
-    firebaseReady = true;
-  } catch (error, stackTrace) {
-    startupError = error.toString();
-    debugPrint('Firebase initialization failed: $error\n$stackTrace');
-  }
-
-  try {
-    await DataSaverSettings.load();
-  } catch (error) {
-    debugPrint('Data saver settings load failed: $error');
-  }
-
-  try {
-    await InteractionFeedbackSettings.load();
-  } catch (error) {
-    debugPrint('Interaction feedback settings load failed: $error');
-  }
-
-  try {
-    await NotificationPrivacySettings.load();
-  } catch (error) {
-    debugPrint('Notification privacy settings load failed: $error');
-  }
-
-  try {
-    tz_data.initializeTimeZones();
-  } catch (error) {
-    debugPrint('Timezone initialization failed: $error');
-  }
-
-  try {
-    const androidSettings =
-        AndroidInitializationSettings('@drawable/ic_stat_orbit');
-    const initializationSettings = InitializationSettings(
-      android: androidSettings,
-    );
-    await notifications.initialize(initializationSettings);
-    final androidNotifications = notifications
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidNotifications?.createNotificationChannel(
-      AndroidNotificationChannel(
-        orbitNotificationChannelId,
-        'Orbit Two messages',
-        description: 'Messages and updates from your partner',
-        importance: Importance.max,
-        playSound: true,
-        enableVibration: true,
-        vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
-        showBadge: true,
-      ),
-    );
-  } catch (error) {
-    debugPrint('Local notification initialization failed: $error');
-  }
-
-  if (firebaseReady) {
-    FirebaseMessaging.onBackgroundMessage(orbitFirebaseMessagingBackgroundHandler);
-    try {
-      await PushNotificationService.initialize().timeout(
-        const Duration(seconds: 4),
-      );
-    } on TimeoutException {
-      debugPrint('Push notification initialization timed out; continuing startup.');
-    } catch (error) {
-      debugPrint('Push notification initialization failed: $error');
-    }
-
-    FirebaseMessaging.onMessage.listen((message) {
-      final data = message.data;
-      final kind = data['kind']?.toString() ?? 'message';
-      if (kind == 'message' && orbitChatVisible) {
-        unawaited(NotificationPrivacySettings.clearMessageNotifications());
-        return;
-      }
-      final messageId = data['messageId']?.toString() ?? '';
-      // Older deployed Worker versions omit messageId; Firestore's real-time
-      // listener supplies the same notification with a stable ID instead.
-      if (kind == 'message' && messageId.isEmpty) return;
-      unawaited(NotificationPrivacySettings.showPartnerNotification(
-        detailedTitle: data['detailedTitle']?.toString() ?? message.notification?.title ?? 'Orbit Two',
-        detailedBody: data['detailedBody']?.toString() ?? message.notification?.body ?? 'You have an update.',
-        privateTitle: data['privateTitle']?.toString() ?? (kind == 'change' ? 'Check change' : 'Check message'),
-        privateBody: data['privateBody']?.toString() ?? (kind == 'change' ? 'Your partner changed shared data.' : 'You have a new message.'),
-        kind: kind,
-        id: kind == 'message' ? NotificationPrivacySettings.notificationIdForMessage(messageId.isNotEmpty ? messageId : DateTime.now().microsecondsSinceEpoch.toString()) : DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
-      ));
-    });
-
-  }
-
-  try {
-    await SpaceStore.init();
-  } catch (error) {
-    debugPrint('Local storage initialization failed: $error');
-  }
-
-  runApp(EternalSpaceApp(startupError: startupError));
-}
-
-class DataSaverSettings {
-  DataSaverSettings._();
-
-  static const String _key = 'dataSaverEnabled';
-
-  static final ValueNotifier<bool> enabled =
-      ValueNotifier<bool>(false);
-
-  static Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    enabled.value = prefs.getBool(_key) ?? false;
-  }
-
-  static Future<void> setEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    await prefs.setBool(_key, value);
-    enabled.value = value;
-  }
-}
-
-class InteractionFeedbackSettings {
-  InteractionFeedbackSettings._();
-
-  static const String _hapticsKey = 'interactionHapticsEnabled';
-  static const String _soundsKey = 'interactionSoundsEnabled';
-  static final ValueNotifier<bool> hapticsEnabled = ValueNotifier<bool>(true);
-  static final ValueNotifier<bool> soundsEnabled = ValueNotifier<bool>(true);
-
-  static Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    hapticsEnabled.value = prefs.getBool(_hapticsKey) ?? true;
-    soundsEnabled.value = prefs.getBool(_soundsKey) ?? true;
-  }
-
-  static Future<void> setHapticsEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hapticsKey, value);
-    hapticsEnabled.value = value;
-  }
-
-  static Future<void> setSoundsEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_soundsKey, value);
-    soundsEnabled.value = value;
-  }
-
-  static Future<void> vibrate() async {
-    if (!hapticsEnabled.value) return;
-    try {
-      await HapticFeedback.selectionClick();
-    } catch (error) {
-      debugPrint('Interaction haptic feedback unavailable: $error');
-    }
-  }
-
-  static Future<void> _playAssetSound(String asset) async {
-    if (!soundsEnabled.value) return;
-    final player = AudioPlayer();
-    try {
-      await player.play(AssetSource(asset));
-      unawaited(
-        player.onPlayerComplete.first.then<void>((_) async {
-          await player.dispose();
-        }).catchError((Object error) {
-          debugPrint('Feedback sound cleanup failed: $error');
-        }),
-      );
-    } catch (error) {
-      await player.dispose();
-      debugPrint('Feedback sound unavailable: $error');
-    }
-  }
-
-  static Future<void> playTypingSound() =>
-      _playAssetSound('sounds/orbit_typing.wav');
-
-  static Future<void> playSeenSound() =>
-      _playAssetSound('sounds/orbit_seen.wav');
-
-  // Use a dedicated bundled sound; Android system clicks can be silent.
-  static Future<void> playSentSound() =>
-      _playAssetSound('sounds/orbit_sent.wav');
-}
-
-class NotificationPrivacySettings {
-  NotificationPrivacySettings._();
-  static const String _key = 'hideNotificationDetails';
-  static const String _notificationsKey = 'notificationsEnabled';
-  static const String _messageIdsKey = 'orbitMessageNotificationIds';
-  static const String _messageLinesKey = 'orbitMessageNotificationLines';
-  static final ValueNotifier<bool> hideDetails = ValueNotifier<bool>(false);
-  static final ValueNotifier<bool> notificationsEnabled = ValueNotifier<bool>(true);
-  static Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    hideDetails.value = prefs.getBool(_key) ?? false;
-    notificationsEnabled.value = prefs.getBool(_notificationsKey) ?? true;
-  }
-  static int notificationIdForMessage(String messageId) {
-    var hash = 0;
-    for (final unit in messageId.codeUnits) { hash = (hash * 31 + unit) & 0x7fffffff; }
-    return hash == 0 ? 7001 : hash;
-  }
-  static Future<void> setNotificationsEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_notificationsKey, value);
-    notificationsEnabled.value = value;
-    await PushNotificationService.setNotificationsEnabled(value);
-    if (!value) await clearMessageNotifications();
-  }
-  static Future<void> setHideDetails(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_key, value);
-    hideDetails.value = value;
-    await PushNotificationService.setHideDetails(value);
-  }
-  static Future<void> clearMessageNotifications() async {
-    final prefs = await SharedPreferences.getInstance();
-    final ids = prefs.getStringList(_messageIdsKey) ?? <String>[];
-    for (final value in ids) {
-      final id = int.tryParse(value);
-      if (id != null && id != orbitMessageSummaryNotificationId) await notifications.cancel(id);
-    }
-    await notifications.cancel(orbitMessageSummaryNotificationId);
-    await prefs.remove(_messageIdsKey);
-    await prefs.remove(_messageLinesKey);
-  }
-  static Future<void> showPartnerNotification({
-    required String detailedTitle, required String detailedBody,
-    required String privateTitle, required String privateBody,
-    int id = 7001, String kind = 'message',
-  }) async {
-    if (!notificationsEnabled.value) return;
-    final hidden = hideDetails.value;
-    final title = hidden ? privateTitle : detailedTitle;
-    final body = hidden ? privateBody : detailedBody;
-    final isMessage = kind == 'message';
-    final prefs = await SharedPreferences.getInstance();
-    final ids = prefs.getStringList(_messageIdsKey) ?? <String>[];
-    final lines = prefs.getStringList(_messageLinesKey) ?? <String>[];
-    if (isMessage) {
-      final idText = '$id';
-      final existingIndex = ids.indexOf(idText);
-      final line = hidden ? 'à¦¨à¦¤à§à¦¨ à¦®à§‡à¦¸à§‡à¦œ' : '$title: $body';
-      if (existingIndex >= 0) { if (existingIndex < lines.length) lines[existingIndex] = line; }
-      else { ids.add(idText); lines.add(line); }
-      while (ids.length > 20) { ids.removeAt(0); if (lines.isNotEmpty) lines.removeAt(0); }
-      await prefs.setStringList(_messageIdsKey, ids);
-      await prefs.setStringList(_messageLinesKey, lines);
-      await notifications.show(id, title, body, NotificationDetails(android: AndroidNotificationDetails(
-        orbitNotificationChannelId, 'Orbit Two messages',
-        channelDescription: 'Messages from your partner', importance: Importance.max, priority: Priority.max,
-        playSound: true, enableVibration: true, vibrationPattern: Int64List.fromList([0, 350, 180, 350]),
-        enableLights: true, ledColor: pinkColor, ledOnMs: 1000, ledOffMs: 500, color: pinkColor,
-        category: AndroidNotificationCategory.message,
-        visibility: hidden ? NotificationVisibility.private : NotificationVisibility.public,
-        styleInformation: BigTextStyleInformation(body, contentTitle: title, summaryText: 'Orbit Two'),
-        groupKey: orbitMessageNotificationGroup, setAsGroupSummary: false, onlyAlertOnce: false, number: ids.length,
-      )));
-      final visibleLines = hidden ? List<String>.filled(lines.length, 'à¦¨à¦¤à§à¦¨ à¦®à§‡à¦¸à§‡à¦œ') : lines;
-      final summaryTitle = hidden ? 'Orbit Two' : 'Orbit Two â€¢ ${ids.length}à¦Ÿà¦¿ à¦®à§‡à¦¸à§‡à¦œ';
-      final summaryBody = hidden ? '${ids.length}à¦Ÿà¦¿ à¦¨à¦¤à§à¦¨ à¦®à§‡à¦¸à§‡à¦œ' : '${ids.length}à¦Ÿà¦¿ à¦®à§‡à¦¸à§‡à¦œ à¦à¦¸à§‡à¦›à§‡';
-      await notifications.show(orbitMessageSummaryNotificationId, summaryTitle, summaryBody, NotificationDetails(android: AndroidNotificationDetails(
-        orbitNotificationChannelId, 'Orbit Two messages',
-        channelDescription: 'Grouped messages from your partner', importance: Importance.max, priority: Priority.max,
-        playSound: false, enableVibration: false, enableLights: false, color: pinkColor,
-        category: AndroidNotificationCategory.message,
-        visibility: hidden ? NotificationVisibility.private : NotificationVisibility.public,
-        styleInformation: InboxStyleInformation(visibleLines, contentTitle: summaryTitle, summaryText: summaryBody),
-        groupKey: orbitMessageNotificationGroup, setAsGroupSummary: true, onlyAlertOnce: true, number: ids.length,
-      )));
-      return;
-    }
-    await notifications.show(id, title, body, NotificationDetails(android: AndroidNotificationDetails(
-      orbitNotificationChannelId, 'Orbit Two updates',
-      channelDescription: 'Changes and downloads', importance: Importance.max, priority: Priority.max,
-      playSound: true, enableVibration: true, vibrationPattern: Int64List.fromList([0, 350, 180, 350]), color: purpleColor,
-      category: AndroidNotificationCategory.status,
-      visibility: hidden ? NotificationVisibility.private : NotificationVisibility.public,
-      styleInformation: BigTextStyleInformation(body, contentTitle: title, summaryText: 'Orbit Two updates'),
-      groupKey: orbitUpdateNotificationGroup, setAsGroupSummary: false, onlyAlertOnce: true,
-    )));
-  }
-}
-class FirebaseServices {
-  static final auth = FirebaseAuth.instance;
-  static final firestore = FirebaseFirestore.instance;
-
-  static User? get currentUser => auth.currentUser;
-
-  static Future<void> saveUserProfile({
-    required String name,
-  }) async {
-    final user = auth.currentUser;
-    if (user == null) return;
-
-    await firestore.collection('users').doc(user.uid).set({
-      'name': name,
-      'email': user.email,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-}
-
-class EternalSpaceApp extends StatelessWidget {
-  const EternalSpaceApp({super.key, this.startupError});
-
-  final String? startupError;
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: rootNavigatorKey,
-      title: 'Orbit Two',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: backgroundColor,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: blueColor,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.055),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-        ),
-      ),
-      home: startupError == null ? const SplashScreen() : StartupErrorScreen(message: startupError!),
-    );
-  }
-}
-
-class StartupErrorScreen extends StatelessWidget {
-  const StartupErrorScreen({super.key, required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
-                  width: 100,
-                  height: 100,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.favorite_rounded,
-                    color: pinkColor,
-                    size: 64,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Orbit Two à¦šà¦¾à¦²à§ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'à¦¸à¦¾à¦®à§Ÿà¦¿à¦•à¦­à¦¾à¦¬à§‡ à¦¸à¦‚à¦¯à§‹à¦— à¦¸à§à¦¥à¦¾à¦ªà¦¨ à¦•à¦°à¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤ à¦‡à¦¨à§à¦Ÿà¦¾à¦°à¦¨à§‡à¦Ÿ à¦¸à¦‚à¦¯à§‹à¦— à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 12),
-                SelectableText(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// LOCAL STORAGE WITH FIREBASE SYNC
-// ============================================================
-
-class SpaceStore {
-  static SharedPreferences? _prefs;
-  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
-      _syncSubscription;
-
-  static final ValueNotifier<int> syncVersion = ValueNotifier<int>(0);
-  static bool _applyingRemoteData = false;
-
-  static Future<void> init() async {
-    _prefs ??= await SharedPreferences.getInstance();
-  }
-
-  static List<Map<String, dynamic>> readList(String key) {
-    final raw = _prefs?.getString(key);
-    if (raw == null || raw.isEmpty) return [];
-
-    try {
-      final decoded = jsonDecode(raw) as List;
-      return decoded
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
-
-  static Future<void> saveList(
-    String key,
-    List<Map<String, dynamic>> value,
-  ) async {
-    await init();
-    await _prefs!.setString(key, jsonEncode(value));
-    syncVersion.value++;
-
-    if (!_applyingRemoteData) {
-      await _syncKey(key, value);
-    }
-  }
-
-  static String readString(String key, [String fallback = '']) {
-    return _prefs?.getString(key) ?? fallback;
-  }
-
-  static Future<void> saveString(String key, String value) async {
-    await init();
-    await _prefs!.setString(key, value);
-    syncVersion.value++;
-
-    if (!_applyingRemoteData) {
-      await _syncKey(key, value);
-    }
-  }
-
-  static Future<String?> _getSpaceId() async {
-    return PrivateSpaceService.getSavedSpaceId();
-  }
-
-  static Future<String?> _getConnectedSpaceId() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    final spaceId = await _getSpaceId();
-    if (spaceId == null || spaceId.isEmpty) return null;
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('privateSpaces')
-          .doc(spaceId)
-          .get();
-
-      if (!snapshot.exists) return null;
-
-      final data = snapshot.data();
-      if (data == null) return null;
-
-      final members = data['memberUids'];
-
-      if (members is! List ||
-          members.length != 2 ||
-          !members.contains(user.uid)) {
-        return null;
-      }
-
-      final status = data['connectionStatus'] ?? 'connected';
-      if (status != 'connected') {
-        if (status == 'disconnected') {
-          final cleared = await PrivateSpaceService.clearCachedSpaceData();
-          if (cleared) syncVersion.value++;
-        }
-        return null;
-      }
-
-      return spaceId;
-    } catch (e) {
-      debugPrint('Connection check error: $e');
-      return null;
-    }
-  }
-
-  static Future<void> _syncKey(String key, dynamic value) async {
-    if (key == 'partnerOne' || key == 'partnerTwo') return;
-    if (_applyingRemoteData) return;
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final spaceId = await _getConnectedSpaceId();
-      if (spaceId == null) return;
-
-      await FirebaseFirestore.instance
-          .collection('privateSpaces')
-          .doc(spaceId)
-          .collection('syncData')
-          .doc('appState')
-          .set({
-        key: value,
-        'updatedBy': user.uid,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Firebase sync error: $e');
-    }
-  }
-
-  static Future<void> syncAllToFirebase() async {
-    final spaceId = await _getConnectedSpaceId();
-    if (spaceId == null) return;
-
-    await init();
-
-    final data = <String, dynamic>{
-      'chatMessages': readList('chatMessages'),
-      'loveNotes': readList('loveNotes'),
-      'specialDates': readList('specialDates'),
-      'spaceComplaints': readList('spaceComplaints'),
-      'galleryFolders': readList('galleryFolders'),
-      'galleryMedia': readList('galleryMedia'),
-    };
-
-    for (final entry in data.entries) {
-      if (await _getConnectedSpaceId() != spaceId) return;
-      await _syncKey(entry.key, entry.value);
-    }
-  }
-
-  static Future<void> syncFromFirebase() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final spaceId = await _getConnectedSpaceId();
-      if (spaceId == null) return;
-
-      final snapshot = await FirebaseFirestore.instance
-          .collection('privateSpaces')
-          .doc(spaceId)
-          .collection('syncData')
-          .doc('appState')
-          .get();
-
-      if (await _getConnectedSpaceId() != spaceId) return;
-      if (!snapshot.exists) return;
-      await _applyRemoteData(snapshot.data(), notifyChanges: false);
-    } catch (e) {
-      debugPrint('Firebase download error: $e');
-    }
-  }
-
-  static Future<void> _applyRemoteData(
-    Map<String, dynamic>? data, {
-    bool notifyChanges = true,
-  }) async {
-    if (data == null) return;
-
-    await init();
-    final changedKeys = <String>[];
-    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    for (final entry in data.entries) {
-      final key = entry.key;
-      if (key == 'updatedBy' || key == 'updatedAt' ||
-          key == 'partnerOne' || key == 'partnerTwo') {
-        continue;
-      }
-      final oldRaw = _prefs!.getString(key);
-      final nextValue = entry.value;
-      final normalizedNext = nextValue is List
-          ? jsonEncode(nextValue)
-          : nextValue is String
-              ? nextValue
-              : null;
-      if (notifyChanges &&
-          normalizedNext != null &&
-          key != 'chatMessages' &&
-          (oldRaw == null || oldRaw != normalizedNext)) {
-        changedKeys.add(key);
-      }
-    }
-
-    _applyingRemoteData = true;
-
-    try {
-      for (final entry in data.entries) {
-        final value = entry.value;
-
-        if (entry.key == 'partnerOne' ||
-            entry.key == 'partnerTwo') {
-          continue;
-        }
-
-        if (entry.key == 'galleryMedia' && value is List) {
-          final safeMedia = value.whereType<Map>().map((rawItem) {
-            final item = Map<String, dynamic>.from(rawItem);
-            item.remove('path');
-            return item;
-          }).toList();
-
-          await _prefs!.setString(entry.key, jsonEncode(safeMedia));
-          continue;
-        }
-
-        if (entry.key == 'updatedBy' ||
-            entry.key == 'updatedAt') {
-          continue;
-        }
-
-        if (value is List) {
-          await _prefs!.setString(entry.key, jsonEncode(value));
-        } else if (value is String) {
-          await _prefs!.setString(entry.key, value);
-        }
-      }
-
-      syncVersion.value++;
-    } finally {
-      _applyingRemoteData = false;
-    }
-
-    if (changedKeys.isNotEmpty && currentUid.isNotEmpty) {
-      final labels = <String, String>{
-        'loveNotes': 'Love Notes',
-        'specialDates': 'Special Dates',
-        'spaceComplaints': 'Complaints Box',
-        'galleryMedia': 'Gallery',
-        'galleryFolders': 'Gallery folders',
-        'relationshipStartAt': 'Together For',
-      };
-      final readable = changedKeys.map((key) => labels[key] ?? 'Shared data').toSet().join(', ');
-      NotificationPrivacySettings.showPartnerNotification(
-        detailedTitle: 'Partner update',
-        detailedBody: 'Changed: $readable',
-        privateTitle: 'Check change',
-        privateBody: 'Your partner changed shared data.',
-        kind: 'change',
-        id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
-      ).catchError((Object error) {
-        debugPrint('Shared change notification error: $error');
-      });
-    }
-  }
-
-  static Future<void> startRealtimeSync() async {
-    await stopRealtimeSync();
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final spaceId = await _getConnectedSpaceId();
-    if (spaceId == null) return;
-
-    final reference = FirebaseFirestore.instance
-        .collection('privateSpaces')
-        .doc(spaceId)
-        .collection('syncData')
-        .doc('appState');
-
-    _syncSubscription = reference.snapshots().listen(
-      (snapshot) async {
-        final activeSpaceId = await _getConnectedSpaceId();
-        if (activeSpaceId != spaceId) {
-          await stopRealtimeSync();
-          return;
-        }
-
-        if (!snapshot.exists) return;
-
-        final data = snapshot.data();
-        if (data == null) return;
-        if (data['updatedBy'] == user.uid) return;
-
-        await _applyRemoteData(data);
-      },
-      onError: (Object error) {
-        debugPrint('Realtime sync error: $error');
-      },
-    );
-  }
-
-  static Future<void> stopRealtimeSync() async {
-    await _syncSubscription?.cancel();
-    _syncSubscription = null;
-  }
-}
-
-// ============================================================
-// SPLASH SCREEN
-// ============================================================
-
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  bool _networkUnavailable = false;
-
-  Future<bool> _hasNetworkConnection() async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 4);
-    try {
-      final request = await client
-          .getUrl(Uri.parse('https://www.google.com/generate_204'))
-          .timeout(const Duration(seconds: 4));
-      final response =
-          await request.close().timeout(const Duration(seconds: 4));
-      await response.drain<void>();
-      return response.statusCode >= 200 && response.statusCode < 500;
-    } catch (_) {
-      return false;
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _start();
-  }
-
-  Future<void> _start() async {
-    if (_networkUnavailable && mounted) {
-      setState(() => _networkUnavailable = false);
-    }
-    await SpaceStore.init();
-    if (!await _hasNetworkConnection()) {
-      if (mounted) setState(() => _networkUnavailable = true);
-      return;
-    }
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    if (!mounted) return;
-
-    var user = FirebaseAuth.instance.currentUser;
-
-    // Cached Firebase sessions must also pass email verification.
-    if (user != null && user.email != null) {
-      try {
-        await user.reload();
-        user = FirebaseAuth.instance.currentUser;
-      } catch (error) {
-        debugPrint('Email verification status check failed: $error');
-      }
-
-      if (user != null && !user.emailVerified) {
-        await FirebaseAuth.instance.signOut();
-        user = null;
-      }
-    }
-
-    if (!mounted) return;
-
-    if (user != null) {
-      try {
-        await SpaceStore.syncFromFirebase().timeout(
-          const Duration(seconds: 6),
-        );
-      } on TimeoutException {
-        if (mounted) setState(() => _networkUnavailable = true);
-        return;
-      } catch (error) {
-        debugPrint('Startup sync error: $error');
-      }
-
-      try {
-        await SpaceStore.startRealtimeSync().timeout(
-          const Duration(seconds: 6),
-        );
-      } on TimeoutException {
-        if (mounted) setState(() => _networkUnavailable = true);
-        return;
-      } catch (error) {
-        debugPrint('Startup realtime sync error: $error');
-      }
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const MainScreen(),
-        ),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => AuthScreen(
-            onSuccess: () async {
-              rootNavigatorKey.currentState?.pushAndRemoveUntil(
-                MaterialPageRoute(
-                  builder: (_) => const MainScreen(),
-                ),
-                (route) => false,
-              );
-
-              try {
-                await SpaceStore.syncFromFirebase();
-              } catch (error) {
-                debugPrint('Login sync error: $error');
-              }
-
-              try {
-                await SpaceStore.startRealtimeSync();
-              } catch (error) {
-                debugPrint('Login realtime sync error: $error');
-              }
-            },
-            onTrial: () async {},
-          ),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_networkUnavailable) {
-      return Scaffold(
-        backgroundColor: backgroundColor,
-        body: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.wifi_off_rounded,
-                    size: 68,
-                    color: pinkColor,
-                  ),
-                  const SizedBox(height: 22),
-                  const Text(
-                    'Check Your Network Connection',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'à¦‡à¦¨à§à¦Ÿà¦¾à¦°à¦¨à§‡à¦Ÿ à¦¸à¦‚à¦¯à§‹à¦— à¦šà¦¾à¦²à§ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _start,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Try Again'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      body: GlowBackground(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 228,
-                height: 152,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(color: pinkColor.withValues(alpha: 0.20), blurRadius: 24, spreadRadius: 1),
-                    BoxShadow(color: purpleColor.withValues(alpha: 0.18), blurRadius: 34, spreadRadius: 2),
-                  ],
-                ),
-                child: Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
-                  width: 220,
-                  height: 147,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.favorite_rounded,
-                    size: 72,
-                    color: pinkColor,
-                  ),
-                ),
-              ),
-              SizedBox(height: 18),
-              const AnimatedOrbitTitle(
-                fontSize: 30,
-                splash: true,
-              ),
-              SizedBox(height: 8),
-              Text(
-                'A little universe for two',
-                style: TextStyle(color: Colors.white60),
-              ),
-              SizedBox(height: 28),
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class AnimatedOrbitTitle extends StatefulWidget {
-  final double fontSize;
-  final bool splash;
-
-  const AnimatedOrbitTitle({
-    super.key,
-    required this.fontSize,
-    this.splash = false,
-  });
-
-  @override
-  State<AnimatedOrbitTitle> createState() => _AnimatedOrbitTitleState();
-}
-
-class _AnimatedOrbitTitleState extends State<AnimatedOrbitTitle>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    // Slower, smoother ambient movement across the whole screen.
-    duration: const Duration(seconds: 16),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final hue = (_controller.value * 360) % 360;
-        final first = HSVColor.fromAHSV(1, hue, 0.42, 1).toColor();
-        final second =
-            HSVColor.fromAHSV(1, (hue + 95) % 360, 0.48, 1).toColor();
-        final third =
-            HSVColor.fromAHSV(1, (hue + 190) % 360, 0.38, 1).toColor();
-
-        return ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            colors: [first, second, third],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ).createShader(bounds),
-          child: Text(
-            'Orbit Two',
-            style: TextStyle(
-              color: Colors.white,
-              fontFamily: 'serif',
-              fontSize: widget.fontSize,
-              fontWeight: FontWeight.w700,
-              letterSpacing: widget.splash ? 1.1 : 0.4,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ============================================================
-// BACKGROUND
-// ============================================================
-
-class GlowBackground extends StatefulWidget {
-  final Widget child;
-
-  const GlowBackground({
-    super.key,
-    required this.child,
-  });
-
-  @override
-  State<GlowBackground> createState() => _GlowBackgroundState();
-}
-
-class _GlowBackgroundState extends State<GlowBackground>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 30),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Widget _glow(double size, Color color) {
-    return IgnorePointer(
-      child: RepaintBoundary(
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  color,
-                  color.withValues(alpha: 0.48),
-                  color.withValues(alpha: 0),
-                ],
-                stops: const [0.0, 0.4, 1.0],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF070513),
-            Color(0xFF10071D),
-            Color(0xFF190D2C),
-            Color(0xFF070513),
-          ],
-        ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final height = constraints.maxHeight;
-          return AnimatedBuilder(
-            animation: _controller,
-            child: SafeArea(child: RepaintBoundary(child: widget.child)),
-            builder: (context, child) {
-              final phase = _controller.value * 2 * pi;
-              return Stack(
-                clipBehavior: Clip.hardEdge,
-                children: [
-                  // Each glow follows a different full-screen orbital path.
-                  Positioned(
-                    left: width * 0.02 + cos(phase) * width * 0.24,
-                    top: height * 0.04 + sin(phase) * height * 0.24,
-                    child: _glow(340, const Color(0xFF8B1D62).withValues(alpha: 0.34)),
-                  ),
-                  Positioned(
-                    right: width * 0.01 + sin(phase) * width * 0.22,
-                    bottom: height * 0.02 + cos(phase) * height * 0.25,
-                    child: _glow(370, const Color(0xFF6826A8).withValues(alpha: 0.34)),
-                  ),
-                  Positioned(
-                    left: width * 0.28 + cos(phase * 1.35 + 1.2) * width * 0.28,
-                    top: height * 0.30 + sin(phase * 1.35 + 1.2) * height * 0.30,
-                    child: _glow(310, const Color(0xFFB51E72).withValues(alpha: 0.22)),
-                  ),
-                  Positioned(
-                    right: width * 0.18 + sin(phase * 1.5 + 2.4) * width * 0.26,
-                    top: height * 0.18 + cos(phase * 1.5 + 2.4) * height * 0.32,
-                    child: _glow(300, const Color(0xFF5424B8).withValues(alpha: 0.24)),
-                  ),
-                  Positioned(
-                    left: width * 0.12 + sin(phase * 1.8 + 0.7) * width * 0.34,
-                    top: height * 0.50 + cos(phase * 1.8 + 0.7) * height * 0.34,
-                    child: _glow(250, const Color(0xFF3B82F6).withValues(alpha: 0.15)),
-                  ),
-                  if (child != null) Positioned.fill(child: child),
-                ],
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ============================================================
-// UPLOAD FLOATING INDICATOR
-// ============================================================
-
-class UploadFloatingIndicator extends StatelessWidget {
-  const UploadFloatingIndicator({super.key});
-
-  String _formatSpeed(double bytesPerSecond) {
-    if (bytesPerSecond >= 1024 * 1024) {
-      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
-    }
-    if (bytesPerSecond >= 1024) {
-      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
-    }
-    return '${bytesPerSecond.toStringAsFixed(0)} B/s';
-  }
-
-  IconData _fileIcon(String fileName) {
-    final name = fileName.toLowerCase();
-
-    if (name.endsWith('.mp4') ||
-        name.endsWith('.mov') ||
-        name.endsWith('.mkv') ||
-        name.endsWith('.webm') ||
-        name.endsWith('.avi')) {
-      return Icons.videocam_rounded;
-    }
-
-    if (name.endsWith('.jpg') ||
-        name.endsWith('.jpeg') ||
-        name.endsWith('.png') ||
-        name.endsWith('.webp') ||
-        name.endsWith('.gif') ||
-        name.endsWith('.heic')) {
-      return Icons.image_rounded;
-    }
-
-    return Icons.upload_file_rounded;
-  }
-
-  void _showUploadDetails(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: surfaceColor,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(24),
-        ),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: ValueListenableBuilder<List<UploadProgress>>(
-              valueListenable: SpaceSyncService.uploadProgress,
-              builder: (context, uploads, _) {
-                final activeUploads = uploads
-                    .where((upload) => upload.isUploading)
-                    .toList();
-
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.cloud_upload_rounded,
-                          color: pinkColor,
-                          size: 25,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'à¦«à¦¾à¦‡à¦² à¦†à¦ªà¦²à§‹à¦¡ à¦¹à¦šà§à¦›à§‡ (${activeUploads.length})',
+    throw Exception('5£~„Ö2Z7áÍhß¿"éİyø§yÛ¾5£~ø‹§uçâç~øÖ›û§uçâçBr“°¢Ğ ¢òòÕBô‚ã#cBs#÷WGWB—2'&öFÇ’7W÷'FVBöâæG&ö–BFWf–6W2à¢f–æÂ&W7VÇBÒv—Bf–FVô6ö×&W72æ6ö×&W75f–FVò€¢6÷W&6RçF‚À¢VÆ—G“¢f–FVõVÆ—G’å&W3#ƒƒs#VÆ—G’À¢FVÆWFT÷&–v–ã¢fÇ6RÀ¢–æ6ÇVFTVF–ó¢G'VRÀ¢“°¢f–æÂ÷WGWBÒ&W7VÇCòæf–ÆS°¢–b†÷WGWBÓÒçVÆÂÇÂv—B÷WGWBæW†—7G2‚’ÇÂv—B÷WGWBæÆVæwF‚‚’ÃÒ’°¢F‡&÷rW†6WF–öâ‚n×ŸŠwÛóZ7äÈºw^~)Şwjhß®5£~p‹§uçâçvÂéİyø§yØ¦¼ÖúƒZ5	ÊNÂˆBˆ™]\›ˆİ]]ÂŸB‚˜ÛÛœİÛÛÜˆ[šĞÛÛÜˆHÛÛÜŠ‘‘‘Œ‘NLÊNÂ˜ÛÛœİÛÛÜˆ\œPÛÛÜˆHÛÛÜŠ‘PÑŠNÂ˜ÛÛœİİš[™ÈÜ˜š]›İYšXØ][ÛÚ[›™[YH	ÛÜ˜š]Ü\™\—İ\]\×İÉÎÂ˜ÛÛœİİš[™ÈÜ˜š]Y\ÜØYÙS›İYšXØ][Û‘Ü›İ\H	ØÛÛKœš]˜]\ÜXÙK›İ\œÜXÙK“QTÔĞQÑWÑÔ“ÕT	ÎÂ˜ÛÛœİİš[™ÈÜ˜š]\]S›İYšXØ][Û‘Ü›İ\H	ØÛÛKœš]˜]\ÜXÙK›İ\œÜXÙK•TUWÑÔ“ÕT	ÎÂ˜ÛÛœİ[Ü˜š]Y\ÜØYÙTİ[[X\S›İYšXØ][Û’YHÌÂ˜›ÛÛÜ˜š]Ú]š\ÚX›HH˜[ÙNÂ‚˜YÛXJ	İ›N™[K\Ú[	ÊB‘]\™O›ÚYˆÜ˜š]š\™X˜\ÙSY\ÜØYÚ[™Ğ˜XÚÙÜ›İ[™[™\Š™[[İSY\ÜØYÙHY\ÜØYÙJH\Ş[˜ÈÂˆËÈÙY\ÛÛ\]Xš[]HÚ]Hİ\œ™[H\ŞYYÛÜšÙ\ˆ[™›ÚY[™XYHÚİÜÂˆËÈ›İYšXØ][Û‹\^[ØY\Ú\Ëˆ]K[Û›H\Ú\È\ÙHHÜ›İ\YØØ[[™\ˆ™[İË‚ˆYˆ
+Y\ÜØYÙK››İYšXØ][ÛˆOH[
+H™]\›ÂˆHÂˆ]ØZ]š\™X˜\ÙKš[š]X[^™P\
+
+NÂˆ]ØZ]›İYšXØ][Û”š]˜XŞTÙ][™ÜË›ØY
+
+NÂˆÛÛœİ[š]X[^˜][Û”Ù][™ÜÈH[š]X[^˜][Û”Ù][™ÜÊˆ[™›ÚYˆ[™›ÚY[š]X[^˜][Û”Ù][™ÜÊ	Ğ˜]ØX›KÚX×Üİ]ÛÜ˜š]Øİ\İÛIÊKˆ
+NÂˆ]ØZ]›İYšXØ][ÛœËš[š]X[^™J[š]X[^˜][Û”Ù][™ÜÊNÂˆš[˜[[™›ÚY›İYšXØ][ÛœÈH›İYšXØ][ÛœÂˆœ™\ÛÛ™T]›Ü›TÜXÚYšXÒ[\[Y[][Ûˆ[™›ÚY›]\“ØØ[›İYšXØ][ÛœÔYÚ[Š
+NÂˆ]ØZ][™›ÚY›İYšXØ][ÛœÏË˜Ü™X]S›İYšXØ][ÛÚ[›™[
+ˆ[™›ÚY›İYšXØ][ÛÚ[›™[
+ˆÜ˜š]›İYšXØ][ÛÚ[›™[Yˆ	ÓÜ˜š]ÛÈY\ÜØYÙ\ÉËˆ\ØÜš\[Ûˆ	ÓY\ÜØYÙ\È[™\]\Èœ›ÛH[İ\ˆ\™\‰Ëˆ[\Ü[˜ÙNˆ[\Ü[˜ÙK›X^ˆ^TÛİ[™ˆYKˆ[˜X›UšXœ˜][ÛˆYKˆšXœ˜][Û”]\›ˆ[\İ™œ›ÛS\İ
+ÌÍLNÍLJKˆÚİĞ˜YÙNˆYKˆ
+Kˆ
+NÂˆš[˜[]HHY\ÜØYÙK™]NÂˆš[˜[Ú[™H]VÉÚÚ[™	×OËÔİš[™Ê
+HÏÈ	ÛY\ÜØYÙIÎÂˆš[˜[Y\ÜØYÙRYH]VÉÛY\ÜØYÙRY	×OËÔİš[™Ê
+HÏÈ	ÉÎÂˆ]ØZ]›İYšXØ][Û”š]˜XŞTÙ][™ÜËœÚİÔ\™\“›İYšXØ][ÛŠˆ]Z[Y]Nˆ]VÉÙ]Z[Y]I×OËÔİš[™Ê
+HÏÈY\ÜØYÙK››İYšXØ][ÛË]HÏÈ	ÓÜ˜š]ÛÉËˆ]Z[Y›ÙNˆ]VÉÙ]Z[Y›ÙI×OËÔİš[™Ê
+HÏÈY\ÜØYÙK››İYšXØ][ÛË˜›ÙHÏÈ	Ö[İH]™HH™]ÈY\ÜØYÙK‰Ëˆš]˜]U]Nˆ]VÉÜš]˜]U]I×OËÔİš[™Ê
+HÏÈ
+Ú[™OH	ØÚ[™ÙIÈÈ	ĞÚXÚÈÚ[™ÙIÈˆ	ĞÚXÚÈY\ÜØYÙIÊKˆš]˜]P›ÙNˆ]VÉÜš]˜]P›ÙI×OËÔİš[™Ê
+HÏÈ
+Ú[™OH	ØÚ[™ÙIÈÈ	Ö[İ\ˆ\™\ˆÚ[™ÙYÚ\™Y]K‰Èˆ	Ö[İH]™HH™]ÈY\ÜØYÙK‰ÊKˆÚ[™ˆÚ[™ˆYˆÚ[™OH	ÛY\ÜØYÙIÂˆÈ›İYšXØ][Û”š]˜XŞTÙ][™ÜË››İYšXØ][Û’Y›Ü“Y\ÜØYÙJY\ÜØYÙRYš\Ó›İ[\HÈY\ÜØYÙRYˆ]U[YK››İÊ
+K›ZXÜ›ÜÙXÛÛ™ÔÚ[˜ÙQ\ØÚÔİš[™Ê
+JBˆˆ]U[YK››İÊ
+K›Z[\ÙXÛÛ™ÔÚ[˜ÙQ\ØÚ	ˆÙ™™™™™™‹ˆ
+NÂˆHØ]Ú
+\œ›Ü‹İXÚÕ˜XÙJHÂˆXYÔš[
+	Ğ˜XÚÙÜ›İ[™›İYšXØ][Ûˆ\œ›Üˆ	\œ›Ü—‰İXÚÕ˜XÙIÊNÂˆBŸB‚™š[˜[›]\“ØØ[›İYšXØ][ÛœÔYÚ[ˆ›İYšXØ][ÛœÈBˆ›]\“ØØ[›İYšXØ][ÛœÔYÚ[Š
+NÂ‚™š[˜[ÛØ˜[Ù^O˜]šYØ]Ü”İ]Oˆ›Ûİ˜]šYØ]Ü’Ù^HBˆÛØ˜[Ù^O˜]šYØ]Ü”İ]OŠ
+NÂ‚‘]\™O›ÚYˆXZ[Š
+H\Ş[˜ÈÂˆÚYÙ]Ñ›]\š[™[™Ë™[œİ\™R[š]X[^™Y
+
+NÂ‚ˆİš[™ÏÈİ\\\œ›ÜÂˆ˜\ˆš\™X˜\ÙT™XYHH˜[ÙNÂ‚ˆËÈš\™X˜\ÙH˜Z[\™H]\İ›İX]™HH\İXÚÈÛˆH›[šÈÚ]HØÜ™Y[‹‚ˆHÂˆ]ØZ]š\™X˜\ÙKš[š]X[^™P\
+
+NÂˆš\™X˜\ÙT™XYHHYNÂˆHØ]Ú
+\œ›Ü‹İXÚÕ˜XÙJHÂˆİ\\\œ›ÜˆH\œ›Ü‹Ôİš[™Ê
+NÂˆXYÔš[
+	Ñš\™X˜\ÙH[š]X[^˜][Ûˆ˜Z[Yˆ	\œ›Ü—‰İXÚÕ˜XÙIÊNÂˆB‚ˆHÂˆ]ØZ]]TØ]™\”Ù][™ÜË›ØY
+
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ñ]HØ]™\ˆÙ][™ÜÈØY˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆHÂˆ]ØZ][\˜Xİ[Û‘™YY˜XÚÔÙ][™ÜË›ØY
+
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ò[\˜Xİ[Ûˆ™YY˜XÚÈÙ][™ÜÈØY˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆHÂˆ]ØZ]›İYšXØ][Û”š]˜XŞTÙ][™ÜË›ØY
+
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ó›İYšXØ][Ûˆš]˜XŞHÙ][™ÜÈØY˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆHÂˆ—Ù]Kš[š]X[^™U[YV›Û™\Ê
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Õ[Y^›Û™H[š]X[^˜][Ûˆ˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆHÂˆÛÛœİ[™›ÚYÙ][™ÜÈBˆ[™›ÚY[š]X[^˜][Û”Ù][™ÜÊ	Ğ˜]ØX›KÚX×Üİ]ÛÜ˜š]	ÊNÂˆÛÛœİ[š]X[^˜][Û”Ù][™ÜÈH[š]X[^˜][Û”Ù][™ÜÊˆ[™›ÚYˆ[™›ÚYÙ][™ÜËˆ
+NÂˆ]ØZ]›İYšXØ][ÛœËš[š]X[^™J[š]X[^˜][Û”Ù][™ÜÊNÂˆš[˜[[™›ÚY›İYšXØ][ÛœÈH›İYšXØ][ÛœÂˆœ™\ÛÛ™T]›Ü›TÜXÚYšXÒ[\[Y[][Ûˆ[™›ÚY›]\“ØØ[›İYšXØ][ÛœÔYÚ[Š
+NÂˆ]ØZ][™›ÚY›İYšXØ][ÛœÏË˜Ü™X]S›İYšXØ][ÛÚ[›™[
+ˆ[™›ÚY›İYšXØ][ÛÚ[›™[
+ˆÜ˜š]›İYšXØ][ÛÚ[›™[Yˆ	ÓÜ˜š]ÛÈY\ÜØYÙ\ÉËˆ\ØÜš\[Ûˆ	ÓY\ÜØYÙ\È[™\]\Èœ›ÛH[İ\ˆ\™\‰Ëˆ[\Ü[˜ÙNˆ[\Ü[˜ÙK›X^ˆ^TÛİ[™ˆYKˆ[˜X›UšXœ˜][ÛˆYKˆšXœ˜][Û”]\›ˆ[\İ™œ›ÛS\İ
+ÌÍLNÍLJKˆÚİĞ˜YÙNˆYKˆ
+Kˆ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÓØØ[›İYšXØ][Ûˆ[š]X[^˜][Ûˆ˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆYˆ
+š\™X˜\ÙT™XYJHÂˆš\™X˜\ÙSY\ÜØYÚ[™Ë›Û˜XÚÙÜ›İ[™Y\ÜØYÙJÜ˜š]š\™X˜\ÙSY\ÜØYÚ[™Ğ˜XÚÙÜ›İ[™[™\ŠNÂˆHÂˆ]ØZ]\Ú›İYšXØ][Û”Ù\šXÙKš[š]X[^™J
+K[Y[İ]
+ˆÛÛœİ\˜][ÛŠÙXÛÛ™Îˆ
+Kˆ
+NÂˆHÛˆ[Y[İ]^Ù\[ÛˆÂˆXYÔš[
+	Ô\Ú›İYšXØ][Ûˆ[š]X[^˜][Ûˆ[YYİ]ÈÛÛ[Z[™Èİ\\‰ÊNÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ô\Ú›İYšXØ][Ûˆ[š]X[^˜][Ûˆ˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆš\™X˜\ÙSY\ÜØYÚ[™Ë›Û“Y\ÜØYÙK›\İ[Š
+Y\ÜØYÙJHÂˆš[˜[]HHY\ÜØYÙK™]NÂˆš[˜[Ú[™H]VÉÚÚ[™	×OËÔİš[™Ê
+HÏÈ	ÛY\ÜØYÙIÎÂˆYˆ
+Ú[™OH	ÛY\ÜØYÙIÈ	‰ˆÜ˜š]Ú]š\ÚX›JHÂˆ[˜]ØZ]Y
+›İYšXØ][Û”š]˜XŞTÙ][™ÜË˜ÛX\“Y\ÜØYÙS›İYšXØ][ÛœÊ
+JNÂˆ™]\›ÂˆBˆš[˜[Y\ÜØYÙRYH]VÉÛY\ÜØYÙRY	×OËÔİš[™Ê
+HÏÈ	ÉÎÂˆËÈÛ\ˆ\ŞYYÛÜšÙ\ˆ™\œÚ[ÛœÈÛZ]Y\ÜØYÙRYÈš\™\İÜ™IÜÈ™X[][YBˆËÈ\İ[™\ˆİ\Y\ÈHØ[YH›İYšXØ][ÛˆÚ]HİX›HQ[œİXY‚ˆYˆ
+Ú[™OH	ÛY\ÜØYÙIÈ	‰ˆY\ÜØYÙRYš\Ñ[\JH™]\›Âˆ[˜]ØZ]Y
+›İYšXØ][Û”š]˜XŞTÙ][™ÜËœÚİÔ\™\“›İYšXØ][ÛŠˆ]Z[Y]Nˆ]VÉÙ]Z[Y]I×OËÔİš[™Ê
+HÏÈY\ÜØYÙK››İYšXØ][ÛË]HÏÈ	ÓÜ˜š]ÛÉËˆ]Z[Y›ÙNˆ]VÉÙ]Z[Y›ÙI×OËÔİš[™Ê
+HÏÈY\ÜØYÙK››İYšXØ][ÛË˜›ÙHÏÈ	Ö[İH]™H[ˆ\]K‰Ëˆš]˜]U]Nˆ]VÉÜš]˜]U]I×OËÔİš[™Ê
+HÏÈ
+Ú[™OH	ØÚ[™ÙIÈÈ	ĞÚXÚÈÚ[™ÙIÈˆ	ĞÚXÚÈY\ÜØYÙIÊKˆš]˜]P›ÙNˆ]VÉÜš]˜]P›ÙI×OËÔİš[™Ê
+HÏÈ
+Ú[™OH	ØÚ[™ÙIÈÈ	Ö[İ\ˆ\™\ˆÚ[™ÙYÚ\™Y]K‰Èˆ	Ö[İH]™HH™]ÈY\ÜØYÙK‰ÊKˆÚ[™ˆÚ[™ˆYˆÚ[™OH	ÛY\ÜØYÙIÈÈ›İYšXØ][Û”š]˜XŞTÙ][™ÜË››İYšXØ][Û’Y›Ü“Y\ÜØYÙJY\ÜØYÙRYš\Ó›İ[\HÈY\ÜØYÙRYˆ]U[YK››İÊ
+K›ZXÜ›ÜÙXÛÛ™ÔÚ[˜ÙQ\ØÚÔİš[™Ê
+JHˆ]U[YK››İÊ
+K›Z[\ÙXÛÛ™ÔÚ[˜ÙQ\ØÚ	ˆÙ™™™™™™‹ˆ
+JNÂˆJNÂ‚ˆB‚ˆHÂˆ]ØZ]ÜXÙTİÜ™Kš[š]
+
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÓØØ[İÜ˜YÙH[š]X[^˜][Ûˆ˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆ[\
+]\›˜[ÜXÙP\
+İ\\\œ›Üˆİ\\\œ›ÜŠJNÂŸB‚˜Û\ÜÈ]TØ]™\”Ù][™ÜÈÂˆ]TØ]™\”Ù][™ÜË—Ê
+NÂ‚ˆİ]XÈÛÛœİİš[™ÈÚÙ^HH	Ù]TØ]™\‘[˜X›Y	ÎÂ‚ˆİ]XÈš[˜[˜[YS›İYšY\›ÛÛˆ[˜X›YBˆ˜[YS›İYšY\›ÛÛŠ˜[ÙJNÂ‚ˆİ]XÈ]\™O›ÚYˆØY
+
+H\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆ[˜X›Y˜[YHH™YœË™Ù]›ÛÛ
+ÚÙ^JHÏÈ˜[ÙNÂˆB‚ˆİ]XÈ]\™O›ÚYˆÙ][˜X›Y
+›ÛÛ˜[YJH\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂ‚ˆ]ØZ]™YœËœÙ]›ÛÛ
+ÚÙ^K˜[YJNÂˆ[˜X›Y˜[YHH˜[YNÂˆBŸB‚˜Û\ÜÈ[\˜Xİ[Û‘™YY˜XÚÔÙ][™ÜÈÂˆ[\˜Xİ[Û‘™YY˜XÚÔÙ][™ÜË—Ê
+NÂ‚ˆİ]XÈÛÛœİİš[™ÈÚ\XÜÒÙ^HH	Ú[\˜Xİ[Û’\XÜÑ[˜X›Y	ÎÂˆİ]XÈÛÛœİİš[™ÈÜÛİ[™ÒÙ^HH	Ú[\˜Xİ[Û”Ûİ[™Ñ[˜X›Y	ÎÂˆİ]XÈš[˜[˜[YS›İYšY\›ÛÛˆ\XÜÑ[˜X›YH˜[YS›İYšY\›ÛÛŠYJNÂˆİ]XÈš[˜[˜[YS›İYšY\›ÛÛˆÛİ[™Ñ[˜X›YH˜[YS›İYšY\›ÛÛŠYJNÂ‚ˆİ]XÈ]\™O›ÚYˆØY
+
+H\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆ\XÜÑ[˜X›Y˜[YHH™YœË™Ù]›ÛÛ
+Ú\XÜÒÙ^JHÏÈYNÂˆÛİ[™Ñ[˜X›Y˜[YHH™YœË™Ù]›ÛÛ
+ÜÛİ[™ÒÙ^JHÏÈYNÂˆB‚ˆİ]XÈ]\™O›ÚYˆÙ]\XÜÑ[˜X›Y
+›ÛÛ˜[YJH\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆ]ØZ]™YœËœÙ]›ÛÛ
+Ú\XÜÒÙ^K˜[YJNÂˆ\XÜÑ[˜X›Y˜[YHH˜[YNÂˆB‚ˆİ]XÈ]\™O›ÚYˆÙ]Ûİ[™Ñ[˜X›Y
+›ÛÛ˜[YJH\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆ]ØZ]™YœËœÙ]›ÛÛ
+ÜÛİ[™ÒÙ^K˜[YJNÂˆÛİ[™Ñ[˜X›Y˜[YHH˜[YNÂˆB‚ˆİ]XÈ]\™O›ÚYˆšXœ˜]J
+H\Ş[˜ÈÂˆYˆ
+Z\XÜÑ[˜X›Y˜[YJH™]\›ÂˆHÂˆ]ØZ]\XÑ™YY˜XÚËœÙ[Xİ[ÛÛXÚÊ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ò[\˜Xİ[Ûˆ\XÈ™YY˜XÚÈ[˜]˜Z[X›Nˆ	\œ›Ü‰ÊNÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆÜ^P\ÜÙ]Ûİ[™
+İš[™È\ÜÙ]
+H\Ş[˜ÈÂˆYˆ
+\Ûİ[™Ñ[˜X›Y˜[YJH™]\›Âˆš[˜[^Y\ˆH]Y[Ô^Y\Š
+NÂˆHÂˆ]ØZ]^Y\‹œ^J\ÜÙ]Ûİ\˜ÙJ\ÜÙ]
+JNÂˆ[˜]ØZ]Y
+ˆ^Y\‹›Û”^Y\ÛÛ\]K™š\œİ[›ÚYŠ
+ÊH\Ş[˜ÈÂˆ]ØZ]^Y\‹™\ÜÜÙJ
+NÂˆJK˜Ø]Ú\œ›ÜŠ
+Øš™Xİ\œ›ÜŠHÂˆXYÔš[
+	Ñ™YY˜XÚÈÛİ[™ÛX[\˜Z[Yˆ	\œ›Ü‰ÊNÂˆJKˆ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆ]ØZ]^Y\‹™\ÜÜÙJ
+NÂˆXYÔš[
+	Ñ™YY˜XÚÈÛİ[™[˜]˜Z[X›Nˆ	\œ›Ü‰ÊNÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆ^U\[™ÔÛİ[™
+
+HO‚ˆÜ^P\ÜÙ]Ûİ[™
+	ÜÛİ[™ËÛÜ˜š]İ\[™ËØ]‰ÊNÂ‚ˆİ]XÈ]\™O›ÚYˆ^TÙY[”Ûİ[™
+
+HO‚ˆÜ^P\ÜÙ]Ûİ[™
+	ÜÛİ[™ËÛÜ˜š]ÜÙY[‹Ø]‰ÊNÂ‚ˆËÈ\ÙHHYXØ]Y[™YÛİ[™È[™›ÚYŞ\İ[HÛXÚÜÈØ[ˆ™HÚ[[‚ˆİ]XÈ]\™O›ÚYˆ^TÙ[Ûİ[™
+
+HO‚ˆÜ^P\ÜÙ]Ûİ[™
+	ÜÛİ[™ËÛÜ˜š]ÜÙ[Ø]‰ÊNÂŸB‚˜Û\ÜÈ›İYšXØ][Û”š]˜XŞTÙ][™ÜÈÂˆ›İYšXØ][Û”š]˜XŞTÙ][™ÜË—Ê
+NÂˆİ]XÈÛÛœİİš[™ÈÚÙ^HH	ÚYS›İYšXØ][Û‘]Z[ÉÎÂˆİ]XÈÛÛœİİš[™ÈÛ›İYšXØ][ÛœÒÙ^HH	Û›İYšXØ][ÛœÑ[˜X›Y	ÎÂˆİ]XÈÛÛœİİš[™ÈÛY\ÜØYÙRYÒÙ^HH	ÛÜ˜š]Y\ÜØYÙS›İYšXØ][Û’YÉÎÂˆİ]XÈÛÛœİİš[™ÈÛY\ÜØYÙS[™\ÒÙ^HH	ÛÜ˜š]Y\ÜØYÙS›İYšXØ][Û“[™\ÉÎÂˆİ]XÈš[˜[˜[YS›İYšY\›ÛÛˆYQ]Z[ÈH˜[YS›İYšY\›ÛÛŠ˜[ÙJNÂˆİ]XÈš[˜[˜[YS›İYšY\›ÛÛˆ›İYšXØ][ÛœÑ[˜X›YH˜[YS›İYšY\›ÛÛŠYJNÂˆİ]XÈ]\™O›ÚYˆØY
+
+H\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆYQ]Z[Ë˜[YHH™YœË™Ù]›ÛÛ
+ÚÙ^JHÏÈ˜[ÙNÂˆ›İYšXØ][ÛœÑ[˜X›Y˜[YHH™YœË™Ù]›ÛÛ
+Û›İYšXØ][ÛœÒÙ^JHÏÈYNÂˆBˆİ]XÈ[›İYšXØ][Û’Y›Ü“Y\ÜØYÙJİš[™ÈY\ÜØYÙRY
+HÂˆ˜\ˆ\ÚHÂˆ›Üˆ
+š[˜[[š][ˆY\ÜØYÙRY˜ÛÙU[š]ÊHÈ\ÚH
+\Ú
+ˆÌH
+È[š]
+H	ˆÙ™™™™™™ÈBˆ™]\›ˆ\ÚOHÈÌHˆ\ÚÂˆBˆİ]XÈ]\™O›ÚYˆÙ]›İYšXØ][ÛœÑ[˜X›Y
+›ÛÛ˜[YJH\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆ]ØZ]™YœËœÙ]›ÛÛ
+Û›İYšXØ][ÛœÒÙ^K˜[YJNÂˆ›İYšXØ][ÛœÑ[˜X›Y˜[YHH˜[YNÂˆ]ØZ]\Ú›İYšXØ][Û”Ù\šXÙKœÙ]›İYšXØ][ÛœÑ[˜X›Y
+˜[YJNÂˆYˆ
+]˜[YJH]ØZ]ÛX\“Y\ÜØYÙS›İYšXØ][ÛœÊ
+NÂˆBˆİ]XÈ]\™O›ÚYˆÙ]YQ]Z[Ê›ÛÛ˜[YJH\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆ]ØZ]™YœËœÙ]›ÛÛ
+ÚÙ^K˜[YJNÂˆYQ]Z[Ë˜[YHH˜[YNÂˆ]ØZ]\Ú›İYšXØ][Û”Ù\šXÙKœÙ]YQ]Z[Ê˜[YJNÂˆBˆİ]XÈ]\™O›ÚYˆÛX\“Y\ÜØYÙS›İYšXØ][ÛœÊ
+H\Ş[˜ÈÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆš[˜[YÈH™YœË™Ù]İš[™Ó\İ
+ÛY\ÜØYÙRYÒÙ^JHÏÈİš[™Ï–×NÂˆ›Üˆ
+š[˜[˜[YH[ˆYÊHÂˆš[˜[YH[T\œÙJ˜[YJNÂˆYˆ
+YOH[	‰ˆYOHÜ˜š]Y\ÜØYÙTİ[[X\S›İYšXØ][Û’Y
+H]ØZ]›İYšXØ][ÛœË˜Ø[˜Ù[
+Y
+NÂˆBˆ]ØZ]›İYšXØ][ÛœË˜Ø[˜Ù[
+Ü˜š]Y\ÜØYÙTİ[[X\S›İYšXØ][Û’Y
+NÂˆ]ØZ]™YœËœ™[[İ™JÛY\ÜØYÙRYÒÙ^JNÂˆ]ØZ]™YœËœ™[[İ™JÛY\ÜØYÙS[™\ÒÙ^JNÂˆBˆİ]XÈ]\™O›ÚYˆÚİÔ\™\“›İYšXØ][ÛŠÂˆ™\]Z\™Yİš[™È]Z[Y]K™\]Z\™Yİš[™È]Z[Y›ÙKˆ™\]Z\™Yİš[™Èš]˜]U]K™\]Z\™Yİš[™Èš]˜]P›ÙKˆ[YHÌKİš[™ÈÚ[™H	ÛY\ÜØYÙIËˆJH\Ş[˜ÈÂˆYˆ
+[›İYšXØ][ÛœÑ[˜X›Y˜[YJH™]\›Âˆš[˜[Y[ˆHYQ]Z[Ë˜[YNÂˆš[˜[]HHY[ˆÈš]˜]U]Hˆ]Z[Y]NÂˆš[˜[›ÙHHY[ˆÈš]˜]P›ÙHˆ]Z[Y›ÙNÂˆš[˜[\ÓY\ÜØYÙHHÚ[™OH	ÛY\ÜØYÙIÎÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆš[˜[YÈH™YœË™Ù]İš[™Ó\İ
+ÛY\ÜØYÙRYÒÙ^JHÏÈİš[™Ï–×NÂˆš[˜[[™\ÈH™YœË™Ù]İš[™Ó\İ
+ÛY\ÜØYÙS[™\ÒÙ^JHÏÈİš[™Ï–×NÂˆYˆ
+\ÓY\ÜØYÙJHÂˆš[˜[Y^H	ÉY	ÎÂˆš[˜[^\İ[™Ò[™^HYËš[™^ÙŠY^
+NÂˆš[˜[[™HHY[ˆÈ	ºw^~)ŞvihØ 5£~àÖÂr¢rGF—FÆS¢F&öG’s°¢–b†W†—7F–æt–æFW‚ãÒ’²–b†W†—7F–æt–æFW‚ÂÆ–æW2æÆVæwF‚’Æ–æW5¶W†—7F–æt–æFW…ÒÒÆ–æS²Ğ¢VÇ6R²–G2æFB†–EFW‡B“²Æ–æW2æFB†Æ–æR“²Ğ¢v†–ÆR†–G2æÆVæwF‚â#’²–G2ç&VÖ÷fTBƒ“²–b†Æ–æW2æ—4æ÷DV×G’’Æ–æW2ç&VÖ÷fTBƒ“²Ğ¢v—B&Vg2ç6WE7G&–ætÆ—7B…öÖW76vT–G4¶W’Â–G2“°¢v—B&Vg2ç6WE7G&–ætÆ—7B…öÖW76vTÆ–æW4¶W’ÂÆ–æW2“°¢v—Bæ÷F–f–6F–öç2ç6†÷r†–BÂF—FÆRÂ&öG’Âæ÷F–f–6F–öäFWF–Ç2†æG&ö–C¢æG&ö–Dæ÷F–f–6F–öäFWF–Ç2€¢÷&&—Dæ÷F–f–6F–öä6†ææVÄ–BÂt÷&&—BGvòÖW76vW2rÀ¢6†ææVÄFW67&—F–öã¢tÖW76vW2g&öÒ–÷W"'FæW"rÂ–×÷'Fæ6S¢–×÷'Fæ6RæÖ‚Â&–÷&—G“¢&–÷&—G’æÖ‚À¢Æ•6÷VæC¢G'VRÂVæ&ÆUf–'&F–öã¢G'VRÂf–'&F–öåGFW&ã¢–çCcDÆ—7Bæg&öÔÆ—7B…³Â3SÂƒÂ3SÒ’À¢Væ&ÆTÆ–v‡G3¢G'VRÂÆVD6öÆ÷#¢–æ´6öÆ÷"ÂÆVDöä×3¢ÂÆVDöfd×3¢SÂ6öÆ÷#¢–æ´6öÆ÷"À¢6FVv÷'“¢æG&ö–Dæ÷F–f–6F–öä6FVv÷'’æÖW76vRÀ¢f—6–&–Æ—G“¢†–FFVâòæ÷F–f–6F–öåf—6–&–Æ—G’ç&—fFR¢æ÷F–f–6F–öåf—6–&–Æ—G’çV&Æ–2À¢7G–ÆT–æf÷&ÖF–öã¢&–uFW‡E7G–ÆT–æf÷&ÖF–öâ†&öG’Â6öçFVçEF—FÆS¢F—FÆRÂ7VÖÖ'•FW‡C¢t÷&&—BGvòr’À¢w&÷W¶W“¢÷&&—DÖW76vTæ÷F–f–6F–öäw&÷WÂ6WD4w&÷W7VÖÖ'“¢fÇ6RÂöæÇ”ÆW'Döæ6S¢fÇ6RÂçVÖ&W#¢–G2æÆVæwF‚À¢’’“°¢f–æÂf—6–&ÆTÆ–æW2Ò†–FFVâòÆ—7CÅ7G&–æsâæf–ÆÆVB†Æ–æW2æÆVæwF‚Ân×ŸŠwšCZ6hß¸5£pœ¤€è±¥¹•Ìì(€€€€€™¥¹…°ÍÕµµ…ÉåQ¥Ñ±”€ô¡¥‘‘•¸€ü€=É‰¥ĞQİ¼œ€è€=É‰¥ĞQİ¼‚éİyø§yØ€‘í¥‘Ì¹±•¹Ñ¡ôÖòZ7îhÜ';
+      final summaryBody = hidden ? '${ids.length}5£|€ÖÜ§uçâçBšãZ6qî×ŸŠw	Èˆ	ÉÚYË›[™İºw^~)ŞwïÈºw^~)ŞwñÍhßœ"éİyø§yß¸5£oœì(€€€€€…İ…¥Ğ¹½Ñ¥™¥…Ñ¥½¹Ì¹Í¡½Ü¡½É‰¥Ñ5•ÍÍ…•MÕµµ…Éå9½Ñ¥™¥…Ñ¥½¹%°ÍÕµµ…ÉåQ¥Ñ±”°ÍÕµµ…Éå	½‘ä°9½Ñ¥™¥…Ñ¥½¹•Ñ…¥±Ì¡…¹‘É½¥è¹‘É½¥‘9½Ñ¥™¥…Ñ¥½¹•Ñ…¥±Ì (€€€€€€€½É‰¥Ñ9½Ñ¥™¥…Ñ¥½¹¡…¹¹•±%°€=É‰¥ĞQİ¼µ•ÍÍ…•Ìœ°(€€€€€€€¡…¹¹•±•ÍÉ¥ÁÑ¥½¸è€É½ÕÁ•µ•ÍÍ…•Ì™É½´å½ÕÈÁ…ÉÑ¹•Èœ°¥µÁ½ÉÑ…¹”è%µÁ½ÉÑ…¹”¹µ…à°ÁÉ¥½É¥ÑäèAÉ¥½É¥Ñä¹µ…à°(€€€€€€€Á±…åM½Õ¹è™…±Í”°•¹…‰±•Y¥‰É…Ñ¥½¸è™…±Í”°•¹…‰±•1¥¡ÑÌè™…±Í”°½±½ÈèÁ¥¹­½±½È°(€€€€€€€…Ñ•½Éäè¹‘É½¥‘9½Ñ¥™¥…Ñ¥½¹…Ñ•½Éä¹µ•ÍÍ…”°(€€€€€€€Ù¥Í¥‰¥±¥Ñäè¡¥‘‘•¸€ü9½Ñ¥™¥…Ñ¥½¹Y¥Í¥‰¥±¥Ñä¹ÁÉ¥Ù…Ñ”€è9½Ñ¥™¥…Ñ¥½¹Y¥Í¥‰¥±¥Ñä¹ÁÕ‰±¥Œ°(€€€€€€€ÍÑå±•%¹™½Éµ…Ñ¥½¸è%¹‰½áMÑå±•%¹™½Éµ…Ñ¥½¸¡Ù¥Í¥‰±•1¥¹•Ì°½¹Ñ•¹ÑQ¥Ñ±”èÍÕµµ…ÉåQ¥Ñ±”°ÍÕµµ…ÉåQ•áĞèÍÕµµ…Éå	½‘ä¤°(€€€€€€€É½ÕÁ-•äè½É‰¥Ñ5•ÍÍ…•9½Ñ¥™¥…Ñ¥½¹É½ÕÀ°Í•ÑÍÉ½ÕÁMÕµµ…ÉäèÑÉÕ”°½¹±å±•ÉÑ=¹”èÑÉÕ”°¹Õµ‰•Èè¥‘Ì¹±•¹Ñ °(€€€€€€¤¤¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€…İ…¥Ğ¹½Ñ¥™¥…Ñ¥½¹Ì¹Í¡½Ü¡¥°Ñ¥Ñ±”°‰½‘ä°9½Ñ¥™¥…Ñ¥½¹•Ñ…¥±Ì¡…¹‘É½¥è¹‘É½¥‘9½Ñ¥™¥…Ñ¥½¹•Ñ…¥±Ì (€€€€€½É‰¥Ñ9½Ñ¥™¥…Ñ¥½¹¡…¹¹•±%°€=É‰¥ĞQİ¼ÕÁ‘…Ñ•Ìœ°(€€€€€¡…¹¹•±•ÍÉ¥ÁÑ¥½¸è€¡…¹•Ì…¹‘½İ¹±½…‘Ìœ°¥µÁ½ÉÑ…¹”è%µÁ½ÉÑ…¹”¹µ…à°ÁÉ¥½É¥ÑäèAÉ¥½É¥Ñä¹µ…à°(€€€€€Á±…åM½Õ¹èÑÉÕ”°•¹…‰±•Y¥‰É…Ñ¥½¸èÑÉÕ”°Ù¥‰É…Ñ¥½¹A…ÑÑ•É¸è%¹ĞØÑ1¥ÍĞ¹™É½µ1¥ÍĞ¡lÀ°€ÌÔÀ°€ÄàÀ°€ÌÔÁt¤°½±½ÈèÁÕÉÁ±•½±½È°(€€€€€…Ñ•½Éäè¹‘É½¥‘9½Ñ¥™¥…Ñ¥½¹…Ñ•½Éä¹ÍÑ…ÑÕÌ°(€€€€€Ù¥Í¥‰¥±¥Ñäè¡¥‘‘•¸€ü9½Ñ¥™¥…Ñ¥½¹Y¥Í¥‰¥±¥Ñä¹ÁÉ¥Ù…Ñ”€è9½Ñ¥™¥…Ñ¥½¹Y¥Í¥‰¥±¥Ñä¹ÁÕ‰±¥Œ°(€€€€€ÍÑå±•%¹™½Éµ…Ñ¥½¸è	¥Q•áÑMÑå±•%¹™½Éµ…Ñ¥½¸¡‰½‘ä°½¹Ñ•¹ÑQ¥Ñ±”èÑ¥Ñ±”°ÍÕµµ…ÉåQ•áĞè€=É‰¥ĞQİ¼ÕÁ‘…Ñ•Ìœ¤°(€€€€€É½ÕÁ-•äè½É‰¥ÑUÁ‘…Ñ•9½Ñ¥™¥…Ñ¥½¹É½ÕÀ°Í•ÑÍÉ½ÕÁMÕµµ…Éäè™…±Í”°½¹±å±•ÉÑ=¹”èÑÉÕ”°(€€€€¤¤¤ì(€ô)ô)±…ÍÌ¥É•‰…Í•M•ÉÙ¥•Ìì(€ÍÑ…Ñ¥Œ™¥¹…°…ÕÑ €ô¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”ì(€ÍÑ…Ñ¥Œ™¥¹…°™¥É•ÍÑ½É”€ô¥É•‰…Í•¥É•ÍÑ½É”¹¥¹ÍÑ…¹”ì((€ÍÑ…Ñ¥ŒUÍ•Èü•ĞÕÉÉ•¹ÑUÍ•È€ôø…ÕÑ ¹ÕÉÉ•¹ÑUÍ•Èì((€ÍÑ…Ñ¥ŒÕÑÕÉ”ñÙ½¥øÍ…Ù•UÍ•ÉAÉ½™¥±”¡ì(€€€É•ÅÕ¥É•MÑÉ¥¹œ¹…µ”°(€ô¤…Íå¹Œì(€€€™¥¹…°ÕÍ•È€ô…ÕÑ ¹ÕÉÉ•¹ÑUÍ•Èì(€€€¥˜€¡ÕÍ•È€ôô¹Õ±°¤É•ÑÕÉ¸ì((€€€…İ…¥Ğ™¥É•ÍÑ½É”¹½±±•Ñ¥½¸ ÕÍ•ÉÌœ¤¹‘½Œ¡ÕÍ•È¹Õ¥¤¹Í•Ğ¡ì(€€€€€€¹…µ”œè¹…µ”°(€€€€€€•µ…¥°œèÕÍ•È¹•µ…¥°°(€€€€€€ÕÁ‘…Ñ•‘Ğœè¥•±‘Y…±Õ”¹Í•ÉÙ•ÉQ¥µ•ÍÑ…µÀ ¤°(€€€ô°M•Ñ=ÁÑ¥½¹Ì¡µ•É”èÑÉÕ”¤¤ì(€ô)ô()±…ÍÌÑ•É¹…±MÁ…•ÁÀ•áÑ•¹‘ÌMÑ…Ñ•±•ÍÍ]¥‘•Ğì(€½¹ÍĞÑ•É¹…±MÁ…•ÁÀ¡íÍÕÁ•È¹­•ä°Ñ¡¥Ì¹ÍÑ…ÉÑÕÁÉÉ½Éô¤ì((€™¥¹…°MÑÉ¥¹œüÍÑ…ÉÑÕÁÉÉ½Èì((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸5…Ñ•É¥…±ÁÀ (€€€€€¹…Ù¥…Ñ½É-•äèÉ½½Ñ9…Ù¥…Ñ½É-•ä°(€€€€€Ñ¥Ñ±”è€=É‰¥ĞQİ¼œ°(€€€€€‘•‰ÕM¡½İ¡•­•‘5½‘•	…¹¹•Èè™…±Í”°(€€€€€Ñ¡•µ”èQ¡•µ•…Ñ„ (€€€€€€€‰É¥¡Ñ¹•ÍÌè	É¥¡Ñ¹•ÍÌ¹‘…É¬°(€€€€€€€Í…™™½±‘	…­É½Õ¹‘½±½Èè‰…­É½Õ¹‘½±½È°(€€€€€€€½±½ÉM¡•µ”è½±½ÉM¡•µ”¹™É½µM•• (€€€€€€€€€Í••‘½±½Èè‰±Õ•½±½È°(€€€€€€€€€‰É¥¡Ñ¹•ÍÌè	É¥¡Ñ¹•ÍÌ¹‘…É¬°(€€€€€€€€¤°(€€€€€€€ÕÍ•5…Ñ•É¥…°ÌèÑÉÕ”°(€€€€€€€¥¹ÁÕÑ•½É…Ñ¥½¹Q¡•µ”è%¹ÁÕÑ•½É…Ñ¥½¹Q¡•µ” (€€€€€€€€€™¥±±•èÑÉÕ”°(€€€€€€€€€™¥±±½±½Èè½±½ÉÌ¹İ¡¥Ñ”¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÀÔÔ¤°(€€€€€€€€€‰½É‘•Èè=ÕÑ±¥¹•%¹ÁÕÑ	½É‘•È (€€€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È ÄØ¤°(€€€€€€€€€€€‰½É‘•ÉM¥‘”è	½É‘•ÉM¥‘”¹¹½¹”°(€€€€€€€€€€¤°(€€€€€€€€¤°(€€€€€€¤°(€€€€€¡½µ”èÍÑ…ÉÑÕÁÉÉ½È€ôô¹Õ±°€ü½¹ÍĞMÁ±…Í¡MÉ••¸ ¤€èMÑ…ÉÑÕÁÉÉ½ÉMÉ••¸¡µ•ÍÍ…”èÍÑ…ÉÑÕÁÉÉ½È„¤°(€€€€¤ì(€ô)ô()±…ÍÌMÑ…ÉÑÕÁÉÉ½ÉMÉ••¸•áÑ•¹‘ÌMÑ…Ñ•±•ÍÍ]¥‘•Ğì(€½¹ÍĞMÑ…ÉÑÕÁÉÉ½ÉMÉ••¸¡íÍÕÁ•È¹­•ä°É•ÅÕ¥É•Ñ¡¥Ì¹µ•ÍÍ…•ô¤ì((€™¥¹…°MÑÉ¥¹œµ•ÍÍ…”ì((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸M…™™½± (€€€€€‰…­É½Õ¹‘½±½Èè‰…­É½Õ¹‘½±½È°(€€€€€‰½‘äèM…™•É•„ (€€€€€€€¡¥±è•¹Ñ•È (€€€€€€€€€¡¥±èA…‘‘¥¹œ (€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹…±° ÈĞ¤°(€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€%µ…”¹…ÍÍ•Ğ (€€€€€€€€€€€€€€€€€€…ÍÍ•ÑÌ½‰É…¹‘¥¹œ½½É‰¥Ñ}Ñİ½}±½¼¹©Áœœ°(€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ÄÀÀ°(€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ÄÀÀ°(€€€€€€€€€€€€€€€€€™¥Ğè	½á¥Ğ¹½¹Ñ…¥¸°(€€€€€€€€€€€€€€€€€•ÉÉ½É	Õ¥±‘•Èè€¡½¹Ñ•áĞ°•ÉÉ½È°ÍÑ…­QÉ…”¤€ôø½¹ÍĞ%½¸ (€€€€€€€€€€€€€€€€€€€%½¹Ì¹™…Ù½É¥Ñ•}É½Õ¹‘•°(€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€Í¥é”è€ØĞ°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÈÀ¤°(€€€€€€€€€€€€€€€½¹ÍĞQ•áĞ (€€€€€€€€€€€€€€€€€€=É‰¥ĞQİ¼€Öû+§uçâçR™SZ7ˆhßß5£|œ°(€€€€€€€€€€€€€€€€€Ñ•áÑ±¥¸èQ•áÑ±¥¸¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÈÀ°(€€€€€€€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹‰½±°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÄÈ¤°(€€€€€€€€€€€€€€€½¹ÍĞQ•áĞ (€€€€€€€€€€€€€€€€€€›§uçâçføÖûóZ7oh× 5£n¼ÖrZ7iMhÛ¨"éİyø§yİ°ºw^~)Şv)¯5£o4ÖrZ7Ùºw^~)Şwêhß¾5£géİyø§yÜ¦àÖü»§uçâçrš£Z6eMhß¾"éİyø§yİ°ºw^~)Şw)†5£~À‹§uçâçoÖÙû§uçâçb™SZ6j.×ŸŠw	Ëˆ^[YÛˆ^[YÛ‹˜Ù[\‹ˆİ[Nˆ^İ[JÛÛÜˆÛÛÜœËÚ]MÌ
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆLŠKˆÙ[XİX›U^
+ˆY\ÜØYÙKˆ^[YÛˆ^[YÛ‹˜Ù[\‹ˆİ[NˆÛÛœİ^İ[JÛÛÜˆÛÛÜœËÚ]LÎ›ÛÚ^™NˆLJKˆ
+KˆKˆ
+Kˆ
+Kˆ
+Kˆ
+Kˆ
+NÂˆBŸB‚‹ËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOB‹ËÈĞĞSÕÔQÑHÒU’T‘PTÑHÖSÂ‹ËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOB‚˜Û\ÜÈÜXÙTİÜ™HÂˆİ]XÈÚ\™Y™Y™\™[˜Ù\ÏÈÜ™YœÎÂˆİ]XÈİ™X[TİXœØÜš\[ÛØİ[Y[Û˜\ÚİX\İš[™Ë[˜[ZXÏÂˆÜŞ[˜ÔİXœØÜš\[ÛÂ‚ˆİ]XÈš[˜[˜[YS›İYšY\[ˆŞ[˜Õ™\œÚ[ÛˆH˜[YS›İYšY\[Š
+NÂˆİ]XÈ›ÛÛØ\Z[™Ô™[[İQ]HH˜[ÙNÂ‚ˆİ]XÈ]\™O›ÚYˆ[š]
+
+H\Ş[˜ÈÂˆÜ™YœÈÏÏH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆB‚ˆİ]XÈ\İX\İš[™Ë[˜[ZXÏˆ™XY\İ
+İš[™ÈÙ^JHÂˆš[˜[˜]ÈHÜ™YœÏË™Ù]İš[™ÊÙ^JNÂˆYˆ
+˜]ÈOH[˜]Ëš\Ñ[\JH™]\›ˆ×NÂ‚ˆHÂˆš[˜[XÛÙYHœÛÛ‘XÛÙJ˜]ÊH\È\İÂˆ™]\›ˆXÛÙYˆ›X\
+
+][JHOˆX\İš[™Ë[˜[ZXÏ‹™œ›ÛJ][H\ÈX\
+JBˆÓ\İ
+
+NÂˆHØ]Ú
+ÊHÂˆ™]\›ˆ×NÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆØ]™S\İ
+ˆİš[™ÈÙ^Kˆ\İX\İš[™Ë[˜[ZXÏˆ˜[YKˆ
+H\Ş[˜ÈÂˆ]ØZ][š]
+
+NÂˆ]ØZ]Ü™YœÈKœÙ]İš[™ÊÙ^KœÛÛ‘[˜ÛÙJ˜[YJJNÂˆŞ[˜Õ™\œÚ[Û‹˜[YJÊÎÂ‚ˆYˆ
+WØ\Z[™Ô™[[İQ]JHÂˆ]ØZ]ÜŞ[˜ÒÙ^JÙ^K˜[YJNÂˆBˆB‚ˆİ]XÈİš[™È™XYİš[™Êİš[™ÈÙ^KÔİš[™È˜[˜XÚÈH	É×JHÂˆ™]\›ˆÜ™YœÏË™Ù]İš[™ÊÙ^JHÏÈ˜[˜XÚÎÂˆB‚ˆİ]XÈ]\™O›ÚYˆØ]™Tİš[™Êİš[™ÈÙ^Kİš[™È˜[YJH\Ş[˜ÈÂˆ]ØZ][š]
+
+NÂˆ]ØZ]Ü™YœÈKœÙ]İš[™ÊÙ^K˜[YJNÂˆŞ[˜Õ™\œÚ[Û‹˜[YJÊÎÂ‚ˆYˆ
+WØ\Z[™Ô™[[İQ]JHÂˆ]ØZ]ÜŞ[˜ÒÙ^JÙ^K˜[YJNÂˆBˆB‚ˆİ]XÈ]\™Oİš[™ÏÏˆÙÙ]ÜXÙRY
+
+H\Ş[˜ÈÂˆ™]\›ˆš]˜]TÜXÙTÙ\šXÙK™Ù]Ø]™YÜXÙRY
+
+NÂˆB‚ˆİ]XÈ]\™Oİš[™ÏÏˆÙÙ]ÛÛ›™XİYÜXÙRY
+
+H\Ş[˜ÈÂˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ÂˆYˆ
+\Ù\ˆOH[
+H™]\›ˆ[Â‚ˆš[˜[ÜXÙRYH]ØZ]ÙÙ]ÜXÙRY
+
+NÂˆYˆ
+ÜXÙRYOH[ÜXÙRYš\Ñ[\JH™]\›ˆ[Â‚ˆHÂˆš[˜[Û˜\ÚİH]ØZ]š\™X˜\ÙQš\™\İÜ™Kš[œİ[˜ÙBˆ˜ÛÛXİ[ÛŠ	Üš]˜]TÜXÙ\ÉÊBˆ™ØÊÜXÙRY
+Bˆ™Ù]
+
+NÂ‚ˆYˆ
+\Û˜\Úİ™^\İÊH™]\›ˆ[Â‚ˆš[˜[]HHÛ˜\Úİ™]J
+NÂˆYˆ
+]HOH[
+H™]\›ˆ[Â‚ˆš[˜[Y[X™\œÈH]VÉÛY[X™\•ZYÉ×NÂ‚ˆYˆ
+Y[X™\œÈ\ÈH\İˆY[X™\œË›[™İOHˆˆ[Y[X™\œË˜ÛÛZ[œÊ\Ù\‹ZY
+JHÂˆ™]\›ˆ[ÂˆB‚ˆš[˜[İ]\ÈH]VÉØÛÛ›™Xİ[Û”İ]\É×HÏÈ	ØÛÛ›™XİY	ÎÂˆYˆ
+İ]\ÈOH	ØÛÛ›™XİY	ÊHÂˆYˆ
+İ]\ÈOH	Ù\ØÛÛ›™XİY	ÊHÂˆš[˜[ÛX\™YH]ØZ]š]˜]TÜXÙTÙ\šXÙK˜ÛX\ØXÚYÜXÙQ]J
+NÂˆYˆ
+ÛX\™Y
+HŞ[˜Õ™\œÚ[Û‹˜[YJÊÎÂˆBˆ™]\›ˆ[ÂˆB‚ˆ™]\›ˆÜXÙRYÂˆHØ]Ú
+JHÂˆXYÔš[
+	ĞÛÛ›™Xİ[ÛˆÚXÚÈ\œ›Üˆ	IÊNÂˆ™]\›ˆ[ÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆÜŞ[˜ÒÙ^Jİš[™ÈÙ^K[˜[ZXÈ˜[YJH\Ş[˜ÈÂˆYˆ
+Ù^HOH	Ü\™\“Û™IÈÙ^HOH	Ü\™\•ÛÉÊH™]\›ÂˆYˆ
+Ø\Z[™Ô™[[İQ]JH™]\›Â‚ˆHÂˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ÂˆYˆ
+\Ù\ˆOH[
+H™]\›Â‚ˆš[˜[ÜXÙRYH]ØZ]ÙÙ]ÛÛ›™XİYÜXÙRY
+
+NÂˆYˆ
+ÜXÙRYOH[
+H™]\›Â‚ˆ]ØZ]š\™X˜\ÙQš\™\İÜ™Kš[œİ[˜ÙBˆ˜ÛÛXİ[ÛŠ	Üš]˜]TÜXÙ\ÉÊBˆ™ØÊÜXÙRY
+Bˆ˜ÛÛXİ[ÛŠ	ÜŞ[˜Ñ]IÊBˆ™ØÊ	Ø\İ]IÊBˆœÙ]
+ÂˆÙ^Nˆ˜[YKˆ	İ\]YIÎˆ\Ù\‹ZYˆ	İ\]Y]	ÎˆšY[˜[YKœÙ\™\•[Y\İ[\
+
+KˆKÙ]Ü[ÛœÊY\™ÙNˆYJJNÂˆHØ]Ú
+JHÂˆXYÔš[
+	Ñš\™X˜\ÙHŞ[˜È\œ›Üˆ	IÊNÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆŞ[˜Ğ[Ñš\™X˜\ÙJ
+H\Ş[˜ÈÂˆš[˜[ÜXÙRYH]ØZ]ÙÙ]ÛÛ›™XİYÜXÙRY
+
+NÂˆYˆ
+ÜXÙRYOH[
+H™]\›Â‚ˆ]ØZ][š]
+
+NÂ‚ˆš[˜[]HHİš[™Ë[˜[ZXÏÂˆ	ØÚ]Y\ÜØYÙ\ÉÎˆ™XY\İ
+	ØÚ]Y\ÜØYÙ\ÉÊKˆ	Ûİ™S›İ\ÉÎˆ™XY\İ
+	Ûİ™S›İ\ÉÊKˆ	ÜÜXÚX[]\ÉÎˆ™XY\İ
+	ÜÜXÚX[]\ÉÊKˆ	ÜÜXÙPÛÛ\Z[ÉÎˆ™XY\İ
+	ÜÜXÙPÛÛ\Z[ÉÊKˆ	ÙØ[\Q›Û\œÉÎˆ™XY\İ
+	ÙØ[\Q›Û\œÉÊKˆ	ÙØ[\SYYXIÎˆ™XY\İ
+	ÙØ[\SYYXIÊKˆNÂ‚ˆ›Üˆ
+š[˜[[H[ˆ]K™[šY\ÊHÂˆYˆ
+]ØZ]ÙÙ]ÛÛ›™XİYÜXÙRY
+
+HOHÜXÙRY
+H™]\›Âˆ]ØZ]ÜŞ[˜ÒÙ^J[KšÙ^K[K˜[YJNÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆŞ[˜Ñœ›ÛQš\™X˜\ÙJ
+H\Ş[˜ÈÂˆHÂˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ÂˆYˆ
+\Ù\ˆOH[
+H™]\›Â‚ˆš[˜[ÜXÙRYH]ØZ]ÙÙ]ÛÛ›™XİYÜXÙRY
+
+NÂˆYˆ
+ÜXÙRYOH[
+H™]\›Â‚ˆš[˜[Û˜\ÚİH]ØZ]š\™X˜\ÙQš\™\İÜ™Kš[œİ[˜ÙBˆ˜ÛÛXİ[ÛŠ	Üš]˜]TÜXÙ\ÉÊBˆ™ØÊÜXÙRY
+Bˆ˜ÛÛXİ[ÛŠ	ÜŞ[˜Ñ]IÊBˆ™ØÊ	Ø\İ]IÊBˆ™Ù]
+
+NÂ‚ˆYˆ
+]ØZ]ÙÙ]ÛÛ›™XİYÜXÙRY
+
+HOHÜXÙRY
+H™]\›ÂˆYˆ
+\Û˜\Úİ™^\İÊH™]\›Âˆ]ØZ]Ø\T™[[İQ]JÛ˜\Úİ™]J
+K›İYPÚ[™Ù\Îˆ˜[ÙJNÂˆHØ]Ú
+JHÂˆXYÔš[
+	Ñš\™X˜\ÙHİÛ›ØY\œ›Üˆ	IÊNÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆØ\T™[[İQ]JˆX\İš[™Ë[˜[ZXÏÈ]KÂˆ›ÛÛ›İYPÚ[™Ù\ÈHYKˆJH\Ş[˜ÈÂˆYˆ
+]HOH[
+H™]\›Â‚ˆ]ØZ][š]
+
+NÂˆš[˜[Ú[™ÙYÙ^\ÈHİš[™Ï–×NÂˆš[˜[İ\œ™[ZYHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ËZYÏÈ	ÉÎÂˆ›Üˆ
+š[˜[[H[ˆ]K™[šY\ÊHÂˆš[˜[Ù^HH[KšÙ^NÂˆYˆ
+Ù^HOH	İ\]YIÈÙ^HOH	İ\]Y]	ÈˆÙ^HOH	Ü\™\“Û™IÈÙ^HOH	Ü\™\•ÛÉÊHÂˆÛÛ[YNÂˆBˆš[˜[Û˜]ÈHÜ™YœÈK™Ù]İš[™ÊÙ^JNÂˆš[˜[™^˜[YHH[K˜[YNÂˆš[˜[›Ü›X[^™Y™^H™^˜[YH\È\İˆÈœÛÛ‘[˜ÛÙJ™^˜[YJBˆˆ™^˜[YH\Èİš[™ÂˆÈ™^˜[YBˆˆ[ÂˆYˆ
+›İYPÚ[™Ù\È	‰‚ˆ›Ü›X[^™Y™^OH[	‰‚ˆÙ^HOH	ØÚ]Y\ÜØYÙ\ÉÈ	‰‚ˆ
+Û˜]ÈOH[Û˜]ÈOH›Ü›X[^™Y™^
+JHÂˆÚ[™ÙYÙ^\Ë˜Y
+Ù^JNÂˆBˆB‚ˆØ\Z[™Ô™[[İQ]HHYNÂ‚ˆHÂˆ›Üˆ
+š[˜[[H[ˆ]K™[šY\ÊHÂˆš[˜[˜[YHH[K˜[YNÂ‚ˆYˆ
+[KšÙ^HOH	Ü\™\“Û™IÈˆ[KšÙ^HOH	Ü\™\•ÛÉÊHÂˆÛÛ[YNÂˆB‚ˆYˆ
+[KšÙ^HOH	ÙØ[\SYYXIÈ	‰ˆ˜[YH\È\İ
+HÂˆš[˜[ØY™SYYXHH˜[YKÚ\™U\OX\Š
+K›X\
+
+˜]Ò][JHÂˆš[˜[][HHX\İš[™Ë[˜[ZXÏ‹™œ›ÛJ˜]Ò][JNÂˆ][Kœ™[[İ™J	Ü]	ÊNÂˆ™]\›ˆ][NÂˆJKÓ\İ
+
+NÂ‚ˆ]ØZ]Ü™YœÈKœÙ]İš[™Ê[KšÙ^KœÛÛ‘[˜ÛÙJØY™SYYXJJNÂˆÛÛ[YNÂˆB‚ˆYˆ
+[KšÙ^HOH	İ\]YIÈˆ[KšÙ^HOH	İ\]Y]	ÊHÂˆÛÛ[YNÂˆB‚ˆYˆ
+˜[YH\È\İ
+HÂˆ]ØZ]Ü™YœÈKœÙ]İš[™Ê[KšÙ^KœÛÛ‘[˜ÛÙJ˜[YJJNÂˆH[ÙHYˆ
+˜[YH\Èİš[™ÊHÂˆ]ØZ]Ü™YœÈKœÙ]İš[™Ê[KšÙ^K˜[YJNÂˆBˆB‚ˆŞ[˜Õ™\œÚ[Û‹˜[YJÊÎÂˆHš[˜[HÂˆØ\Z[™Ô™[[İQ]HH˜[ÙNÂˆB‚ˆYˆ
+Ú[™ÙYÙ^\Ëš\Ó›İ[\H	‰ˆİ\œ™[ZYš\Ó›İ[\JHÂˆš[˜[X™[ÈHİš[™Ëİš[™ÏÂˆ	Ûİ™S›İ\ÉÎˆ	Óİ™H›İ\ÉËˆ	ÜÜXÚX[]\ÉÎˆ	ÔÜXÚX[]\ÉËˆ	ÜÜXÙPÛÛ\Z[ÉÎˆ	ĞÛÛ\Z[È›Ş	Ëˆ	ÙØ[\SYYXIÎˆ	ÑØ[\IËˆ	ÙØ[\Q›Û\œÉÎˆ	ÑØ[\H›Û\œÉËˆ	Ü™[][ÛœÚ\İ\]	Îˆ	ÕÙÙ]\ˆ›Ü‰ËˆNÂˆš[˜[™XYX›HHÚ[™ÙYÙ^\Ë›X\
+
+Ù^JHOˆX™[ÖÚÙ^WHÏÈ	ÔÚ\™Y]IÊKÔÙ]
+
+Kš›Ú[Š	Ë	ÊNÂˆ›İYšXØ][Û”š]˜XŞTÙ][™ÜËœÚİÔ\™\“›İYšXØ][ÛŠˆ]Z[Y]Nˆ	Ô\™\ˆ\]IËˆ]Z[Y›ÙNˆ	ĞÚ[™ÙYˆ	™XYX›IËˆš]˜]U]Nˆ	ĞÚXÚÈÚ[™ÙIËˆš]˜]P›ÙNˆ	Ö[İ\ˆ\™\ˆÚ[™ÙYÚ\™Y]K‰ËˆÚ[™ˆ	ØÚ[™ÙIËˆYˆ]U[YK››İÊ
+K›Z[\ÙXÛÛ™ÔÚ[˜ÙQ\ØÚ	ˆÙ™™™™™™‹ˆ
+K˜Ø]Ú\œ›ÜŠ
+Øš™Xİ\œ›ÜŠHÂˆXYÔš[
+	ÔÚ\™YÚ[™ÙH›İYšXØ][Ûˆ\œ›Üˆ	\œ›Ü‰ÊNÂˆJNÂˆBˆB‚ˆİ]XÈ]\™O›ÚYˆİ\™X[[YTŞ[˜Ê
+H\Ş[˜ÈÂˆ]ØZ]İÜ™X[[YTŞ[˜Ê
+NÂ‚ˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ÂˆYˆ
+\Ù\ˆOH[
+H™]\›Â‚ˆš[˜[ÜXÙRYH]ØZ]ÙÙ]ÛÛ›™XİYÜXÙRY
+
+NÂˆYˆ
+ÜXÙRYOH[
+H™]\›Â‚ˆš[˜[™Y™\™[˜ÙHHš\™X˜\ÙQš\™\İÜ™Kš[œİ[˜ÙBˆ˜ÛÛXİ[ÛŠ	Üš]˜]TÜXÙ\ÉÊBˆ™ØÊÜXÙRY
+Bˆ˜ÛÛXİ[ÛŠ	ÜŞ[˜Ñ]IÊBˆ™ØÊ	Ø\İ]IÊNÂ‚ˆÜŞ[˜ÔİXœØÜš\[ÛˆH™Y™\™[˜ÙKœÛ˜\ÚİÊ
+K›\İ[Šˆ
+Û˜\Úİ
+H\Ş[˜ÈÂˆš[˜[Xİ]™TÜXÙRYH]ØZ]ÙÙ]ÛÛ›™XİYÜXÙRY
+
+NÂˆYˆ
+Xİ]™TÜXÙRYOHÜXÙRY
+HÂˆ]ØZ]İÜ™X[[YTŞ[˜Ê
+NÂˆ™]\›ÂˆB‚ˆYˆ
+\Û˜\Úİ™^\İÊH™]\›Â‚ˆš[˜[]HHÛ˜\Úİ™]J
+NÂˆYˆ
+]HOH[
+H™]\›ÂˆYˆ
+]VÉİ\]YI×HOH\Ù\‹ZY
+H™]\›Â‚ˆ]ØZ]Ø\T™[[İQ]J]JNÂˆKˆÛ‘\œ›Üˆ
+Øš™Xİ\œ›ÜŠHÂˆXYÔš[
+	Ô™X[[YHŞ[˜È\œ›Üˆ	\œ›Ü‰ÊNÂˆKˆ
+NÂˆB‚ˆİ]XÈ]\™O›ÚYˆİÜ™X[[YTŞ[˜Ê
+H\Ş[˜ÈÂˆ]ØZ]ÜŞ[˜ÔİXœØÜš\[ÛË˜Ø[˜Ù[
+
+NÂˆÜŞ[˜ÔİXœØÜš\[ÛˆH[ÂˆBŸB‚‹ËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOB‹ËÈÔTÒĞÔ‘QS‚‹ËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOB‚˜Û\ÜÈÜ\ÚØÜ™Y[ˆ^[™Èİ]Y[ÚYÙ]ÂˆÛÛœİÜ\ÚØÜ™Y[ŠÜİ\\‹šÙ^_JNÂ‚ˆİ™\œšYBˆİ]OÜ\ÚØÜ™Y[ˆÜ™X]Tİ]J
+HOˆÔÜ\ÚØÜ™Y[”İ]J
+NÂŸB‚˜Û\ÜÈÔÜ\ÚØÜ™Y[”İ]H^[™Èİ]OÜ\ÚØÜ™Y[ˆÂˆ›ÛÛÛ™]ÛÜšÕ[˜]˜Z[X›HH˜[ÙNÂ‚ˆ]\™O›ÛÛˆÚ\Ó™]ÛÜšĞÛÛ›™Xİ[ÛŠ
+H\Ş[˜ÈÂˆš[˜[ÛY[HÛY[
+
+Bˆ‹˜ÛÛ›™Xİ[Û•[Y[İ]HÛÛœİ\˜][ÛŠÙXÛÛ™Îˆ
+NÂˆHÂˆš[˜[™\]Y\İH]ØZ]ÛY[ˆ™Ù]\›
+\šKœ\œÙJ	ÚÎ‹ËİİİË™ÛÛÙÛK˜ÛÛKÙÙ[™\˜]WÌŒ	ÊJBˆ[Y[İ]
+ÛÛœİ\˜][ÛŠÙXÛÛ™Îˆ
+JNÂˆš[˜[™\ÜÛœÙHBˆ]ØZ]™\]Y\İ˜ÛÜÙJ
+K[Y[İ]
+ÛÛœİ\˜][ÛŠÙXÛÛ™Îˆ
+JNÂˆ]ØZ]™\ÜÛœÙK™˜Z[›ÚYŠ
+NÂˆ™]\›ˆ™\ÜÛœÙKœİ]\ĞÛÙHHŒ	‰ˆ™\ÜÛœÙKœİ]\ĞÛÙHLÂˆHØ]Ú
+ÊHÂˆ™]\›ˆ˜[ÙNÂˆHš[˜[HÂˆÛY[˜ÛÜÙJ›Ü˜ÙNˆYJNÂˆBˆB‚ˆİ™\œšYBˆ›ÚY[š]İ]J
+HÂˆİ\\‹š[š]İ]J
+NÂˆÜİ\
+
+NÂˆB‚ˆ]\™O›ÚYˆÜİ\
+
+H\Ş[˜ÈÂˆYˆ
+Û™]ÛÜšÕ[˜]˜Z[X›H	‰ˆ[İ[Y
+HÂˆÙ]İ]J
+
+HOˆÛ™]ÛÜšÕ[˜]˜Z[X›HH˜[ÙJNÂˆBˆ]ØZ]ÜXÙTİÜ™Kš[š]
+
+NÂˆYˆ
+X]ØZ]Ú\Ó™]ÛÜšĞÛÛ›™Xİ[ÛŠ
+JHÂˆYˆ
+[İ[Y
+HÙ]İ]J
+
+HOˆÛ™]ÛÜšÕ[˜]˜Z[X›HHYJNÂˆ™]\›ÂˆBˆ]ØZ]]\™K™[^YY
+ÛÛœİ\˜][ÛŠZ[\ÙXÛÛ™ÎˆML
+JNÂ‚ˆYˆ
+[[İ[Y
+H™]\›Â‚ˆ˜\ˆ\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\Â‚ˆËÈØXÚYš\™X˜\ÙHÙ\ÜÚ[ÛœÈ]\İ[ÛÈ\ÜÈ[XZ[™\šYšXØ][Û‹‚ˆYˆ
+\Ù\ˆOH[	‰ˆ\Ù\‹™[XZ[OH[
+HÂˆHÂˆ]ØZ]\Ù\‹œ™[ØY
+
+NÂˆ\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ñ[XZ[™\šYšXØ][Ûˆİ]\ÈÚXÚÈ˜Z[Yˆ	\œ›Ü‰ÊNÂˆB‚ˆYˆ
+\Ù\ˆOH[	‰ˆ]\Ù\‹™[XZ[™\šYšYY
+HÂˆ]ØZ]š\™X˜\ÙP]]š[œİ[˜ÙKœÚYÛ“İ]
+
+NÂˆ\Ù\ˆH[ÂˆBˆB‚ˆYˆ
+[[İ[Y
+H™]\›Â‚ˆYˆ
+\Ù\ˆOH[
+HÂˆHÂˆ]ØZ]ÜXÙTİÜ™KœŞ[˜Ñœ›ÛQš\™X˜\ÙJ
+K[Y[İ]
+ˆÛÛœİ\˜][ÛŠÙXÛÛ™ÎˆŠKˆ
+NÂˆHÛˆ[Y[İ]^Ù\[ÛˆÂˆYˆ
+[İ[Y
+HÙ]İ]J
+
+HOˆÛ™]ÛÜšÕ[˜]˜Z[X›HHYJNÂˆ™]\›ÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ôİ\\Ş[˜È\œ›Üˆ	\œ›Ü‰ÊNÂˆB‚ˆHÂˆ]ØZ]ÜXÙTİÜ™Kœİ\™X[[YTŞ[˜Ê
+K[Y[İ]
+ˆÛÛœİ\˜][ÛŠÙXÛÛ™ÎˆŠKˆ
+NÂˆHÛˆ[Y[İ]^Ù\[ÛˆÂˆYˆ
+[İ[Y
+HÙ]İ]J
+
+HOˆÛ™]ÛÜšÕ[˜]˜Z[X›HHYJNÂˆ™]\›ÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Ôİ\\™X[[YHŞ[˜È\œ›Üˆ	\œ›Ü‰ÊNÂˆB‚ˆYˆ
+[[İ[Y
+H™]\›Â‚ˆ˜]šYØ]Ü‹œ\Ú™\XÙ[Y[
+ˆÛÛ^ˆX]\šX[YÙT›İ]JˆZ[\ˆ
+ÊHOˆÛÛœİXZ[”ØÜ™Y[Š
+Kˆ
+Kˆ
+NÂˆH[ÙHÂˆ˜]šYØ]Ü‹œ\Ú™\XÙ[Y[
+ˆÛÛ^ˆX]\šX[YÙT›İ]JˆZ[\ˆ
+ÊHOˆ]]ØÜ™Y[ŠˆÛ”İXØÙ\ÜÎˆ
+
+H\Ş[˜ÈÂˆ›Ûİ˜]šYØ]Ü’Ù^K˜İ\œ™[İ]OËœ\Ú[™™[[İ™U[[
+ˆX]\šX[YÙT›İ]JˆZ[\ˆ
+ÊHOˆÛÛœİXZ[”ØÜ™Y[Š
+Kˆ
+Kˆ
+›İ]JHOˆ˜[ÙKˆ
+NÂ‚ˆHÂˆ]ØZ]ÜXÙTİÜ™KœŞ[˜Ñœ›ÛQš\™X˜\ÙJ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÓÙÚ[ˆŞ[˜È\œ›Üˆ	\œ›Ü‰ÊNÂˆB‚ˆHÂˆ]ØZ]ÜXÙTİÜ™Kœİ\™X[[YTŞ[˜Ê
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÓÙÚ[ˆ™X[[YHŞ[˜È\œ›Üˆ	\œ›Ü‰ÊNÂˆBˆKˆÛ•šX[ˆ
+
+H\Ş[˜ÈßKˆ
+Kˆ
+Kˆ
+NÂˆBˆB‚ˆİ™\œšYBˆÚYÙ]Z[
+Z[ÛÛ^ÛÛ^
+HÂˆYˆ
+Û™]ÛÜšÕ[˜]˜Z[X›JHÂˆ™]\›ˆØØY™›Û
+ˆ˜XÚÙÜ›İ[™ÛÛÜˆ˜XÚÙÜ›İ[™ÛÛÜ‹ˆ›ÙNˆØY™P\™XJˆÚ[ˆÙ[\ŠˆÚ[ˆY[™ÊˆY[™ÎˆÛÛœİYÙR[œÙ]Ë˜[
+
+KˆÚ[ˆÛÛ[[ŠˆXZ[^\ÔÚ^™NˆXZ[^\ÔÚ^™K›Z[‹ˆÚ[™[ˆÂˆÛÛœİXÛÛŠˆXÛÛœËÚYšWÛÙ™—Ü›İ[™YˆÚ^™NˆˆÛÛÜˆ[šĞÛÛÜ‹ˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆŒŠKˆÛÛœİ^
+ˆ	ĞÚXÚÈ[İ\ˆ™]ÛÜšÈÛÛ›™Xİ[Û‰Ëˆ^[YÛˆ^[YÛ‹˜Ù[\‹ˆİ[Nˆ^İ[JˆÛÛÜˆÛÛÜœËÚ]Kˆ›ÛÚ^™NˆŒKˆ›ÛÙZYÚˆ›ÛÙZYÚ˜›Ûˆ
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆL
+KˆÛÛœİ^
+ˆ	ÍhÙÍ5£~ÀÖùò.×ŸŠw˜#Z6åÈºw^~)ŞvïhÑ 5£g‹§uçâç~°ÖZ7íÍhß¾"éİyø§yİ°5£eœ°(€€€€€€€€€€€€€€€€€€€Ñ•áÑ±¥¸èQ•áÑ±¥¸¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÜÀ¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÈĞ¤°(€€€€€€€€€€€€€€€€€¥±±•‘	ÕÑÑ½¸¹¥½¸ (€€€€€€€€€€€€€€€€€€€½¹AÉ•ÍÍ•è}ÍÑ…ÉĞ°(€€€€€€€€€€€€€€€€€€€¥½¸è½¹ÍĞ%½¸¡%½¹Ì¹É•™É•Í¡}É½Õ¹‘•¤°(€€€€€€€€€€€€€€€€€€€±…‰•°è½¹ÍĞQ•áĞ QÉä…¥¸œ¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€¤°(€€€€€€¤ì(€€€ô((€€€É•ÑÕÉ¸M…™™½± (€€€€€‰½‘äè±½İ	…­É½Õ¹ (€€€€€€€¡¥±è•¹Ñ•È (€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€½¹Ñ…¥¹•È (€€€€€€€€€€€€€€€İ¥‘Ñ è€ÈÈà°(€€€€€€€€€€€€€€€¡•¥¡Ğè€ÄÔÈ°(€€€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ¡¡½É¥é½¹Ñ…°è€Ğ°Ù•ÉÑ¥…°è€È¤°(€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹‰±…¬°(€€€€€€€€€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È Äà¤°(€€€€€€€€€€€€€€€€€‰½áM¡…‘½Üèl(€€€€€€€€€€€€€€€€€€€	½áM¡…‘½Ü¡½±½ÈèÁ¥¹­½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÈÀ¤°‰±ÕÉI…‘¥ÕÌè€ÈĞ°ÍÁÉ•…‘I…‘¥ÕÌè€Ä¤°(€€€€€€€€€€€€€€€€€€€	½áM¡…‘½Ü¡½±½ÈèÁÕÉÁ±•½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸Äà¤°‰±ÕÉI…‘¥ÕÌè€ÌĞ°ÍÁÉ•…‘I…‘¥ÕÌè€È¤°(€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€¡¥±è%µ…”¹…ÍÍ•Ğ (€€€€€€€€€€€€€€€€€€…ÍÍ•ÑÌ½‰É…¹‘¥¹œ½½É‰¥Ñ}Ñİ½}±½¼¹©Áœœ°(€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ÈÈÀ°(€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ÄĞÜ°(€€€€€€€€€€€€€€€€€™¥Ğè	½á¥Ğ¹½¹Ñ…¥¸°(€€€€€€€€€€€€€€€€€•ÉÉ½É	Õ¥±‘•Èè€¡½¹Ñ•áĞ°•ÉÉ½È°ÍÑ…­QÉ…”¤€ôø½¹ÍĞ%½¸ (€€€€€€€€€€€€€€€€€€€%½¹Ì¹™…Ù½É¥Ñ•}É½Õ¹‘•°(€€€€€€€€€€€€€€€€€€€Í¥é”è€ÜÈ°(€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€M¥é•‘	½à¡¡•¥¡Ğè€Äà¤°(€€€€€€€€€€€€€½¹ÍĞ¹¥µ…Ñ•‘=É‰¥ÑQ¥Ñ±” (€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÌÀ°(€€€€€€€€€€€€€€€ÍÁ±…Í èÑÉÕ”°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€M¥é•‘	½à¡¡•¥¡Ğè€à¤°(€€€€€€€€€€€€€Q•áĞ (€€€€€€€€€€€€€€€€±¥ÑÑ±”Õ¹¥Ù•ÉÍ”™½ÈÑİ¼œ°(€€€€€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ØÀ¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€M¥é•‘	½à¡¡•¥¡Ğè€Èà¤°(€€€€€€€€€€€€€M¥é•‘	½à (€€€€€€€€€€€€€€€İ¥‘Ñ è€Èà°(€€€€€€€€€€€€€€€¡•¥¡Ğè€Èà°(€€€€€€€€€€€€€€€¡¥±è¥ÉÕ±…ÉAÉ½É•ÍÍ%¹‘¥…Ñ½È¡ÍÑÉ½­•]¥‘Ñ è€È¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€t°(€€€€€€€€€€¤°(€€€€€€€€¤°(€€€€€€¤°(€€€€¤ì(€ô)ô()±…ÍÌ¹¥µ…Ñ•‘=É‰¥ÑQ¥Ñ±”•áÑ•¹‘ÌMÑ…Ñ•™Õ±]¥‘•Ğì(€™¥¹…°‘½Õ‰±”™½¹ÑM¥é”ì(€™¥¹…°‰½½°ÍÁ±…Í ì((€½¹ÍĞ¹¥µ…Ñ•‘=É‰¥ÑQ¥Ñ±”¡ì(€€€ÍÕÁ•È¹­•ä°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹™½¹ÑM¥é”°(€€€Ñ¡¥Ì¹ÍÁ±…Í €ô™…±Í”°(€ô¤ì((€½Ù•ÉÉ¥‘”(€MÑ…Ñ”ñ¹¥µ…Ñ•‘=É‰¥ÑQ¥Ñ±”øÉ•…Ñ•MÑ…Ñ” ¤€ôø}¹¥µ…Ñ•‘=É‰¥ÑQ¥Ñ±•MÑ…Ñ” ¤ì)ô()±…ÍÌ}¹¥µ…Ñ•‘=É‰¥ÑQ¥Ñ±•MÑ…Ñ”•áÑ•¹‘ÌMÑ…Ñ”ñ¹¥µ…Ñ•‘=É‰¥ÑQ¥Ñ±”ø(€€€İ¥Ñ M¥¹±•Q¥­•ÉAÉ½Ù¥‘•ÉMÑ…Ñ•5¥á¥¸ì(€±…Ñ”™¥¹…°¹¥µ…Ñ¥½¹½¹ÑÉ½±±•È}½¹ÑÉ½±±•È€ô¹¥µ…Ñ¥½¹½¹ÑÉ½±±•È (€€€ÙÍå¹ŒèÑ¡¥Ì°(€€€€¼¼M±½İ•È°Íµ½½Ñ¡•È…µ‰¥•¹Ğµ½Ù•µ•¹Ğ…É½ÍÌÑ¡”İ¡½±”ÍÉ••¸¸(€€€‘ÕÉ…Ñ¥½¸è½¹ÍĞÕÉ…Ñ¥½¸¡Í•½¹‘Ìè€ÄØ¤°(€€¤¸¹É•Á•…Ğ ¤ì((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥ÍÁ½Í” ¤ì(€€€}½¹ÑÉ½±±•È¹‘¥ÍÁ½Í” ¤ì(€€€ÍÕÁ•È¹‘¥ÍÁ½Í” ¤ì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸¹¥µ…Ñ•‘	Õ¥±‘•È (€€€€€…¹¥µ…Ñ¥½¸è}½¹ÑÉ½±±•È°(€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°|¤ì(€€€€€€€™¥¹…°¡Õ”€ô€¡}½¹ÑÉ½±±•È¹Ù…±Õ”€¨€ÌØÀ¤€”€ÌØÀì(€€€€€€€™¥¹…°™¥ÉÍĞ€ô!MY½±½È¹™É½µ!MX Ä°¡Õ”°€À¸ĞÈ°€Ä¤¹Ñ½½±½È ¤ì(€€€€€€€™¥¹…°Í•½¹€ô(€€€€€€€€€€€!MY½±½È¹™É½µ!MX Ä°€¡¡Õ”€¬€äÔ¤€”€ÌØÀ°€À¸Ğà°€Ä¤¹Ñ½½±½È ¤ì(€€€€€€€™¥¹…°Ñ¡¥É€ô(€€€€€€€€€€€!MY½±½È¹™É½µ!MX Ä°€¡¡Õ”€¬€ÄäÀ¤€”€ÌØÀ°€À¸Ìà°€Ä¤¹Ñ½½±½È ¤ì((€€€€€€€É•ÑÕÉ¸M¡…‘•É5…Í¬ (€€€€€€€€€Í¡…‘•É…±±‰…¬è€¡‰½Õ¹‘Ì¤€ôø1¥¹•…ÉÉ…‘¥•¹Ğ (€€€€€€€€€€€½±½ÉÌèm™¥ÉÍĞ°Í•½¹°Ñ¡¥É‘t°(€€€€€€€€€€€‰•¥¸è±¥¹µ•¹Ğ¹•¹Ñ•É1•™Ğ°(€€€€€€€€€€€•¹è±¥¹µ•¹Ğ¹•¹Ñ•ÉI¥¡Ğ°(€€€€€€€€€€¤¹É•…Ñ•M¡…‘•È¡‰½Õ¹‘Ì¤°(€€€€€€€€€¡¥±èQ•áĞ (€€€€€€€€€€€€=É‰¥ĞQİ¼œ°(€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±” (€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€™½¹Ñ…µ¥±äè€Í•É¥˜œ°(€€€€€€€€€€€€€™½¹ÑM¥é”èİ¥‘•Ğ¹™½¹ÑM¥é”°(€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹ÜÜÀÀ°(€€€€€€€€€€€€€±•ÑÑ•ÉMÁ…¥¹œèİ¥‘•Ğ¹ÍÁ±…Í €ü€Ä¸Ä€è€À¸Ğ°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€¤ì(€€€€€ô°(€€€€¤ì(€ô)ô((¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(¼¼	-I=U9(¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô()±…ÍÌ±½İ	…­É½Õ¹•áÑ•¹‘ÌMÑ…Ñ•™Õ±]¥‘•Ğì(€™¥¹…°]¥‘•Ğ¡¥±ì((€½¹ÍĞ±½İ	…­É½Õ¹¡ì(€€€ÍÕÁ•È¹­•ä°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹¡¥±°(€ô¤ì((€½Ù•ÉÉ¥‘”(€MÑ…Ñ”ñ±½İ	…­É½Õ¹øÉ•…Ñ•MÑ…Ñ” ¤€ôø}±½İ	…­É½Õ¹‘MÑ…Ñ” ¤ì)ô()±…ÍÌ}±½İ	…­É½Õ¹‘MÑ…Ñ”•áÑ•¹‘ÌMÑ…Ñ”ñ±½İ	…­É½Õ¹ø(€€€İ¥Ñ M¥¹±•Q¥­•ÉAÉ½Ù¥‘•ÉMÑ…Ñ•5¥á¥¸ì(€±…Ñ”™¥¹…°¹¥µ…Ñ¥½¹½¹ÑÉ½±±•È}½¹ÑÉ½±±•È€ô¹¥µ…Ñ¥½¹½¹ÑÉ½±±•È (€€€ÙÍå¹ŒèÑ¡¥Ì°(€€€‘ÕÉ…Ñ¥½¸è½¹ÍĞÕÉ…Ñ¥½¸¡Í•½¹‘Ìè€ÌÀ¤°(€€¤¸¹É•Á•…Ğ¡É•Ù•ÉÍ”èÑÉÕ”¤ì((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥ÍÁ½Í” ¤ì(€€€}½¹ÑÉ½±±•È¹‘¥ÍÁ½Í” ¤ì(€€€ÍÕÁ•È¹‘¥ÍÁ½Í” ¤ì(€ô((€]¥‘•Ğ}±½Ü¡‘½Õ‰±”Í¥é”°½±½È½±½È¤ì(€€€É•ÑÕÉ¸%¹½É•A½¥¹Ñ•È (€€€€€¡¥±èI•Á…¥¹Ñ	½Õ¹‘…Éä (€€€€€€€¡¥±èM¥é•‘	½à (€€€€€€€€€İ¥‘Ñ èÍ¥é”°(€€€€€€€€€¡•¥¡ĞèÍ¥é”°(€€€€€€€€€¡¥±è•½É…Ñ•‘	½à (€€€€€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€Í¡…Á”è	½áM¡…Á”¹¥É±”°(€€€€€€€€€€€€€É…‘¥•¹ĞèI…‘¥…±É…‘¥•¹Ğ (€€€€€€€€€€€€€€€½±½ÉÌèl(€€€€€€€€€€€€€€€€€½±½È°(€€€€€€€€€€€€€€€€€½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸Ğà¤°(€€€€€€€€€€€€€€€€€½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¤°(€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€ÍÑ½ÁÌè½¹ÍĞlÀ¸À°€À¸Ğ°€Ä¸Át°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€¤°(€€€€€€¤°(€€€€¤ì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸½¹Ñ…¥¹•È (€€€€€‘•½É…Ñ¥½¸è½¹ÍĞ	½á•½É…Ñ¥½¸ (€€€€€€€É…‘¥•¹Ğè1¥¹•…ÉÉ…‘¥•¹Ğ (€€€€€€€€€‰•¥¸è±¥¹µ•¹Ğ¹Ñ½Á1•™Ğ°(€€€€€€€€€•¹è±¥¹µ•¹Ğ¹‰½ÑÑ½µI¥¡Ğ°(€€€€€€€€€½±½ÉÌèl(€€€€€€€€€€€½±½È ÁáÀÜÀÔÄÌ¤°(€€€€€€€€€€€½±½È ÁáÄÀÀÜÅ¤°(€€€€€€€€€€€½±½È ÁáÄäÁÉ¤°(€€€€€€€€€€€½±½È ÁáÀÜÀÔÄÌ¤°(€€€€€€€€€t°(€€€€€€€€¤°(€€€€€€¤°(€€€€€¡¥±è1…å½ÕÑ	Õ¥±‘•È (€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°½¹ÍÑÉ…¥¹ÑÌ¤ì(€€€€€€€€€™¥¹…°İ¥‘Ñ €ô½¹ÍÑÉ…¥¹ÑÌ¹µ…á]¥‘Ñ ì(€€€€€€€€€™¥¹…°¡•¥¡Ğ€ô½¹ÍÑÉ…¥¹ÑÌ¹µ…á!•¥¡Ğì(€€€€€€€€€É•ÑÕÉ¸¹¥µ…Ñ•‘	Õ¥±‘•È (€€€€€€€€€€€…¹¥µ…Ñ¥½¸è}½¹ÑÉ½±±•È°(€€€€€€€€€€€¡¥±èM…™•É•„¡¡¥±èI•Á…¥¹Ñ	½Õ¹‘…Éä¡¡¥±èİ¥‘•Ğ¹¡¥±¤¤°(€€€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°¡¥±¤ì(€€€€€€€€€€€€€™¥¹…°Á¡…Í”€ô}½¹ÑÉ½±±•È¹Ù…±Õ”€¨€È€¨Á¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸MÑ…¬ (€€€€€€€€€€€€€€€±¥Á	•¡…Ù¥½Èè±¥À¹¡…É‘‘”°(€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€¼¼… ±½Ü™½±±½İÌ„‘¥™™•É•¹Ğ™Õ±°µÍÉ••¸½É‰¥Ñ…°Á…Ñ ¸(€€€€€€€€€€€€€€€€€A½Í¥Ñ¥½¹• (€€€€€€€€€€€€€€€€€€€±•™Ğèİ¥‘Ñ €¨€À¸ÀÈ€¬½Ì¡Á¡…Í”¤€¨İ¥‘Ñ €¨€À¸ÈĞ°(€€€€€€€€€€€€€€€€€€€Ñ½Àè¡•¥¡Ğ€¨€À¸ÀĞ€¬Í¥¸¡Á¡…Í”¤€¨¡•¥¡Ğ€¨€À¸ÈĞ°(€€€€€€€€€€€€€€€€€€€¡¥±è}±½Ü ÌĞÀ°½¹ÍĞ½±½È ÁááÅØÈ¤¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÌĞ¤¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€A½Í¥Ñ¥½¹• (€€€€€€€€€€€€€€€€€€€É¥¡Ğèİ¥‘Ñ €¨€À¸ÀÄ€¬Í¥¸¡Á¡…Í”¤€¨İ¥‘Ñ €¨€À¸ÈÈ°(€€€€€€€€€€€€€€€€€€€‰½ÑÑ½´è¡•¥¡Ğ€¨€À¸ÀÈ€¬½Ì¡Á¡…Í”¤€¨¡•¥¡Ğ€¨€À¸ÈÔ°(€€€€€€€€€€€€€€€€€€€¡¥±è}±½Ü ÌÜÀ°½¹ÍĞ½±½È ÁáØàÈÙà¤¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÌĞ¤¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€A½Í¥Ñ¥½¹• (€€€€€€€€€€€€€€€€€€€±•™Ğèİ¥‘Ñ €¨€À¸Èà€¬½Ì¡Á¡…Í”€¨€Ä¸ÌÔ€¬€Ä¸È¤€¨İ¥‘Ñ €¨€À¸Èà°(€€€€€€€€€€€€€€€€€€€Ñ½Àè¡•¥¡Ğ€¨€À¸ÌÀ€¬Í¥¸¡Á¡…Í”€¨€Ä¸ÌÔ€¬€Ä¸È¤€¨¡•¥¡Ğ€¨€À¸ÌÀ°(€€€€€€€€€€€€€€€€€€€¡¥±è}±½Ü ÌÄÀ°½¹ÍĞ½±½È ÁáÔÅÜÈ¤¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÈÈ¤¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€A½Í¥Ñ¥½¹• (€€€€€€€€€€€€€€€€€€€É¥¡Ğèİ¥‘Ñ €¨€À¸Äà€¬Í¥¸¡Á¡…Í”€¨€Ä¸Ô€¬€È¸Ğ¤€¨İ¥‘Ñ €¨€À¸ÈØ°(€€€€€€€€€€€€€€€€€€€Ñ½Àè¡•¥¡Ğ€¨€À¸Äà€¬½Ì¡Á¡…Í”€¨€Ä¸Ô€¬€È¸Ğ¤€¨¡•¥¡Ğ€¨€À¸ÌÈ°(€€€€€€€€€€€€€€€€€€€¡¥±è}±½Ü ÌÀÀ°½¹ÍĞ½±½È ÁáÔĞÈÑà¤¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÈĞ¤¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€A½Í¥Ñ¥½¹• (€€€€€€€€€€€€€€€€€€€±•™Ğèİ¥‘Ñ €¨€À¸ÄÈ€¬Í¥¸¡Á¡…Í”€¨€Ä¸à€¬€À¸Ü¤€¨İ¥‘Ñ €¨€À¸ÌĞ°(€€€€€€€€€€€€€€€€€€€Ñ½Àè¡•¥¡Ğ€¨€À¸ÔÀ€¬½Ì¡Á¡…Í”€¨€Ä¸à€¬€À¸Ü¤€¨¡•¥¡Ğ€¨€À¸ÌĞ°(€€€€€€€€€€€€€€€€€€€¡¥±è}±½Ü ÈÔÀ°½¹ÍĞ½±½È ÁáÍàÉØ¤¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÄÔ¤¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€¥˜€¡¡¥±€„ô¹Õ±°¤A½Í¥Ñ¥½¹•¹™¥±°¡¡¥±è¡¥±¤°(€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô°(€€€€€€€€€€¤ì(€€€€€€€ô°(€€€€€€¤°(€€€€¤ì(€ô)ô((¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(¼¼UA1=1=Q%9%9%Q=H(¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô()±…ÍÌUÁ±½…‘±½…Ñ¥¹%¹‘¥…Ñ½È•áÑ•¹‘ÌMÑ…Ñ•±•ÍÍ]¥‘•Ğì(€½¹ÍĞUÁ±½…‘±½…Ñ¥¹%¹‘¥…Ñ½È¡íÍÕÁ•È¹­•åô¤ì((€MÑÉ¥¹œ}™½Éµ…ÑMÁ••¡‘½Õ‰±”‰åÑ•ÍA•ÉM•½¹¤ì(€€€¥˜€¡‰åÑ•ÍA•ÉM•½¹€øô€ÄÀÈĞ€¨€ÄÀÈĞ¤ì(€€€€€É•ÑÕÉ¸€œ‘ì¡‰åÑ•ÍA•ÉM•½¹€¼€ ÄÀÈĞ€¨€ÄÀÈĞ¤¤¹Ñ½MÑÉ¥¹Í¥á• Ä¥ô5½Ìœì(€€€ô(€€€¥˜€¡‰åÑ•ÍA•ÉM•½¹€øô€ÄÀÈĞ¤ì(€€€€€É•ÑÕÉ¸€œ‘ì¡‰åÑ•ÍA•ÉM•½¹€¼€ÄÀÈĞ¤¹Ñ½MÑÉ¥¹Í¥á• Ä¥ô-½Ìœì(€€€ô(€€€É•ÑÕÉ¸€œ‘í‰åÑ•ÍA•ÉM•½¹¹Ñ½MÑÉ¥¹Í¥á• À¥ô½Ìœì(€ô((€%½¹…Ñ„}™¥±•%½¸¡MÑÉ¥¹œ™¥±•9…µ”¤ì(€€€™¥¹…°¹…µ”€ô™¥±•9…µ”¹Ñ½1½İ•É…Í” ¤ì((€€€¥˜€¡¹…µ”¹•¹‘Í]¥Ñ  œ¹µÀĞœ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹µ½Øœ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹µ­Øœ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹İ•‰´œ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹…Ù¤œ¤¤ì(€€€€€É•ÑÕÉ¸%½¹Ì¹Ù¥‘•½…µ}É½Õ¹‘•ì(€€€ô((€€€¥˜€¡¹…µ”¹•¹‘Í]¥Ñ  œ¹©Áœœ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹©Á•œœ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹Á¹œœ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹İ•‰Àœ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹¥˜œ¤ñğ(€€€€€€€¹…µ”¹•¹‘Í]¥Ñ  œ¹¡•¥Œœ¤¤ì(€€€€€É•ÑÕÉ¸%½¹Ì¹¥µ…•}É½Õ¹‘•ì(€€€ô((€€€É•ÑÕÉ¸%½¹Ì¹ÕÁ±½…‘}™¥±•}É½Õ¹‘•ì(€ô((€Ù½¥}Í¡½İUÁ±½…‘•Ñ…¥±Ì¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€Í¡½İ5½‘…±	½ÑÑ½µM¡••ĞñÙ½¥ø (€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€¥ÍMÉ½±±½¹ÑÉ½±±•èÑÉÕ”°(€€€€€Í¡…Á”è½¹ÍĞI½Õ¹‘•‘I•Ñ…¹±•	½É‘•È (€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹Ù•ÉÑ¥…° (€€€€€€€€€Ñ½ÀèI…‘¥ÕÌ¹¥ÉÕ±…È ÈĞ¤°(€€€€€€€€¤°(€€€€€€¤°(€€€€€‰Õ¥±‘•Èè€¡Í¡••Ñ½¹Ñ•áĞ¤ì(€€€€€€€É•ÑÕÉ¸M…™•É•„ (€€€€€€€€€¡¥±èA…‘‘¥¹œ (€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹™É½µ1QI ÈÀ°€ÄÈ°€ÈÀ°€ÈĞ¤°(€€€€€€€€€€€¡¥±èY…±Õ•1¥ÍÑ•¹…‰±•	Õ¥±‘•Èñ1¥ÍĞñUÁ±½…‘AÉ½É•ÍÌøø (€€€€€€€€€€€€€Ù…±Õ•1¥ÍÑ•¹…‰±”èMÁ…•Må¹M•ÉÙ¥”¹ÕÁ±½…‘AÉ½É•ÍÌ°(€€€€€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°ÕÁ±½…‘Ì°|¤ì(€€€€€€€€€€€€€€€™¥¹…°…Ñ¥Ù•UÁ±½…‘Ì€ôÕÁ±½…‘Ì(€€€€€€€€€€€€€€€€€€€€¹İ¡•É” ¡ÕÁ±½…¤€ôøÕÁ±½…¹¥ÍUÁ±½…‘¥¹œ¤(€€€€€€€€€€€€€€€€€€€€¹Ñ½1¥ÍĞ ¤ì((€€€€€€€€€€€€€€€É•ÑÕÉ¸½±Õµ¸ (€€€€€€€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€½¹Ñ…¥¹•È (€€€€€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ĞÈ°(€€€€€€€€€€€€€€€€€€€€€¡•¥¡Ğè€Ğ°(€€€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÈĞ°(€€€€€€€€€€€€€€€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È Ğ¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€Äà¤°(€€€€€€€€€€€€€€€€€€€I½Ü (€€€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞ%½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€%½¹Ì¹±½Õ‘}ÕÁ±½…‘}É½Õ¹‘•°(€€€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€Í¥é”è€ÈÔ°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡İ¥‘Ñ è€ÄÀ¤°(€€€€€€€€€€€€€€€€€€€€€€€áÁ…¹‘• (€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±èQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€¾¬Öû".×ŸŠwú£Z6èHºw^~)ŞvfhÛÇ (${activeUploads.length})',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -1340,246 +512,7 @@ class UploadFloatingIndicator extends StatelessWidget {
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
                         child: Text(
-                          'à¦à¦–à¦¨ à¦•à§‹à¦¨à§‹ à¦«à¦¾à¦‡à¦² à¦†à¦ªà¦²à§‹à¦¡ à¦¹à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                      )
-                    else
-                      Flexible(
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          physics: const ClampingScrollPhysics(),
-                          itemCount: activeUploads.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 14),
-                          itemBuilder: (context, index) {
-                            final upload = activeUploads[index];
-                            final progress =
-                                upload.progress.clamp(0.0, 1.0);
-
-                            return Row(
-                              children: [
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    color: purpleColor.withValues(alpha: 0.18),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(
-                                    _fileIcon(upload.fileName),
-                                    color: pinkColor,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        upload.fileName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 5),
-                                      Text(
-                                        _formatSpeed(upload.bytesPerSecond),
-                                        style: const TextStyle(
-                                          color: Colors.white60,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                SizedBox(
-                                  width: 46,
-                                  height: 46,
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      SizedBox(
-                                        width: 42,
-                                        height: 42,
-                                        child: CircularProgressIndicator(
-                                          value: progress,
-                                          strokeWidth: 4,
-                                          backgroundColor: Colors.white12,
-                                          valueColor:
-                                              const AlwaysStoppedAnimation<
-                                                  Color>(pinkColor),
-                                        ),
-                                      ),
-                                      Text(
-                                        '${(progress * 100).round()}%',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<UploadProgress>>(
-      valueListenable: SpaceSyncService.uploadProgress,
-      builder: (context, uploads, _) {
-        final count =
-            uploads.where((upload) => upload.isUploading).length;
-
-        if (count == 0) {
-          return const SizedBox.shrink();
-        }
-
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _showUploadDetails(context),
-            customBorder: const CircleBorder(),
-            child: Container(
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: pinkColor.withValues(alpha: 0.8),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: pinkColor.withValues(alpha: 0.25),
-                    blurRadius: 16,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  const Icon(
-                    Icons.cloud_upload_rounded,
-                    color: Colors.white,
-                    size: 27,
-                  ),
-                  Positioned(
-                    right: -3,
-                    top: -3,
-                    child: Container(
-                      constraints: const BoxConstraints(
-                        minWidth: 23,
-                        minHeight: 23,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 3,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: pinkColor,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '$count',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ============================================================
-// MAIN SCREEN AND NAVIGATION
-// ============================================================
-
-class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
-
-  @override
-  State<MainScreen> createState() => _MainScreenState();
-}
-
-class _MainScreenState extends State<MainScreen>
-    with WidgetsBindingObserver {
-  int selectedIndex = 0;
-  String partnerOne = '';
-  String partnerTwo = '';
-  bool hasUnreadChat = false;
-
-  StreamSubscription<List<Map<String, dynamic>>>? _unreadSubscription;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _connectionSubscription;
-  String? _watchedSpaceId;
-  bool _connectionSyncBusy = false;
-  bool _connectionSyncReady = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    orbitShareChannel.setMethodCallHandler((call) async {
-      if (call.method == 'sharedText') {
-        final shared = '${call.arguments ?? ''}'.trim();
-        if (shared.isNotEmpty && mounted) unawaited(_handleIncomingSharedText(shared));
-      }
-    });
-    unawaited(_loadInitialSharedText());
-    _loadPartnerNames();
-    _startUnreadWatcher();
-    _updatePresence(true);
-    _startConnectionWatcher();
-    _recoverPendingUploads();
-  }
-
-  Future<void> _loadInitialSharedText() async {
-    try {
-      final shared = await orbitShareChannel.invokeMethod<String>('getInitialSharedText');
-      if (shared != null && shared.trim().isNotEmpty && mounted) await _handleIncomingSharedText(shared.trim());
-    } catch (error) { debugPrint('Initial shared text unavailable: $error'); }
-  }
-
-  Future<void> _handleIncomingSharedText(String shared) async {
-    // Check the actual Firebase space connection, not just a cached partner name.
-    final connectedSpaceId = await SpaceStore._getConnectedSpaceId();
-    if (!mounted) return;
-    if (connectedSpaceId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('à¦²à¦¿à¦‚à¦• à¦¶à§‡à§Ÿà¦¾à¦° à¦•à¦°à¦¤à§‡ à¦†à¦—à§‡ Partner-à¦à¦° à¦¸à¦™à§à¦—à§‡ Connect à¦•à¦°à§‹à¥¤'),
+                          /5£`€Öº‹§uçâçrš³Z7ìˆºw^~)ŞwêhÛ¡"éİyø§yÙš5£o‹§uçâçfúéİyø§yĞœ°(€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÜÀ¤°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€€€€€€•±Í”(€€€€€€€€€€€€€€€€€€€€€±•á¥‰±” (€€€€€€€€€€€€€€€€€€€€€€€¡¥±è1¥ÍÑY¥•Ü¹Í•Á…É…Ñ• (€€€€€€€€€€€€€€€€€€€€€€€€€Í¡É¥¹­]É…ÀèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€Á¡åÍ¥Ìè½¹ÍĞ±…µÁ¥¹MÉ½±±A¡åÍ¥Ì ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€¥Ñ•µ½Õ¹Ğè…Ñ¥Ù•UÁ±½…‘Ì¹±•¹Ñ °(€€€€€€€€€€€€€€€€€€€€€€€€€Í•Á…É…Ñ½É	Õ¥±‘•Èè€¡|°}|¤€ôø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÄĞ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€¥Ñ•µ	Õ¥±‘•Èè€¡½¹Ñ•áĞ°¥¹‘•à¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€™¥¹…°ÕÁ±½…€ô…Ñ¥Ù•UÁ±½…‘Ím¥¹‘•átì(€€€€€€€€€€€€€€€€€€€€€€€€€€€™¥¹…°ÁÉ½É•ÍÌ€ô(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ±½…¹ÁÉ½É•ÍÌ¹±…µÀ À¸À°€Ä¸À¤ì((€€€€€€€€€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸I½Ü (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹Ñ…¥¹•È (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ĞÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ĞÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁÕÉÁ±•½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸Äà¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È ÄÈ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è%½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€}™¥±•%½¸¡ÕÁ±½…¹™¥±•9…µ”¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡İ¥‘Ñ è€ÄÈ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€áÁ…¹‘• (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€É½ÍÍá¥Í±¥¹µ•¹Ğè(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€É½ÍÍá¥Í±¥¹µ•¹Ğ¹ÍÑ…ÉĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Q•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ±½…¹™¥±•9…µ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1¥¹•Ìè€Ä°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½Ù•É™±½ÜèQ•áÑ=Ù•É™±½Ü¹•±±¥ÁÍ¥Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹ÜØÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€Ô¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Q•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€}™½Éµ…ÑMÁ••¡ÕÁ±½…¹‰åÑ•ÍA•ÉM•½¹¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”ØÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÄÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡İ¥‘Ñ è€ÄÈ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€M¥é•‘	½à (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ĞØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ĞØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±èMÑ…¬ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€…±¥¹µ•¹Ğè±¥¹µ•¹Ğ¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€M¥é•‘	½à (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ĞÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ĞÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è¥ÉÕ±…ÉAÉ½É•ÍÍ%¹‘¥…Ñ½È (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”èÁÉ½É•ÍÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ½­•]¥‘Ñ è€Ğ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…­É½Õ¹‘½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÄÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ•½±½Èè(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞ±İ…åÍMÑ½ÁÁ•‘¹¥µ…Ñ¥½¸ğ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èø¡Á¥¹­½±½È¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Q•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€œ‘ì¡ÁÉ½É•ÍÌ€¨€ÄÀÀ¤¹É½Õ¹ ¥ô”œ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÄÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹‰½±°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€ô°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€¤ì(€€€€€ô°(€€€€¤ì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸Y…±Õ•1¥ÍÑ•¹…‰±•	Õ¥±‘•Èñ1¥ÍĞñUÁ±½…‘AÉ½É•ÍÌøø (€€€€€Ù…±Õ•1¥ÍÑ•¹…‰±”èMÁ…•Må¹M•ÉÙ¥”¹ÕÁ±½…‘AÉ½É•ÍÌ°(€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°ÕÁ±½…‘Ì°|¤ì(€€€€€€€™¥¹…°½Õ¹Ğ€ô(€€€€€€€€€€€ÕÁ±½…‘Ì¹İ¡•É” ¡ÕÁ±½…¤€ôøÕÁ±½…¹¥ÍUÁ±½…‘¥¹œ¤¹±•¹Ñ ì((€€€€€€€¥˜€¡½Õ¹Ğ€ôô€À¤ì(€€€€€€€€€É•ÑÕÉ¸½¹ÍĞM¥é•‘	½à¹Í¡É¥¹¬ ¤ì(€€€€€€€ô((€€€€€€€É•ÑÕÉ¸5…Ñ•É¥…° (€€€€€€€€€½±½Èè½±½ÉÌ¹ÑÉ…¹ÍÁ…É•¹Ğ°(€€€€€€€€€¡¥±è%¹­]•±° (€€€€€€€€€€€½¹Q…Àè€ ¤€ôø}Í¡½İUÁ±½…‘•Ñ…¥±Ì¡½¹Ñ•áĞ¤°(€€€€€€€€€€€ÕÍÑ½µ	½É‘•Èè½¹ÍĞ¥É±•	½É‘•È ¤°(€€€€€€€€€€€¡¥±è½¹Ñ…¥¹•È (€€€€€€€€€€€€€İ¥‘Ñ è€Ôà°(€€€€€€€€€€€€€¡•¥¡Ğè€Ôà°(€€€€€€€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€€€€€€€Í¡…Á”è	½áM¡…Á”¹¥É±”°(€€€€€€€€€€€€€€€‰½É‘•Èè	½É‘•È¹…±° (€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸à¤°(€€€€€€€€€€€€€€€€€İ¥‘Ñ è€Ä¸Ô°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€‰½áM¡…‘½Üèl(€€€€€€€€€€€€€€€€€	½áM¡…‘½Ü (€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÈÔ¤°(€€€€€€€€€€€€€€€€€€€‰±ÕÉI…‘¥ÕÌè€ÄØ°(€€€€€€€€€€€€€€€€€€€ÍÁÉ•…‘I…‘¥ÕÌè€È°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€¡¥±èMÑ…¬ (€€€€€€€€€€€€€€€±¥Á	•¡…Ù¥½Èè±¥À¹¹½¹”°(€€€€€€€€€€€€€€€…±¥¹µ•¹Ğè±¥¹µ•¹Ğ¹•¹Ñ•È°(€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€½¹ÍĞ%½¸ (€€€€€€€€€€€€€€€€€€€%½¹Ì¹±½Õ‘}ÕÁ±½…‘}É½Õ¹‘•°(€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€€€€€€€Í¥é”è€ÈÜ°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€A½Í¥Ñ¥½¹• (€€€€€€€€€€€€€€€€€€€É¥¡Ğè€´Ì°(€€€€€€€€€€€€€€€€€€€Ñ½Àè€´Ì°(€€€€€€€€€€€€€€€€€€€¡¥±è½¹Ñ…¥¹•È (€€€€€€€€€€€€€€€€€€€€€½¹ÍÑÉ…¥¹ÑÌè½¹ÍĞ	½á½¹ÍÑÉ…¥¹ÑÌ (€€€€€€€€€€€€€€€€€€€€€€€µ¥¹]¥‘Ñ è€ÈÌ°(€€€€€€€€€€€€€€€€€€€€€€€µ¥¹!•¥¡Ğè€ÈÌ°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ (€€€€€€€€€€€€€€€€€€€€€€€¡½É¥é½¹Ñ…°è€Ô°(€€€€€€€€€€€€€€€€€€€€€€€Ù•ÉÑ¥…°è€Ì°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è½¹ÍĞ	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€Í¡…Á”è	½áM¡…Á”¹¥É±”°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€…±¥¹µ•¹Ğè±¥¹µ•¹Ğ¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€€€€€¡¥±èQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€œ‘½Õ¹Ğœ°(€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÄÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹‰½±°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€¤ì(€€€€€ô°(€€€€¤ì(€ô)ô((¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(¼¼5%8MI899Y%Q%=8(¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô()±…ÍÌ5…¥¹MÉ••¸•áÑ•¹‘ÌMÑ…Ñ•™Õ±]¥‘•Ğì(€½¹ÍĞ5…¥¹MÉ••¸¡íÍÕÁ•È¹­•åô¤ì((€½Ù•ÉÉ¥‘”(€MÑ…Ñ”ñ5…¥¹MÉ••¸øÉ•…Ñ•MÑ…Ñ” ¤€ôø}5…¥¹MÉ••¹MÑ…Ñ” ¤ì)ô()±…ÍÌ}5…¥¹MÉ••¹MÑ…Ñ”•áÑ•¹‘ÌMÑ…Ñ”ñ5…¥¹MÉ••¸ø(€€€İ¥Ñ ]¥‘•ÑÍ	¥¹‘¥¹=‰Í•ÉÙ•Èì(€¥¹ĞÍ•±•Ñ•‘%¹‘•à€ô€Àì(€MÑÉ¥¹œÁ…ÉÑ¹•É=¹”€ô€œœì(€MÑÉ¥¹œÁ…ÉÑ¹•ÉQİ¼€ô€œœì(€‰½½°¡…ÍU¹É•…‘¡…Ğ€ô™…±Í”ì((€MÑÉ•…µMÕ‰ÍÉ¥ÁÑ¥½¸ñ1¥ÍĞñ5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøøøü}Õ¹É•…‘MÕ‰ÍÉ¥ÁÑ¥½¸ì(€MÑÉ•…µMÕ‰ÍÉ¥ÁÑ¥½¸ñ½Õµ•¹ÑM¹…ÁÍ¡½Ğñ5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøøøü}½¹¹•Ñ¥½¹MÕ‰ÍÉ¥ÁÑ¥½¸ì(€MÑÉ¥¹œü}İ…Ñ¡•‘MÁ…•%ì(€‰½½°}½¹¹•Ñ¥½¹Må¹	ÕÍä€ô™…±Í”ì(€‰½½°}½¹¹•Ñ¥½¹Må¹I•…‘ä€ô™…±Í”ì((€½Ù•ÉÉ¥‘”(€Ù½¥¥¹¥ÑMÑ…Ñ” ¤ì(€€€ÍÕÁ•È¹¥¹¥ÑMÑ…Ñ” ¤ì(€€€]¥‘•ÑÍ	¥¹‘¥¹œ¹¥¹ÍÑ…¹”¹…‘‘=‰Í•ÉÙ•È¡Ñ¡¥Ì¤ì(€€€½É‰¥ÑM¡…É•¡…¹¹•°¹Í•Ñ5•Ñ¡½‘…±±!…¹‘±•È ¡…±°¤…Íå¹Œì(€€€€€¥˜€¡…±°¹µ•Ñ¡½€ôô€Í¡…É•‘Q•áĞœ¤ì(€€€€€€€™¥¹…°Í¡…É•€ô€œ‘í…±°¹…ÉÕµ•¹ÑÌ€üü€œôœ¹ÑÉ¥´ ¤ì(€€€€€€€¥˜€¡Í¡…É•¹¥Í9½ÑµÁÑä€˜˜µ½Õ¹Ñ•¤Õ¹…İ…¥Ñ•¡}¡…¹‘±•%¹½µ¥¹M¡…É•‘Q•áĞ¡Í¡…É•¤¤ì(€€€€€ô(€€€ô¤ì(€€€Õ¹…İ…¥Ñ•¡}±½…‘%¹¥Ñ¥…±M¡…É•‘Q•áĞ ¤¤ì(€€€}±½…‘A…ÉÑ¹•É9…µ•Ì ¤ì(€€€}ÍÑ…ÉÑU¹É•…‘]…Ñ¡•È ¤ì(€€€}ÕÁ‘…Ñ•AÉ•Í•¹”¡ÑÉÕ”¤ì(€€€}ÍÑ…ÉÑ½¹¹•Ñ¥½¹]…Ñ¡•È ¤ì(€€€}É•½Ù•ÉA•¹‘¥¹UÁ±½…‘Ì ¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}±½…‘%¹¥Ñ¥…±M¡…É•‘Q•áĞ ¤…Íå¹Œì(€€€ÑÉäì(€€€€€™¥¹…°Í¡…É•€ô…İ…¥Ğ½É‰¥ÑM¡…É•¡…¹¹•°¹¥¹Ù½­•5•Ñ¡½ñMÑÉ¥¹œø •Ñ%¹¥Ñ¥…±M¡…É•‘Q•áĞœ¤ì(€€€€€¥˜€¡Í¡…É•€„ô¹Õ±°€˜˜Í¡…É•¹ÑÉ¥´ ¤¹¥Í9½ÑµÁÑä€˜˜µ½Õ¹Ñ•¤…İ…¥Ğ}¡…¹‘±•%¹½µ¥¹M¡…É•‘Q•áĞ¡Í¡…É•¹ÑÉ¥´ ¤¤ì(€€€ô…Ñ €¡•ÉÉ½È¤ì‘•‰ÕAÉ¥¹Ğ %¹¥Ñ¥…°Í¡…É•Ñ•áĞÕ¹…Ù…¥±…‰±”è€‘•ÉÉ½Èœ¤ìô(€ô((€ÕÑÕÉ”ñÙ½¥ø}¡…¹‘±•%¹½µ¥¹M¡…É•‘Q•áĞ¡MÑÉ¥¹œÍ¡…É•¤…Íå¹Œì(€€€€¼¼¡•¬Ñ¡”…ÑÕ…°¥É•‰…Í”ÍÁ…”½¹¹•Ñ¥½¸°¹½Ğ©ÕÍĞ„…¡•Á…ÉÑ¹•È¹…µ”¸(€€€™¥¹…°½¹¹•Ñ•‘MÁ…•%€ô…İ…¥ĞMÁ…•MÑ½É”¹}•Ñ½¹¹•Ñ•‘MÁ…•% ¤ì(€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€¥˜€¡½¹¹•Ñ•‘MÁ…•%€ôô¹Õ±°¤ì(€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€½¹ÍĞM¹…­	…È (€€€€€€€€€½¹Ñ•¹ĞèQ•áĞ ›§uçâçnüÖRZ7÷ÍhĞ 5£f’éİyø§yÜ¦Ör'FæW"Øû§uçâçB›ƒZ7eî×ŸŠwÈÛÛ›™Xİºw^~)ŞwlhÔ'),
         ),
       );
       return;
@@ -1943,123 +876,76 @@ class _MainScreenState extends State<MainScreen>
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
-                  'Partner Connection à¦¯à¦¾à¦šà¦¾à¦‡ à¦•à¦°à¦¾ à¦¹à§Ÿà§‡à¦›à§‡à¥¤',
-                ),
-              ),
-            );
-          }
-        },
-      ),
-      const ChatPage(),
-      const GalleryPage(),
-      SettingsPage(
-        partnerOne: partnerOne,
-        partnerTwo: partnerTwo,
-        onSave: (first, second) {
-          setState(() {
-            partnerOne = first;
-            partnerTwo = second;
-          });
-        },
-      ),
-    ];
+                  'Partner Connection"éİyø§yß¾5£~‹§uçâçvÂéİyø§yØ¦äÖù³Z5	Ëˆ
+Kˆ
+Kˆ
+NÂˆBˆKˆ
+KˆÛÛœİÚ]YÙJ
+KˆÛÛœİØ[\TYÙJ
+KˆÙ][™ÜÔYÙJˆ\™\“Û™Nˆ\™\“Û™Kˆ\™\•ÛÎˆ\™\•ÛËˆÛ”Ø]™Nˆ
+š\œİÙXÛÛ™
+HÂˆÙ]İ]J
 
-    return PopScope(
-      canPop: selectedIndex == 0,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop || selectedIndex == 0 || !mounted) return;
-        setState(() {
-          selectedIndex = 0;
-          orbitChatVisible = false;
-        });
-      },
-      child: Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: GlowBackground(
-              child: pages[selectedIndex],
-            ),
-          ),
-          if (selectedIndex == 2)
-            const Positioned(
-              right: 16,
-              bottom: 16,
-              child: UploadFloatingIndicator(),
-            ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: surfaceColor,
-        indicatorColor: blueColor.withValues(alpha: 0.25),
-        selectedIndex: selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            selectedIndex = index;
-            orbitChatVisible = index == 1;
-            if (index == 1) hasUnreadChat = false;
-          });
-          if (index == 1) {
-            unawaited(NotificationPrivacySettings.clearMessageNotifications());
-          }
-        },
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: _chatIcon(
-              Icons.chat_bubble_outline_rounded,
-            ),
-            selectedIcon: _chatIcon(
-              Icons.chat_bubble_rounded,
-            ),
-            label: 'Chat',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.photo_library_outlined),
-            selectedIcon: Icon(Icons.photo_library_rounded),
-            label: 'Gallery',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
-          ),
-        ],
-      ),
-      ),
-    );
-  }
-}
+HÂˆ\™\“Û™HHš\œİÂˆ\™\•ÛÈHÙXÛÛ™ÂˆJNÂˆKˆ
+KˆNÂ‚ˆ™]\›ˆÜØÛÜJˆØ[”ÜˆÙ[XİY[™^OHˆÛ”Ü[›ÚÙYÚ]™\İ[ˆ
+YÜ™\İ[
+HÂˆYˆ
+YÜÙ[XİY[™^OH[[İ[Y
+H™]\›ÂˆÙ]İ]J
 
+HÂˆÙ[XİY[™^HÂˆÜ˜š]Ú]š\ÚX›HH˜[ÙNÂˆJNÂˆKˆÚ[ˆØØY™›Û
+ˆ›ÙNˆİXÚÊˆÚ[™[ˆÂˆÜÚ][Û™Y™š[
+ˆÚ[ˆÛİĞ˜XÚÙÜ›İ[™
+ˆÚ[ˆYÙ\ÖÜÙ[XİY[™^Kˆ
+Kˆ
+KˆYˆ
+Ù[XİY[™^OHŠBˆÛÛœİÜÚ][Û™Y
+ˆšYÚˆM‹ˆ›İÛNˆM‹ˆÚ[ˆ\ØY›Ø][™Ò[™XØ]ÜŠ
+Kˆ
+KˆKˆ
+Kˆ›İÛS˜]šYØ][Û˜\ˆ˜]šYØ][Û˜\Šˆ˜XÚÙÜ›İ[™ÛÛÜˆİ\™˜XÙPÛÛÜ‹ˆ[™XØ]ÜÛÛÜˆ›YPÛÛÜ‹Ú]˜[Y\Ê[NˆŒJKˆÙ[XİY[™^ˆÙ[XİY[™^ˆÛ‘\İ[˜][Û”Ù[XİYˆ
+[™^
+HÂˆÙ]İ]J
 
-class AppInformationPage extends StatelessWidget {
-  const AppInformationPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(title: const Text('App information'), backgroundColor: surfaceColor),
-      body: GlowBackground(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: const [
-            Icon(Icons.favorite_rounded, color: pinkColor, size: 48),
-            SizedBox(height: 10),
-            Center(child: Text('Orbit Two', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
-            SizedBox(height: 8),
-            Center(child: Text('à¦¦à§à¦œà¦¨à§‡à¦° à¦¬à§à¦¯à¦•à§à¦¤à¦¿à¦—à¦¤ à¦¯à§‹à¦—à¦¾à¦¯à§‹à¦— à¦“ à¦¸à§à¦®à§ƒà¦¤à¦¿à¦° à¦œà¦¨à§à¦¯', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
-            SizedBox(height: 24),
-            _AppInfoSection(icon: Icons.apps_rounded, title: 'à¦…à§à¦¯à¦¾à¦ªà¦Ÿà¦¿ à¦•à§€ à¦•à¦¾à¦œà§‡ à¦²à¦¾à¦—à§‡', body: 'Orbit Two à¦¹à¦²à§‹ à¦¦à§à¦œà¦¨à§‡à¦° à¦œà¦¨à§à¦¯ à¦¤à§ˆà¦°à¦¿ à¦à¦•à¦Ÿà¦¿ à¦¬à§à¦¯à¦•à§à¦¤à¦¿à¦—à¦¤ à¦¸à§à¦ªà§‡à¦¸à¥¤ à¦à¦–à¦¾à¦¨à§‡ à¦ªà¦¾à¦°à§à¦Ÿà¦¨à¦¾à¦°à§‡à¦° à¦¸à¦™à§à¦—à§‡ à¦šà§à¦¯à¦¾à¦Ÿ, à¦›à¦¬à¦¿ à¦“ à¦­à¦¿à¦¡à¦¿à¦“ à¦¶à§‡à§Ÿà¦¾à¦°, à¦­à§Ÿà§‡à¦¸ à¦®à§‡à¦¸à§‡à¦œ à¦à¦¬à¦‚ à¦¸à¦®à§à¦ªà¦°à§à¦•à§‡à¦° à¦—à§à¦°à§à¦¤à§à¦¬à¦ªà§‚à¦°à§à¦£ à¦¸à§à¦®à§ƒà¦¤à¦¿ à¦à¦• à¦œà¦¾à§Ÿà¦—à¦¾à§Ÿ à¦°à¦¾à¦–à¦¾ à¦¯à¦¾à§Ÿà¥¤'),
-            _AppInfoSection(icon: Icons.touch_app_rounded, title: 'à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦¶à§à¦°à§ à¦•à¦°à¦¬à§‡à¦¨ à¦¯à§‡à¦­à¦¾à¦¬à§‡', body: 'à§§. à¦¨à¦¿à¦œà§‡à¦° à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡ à¦ªà§à¦°à¦¬à§‡à¦¶ à¦•à¦°à§à¦¨à¥¤\nà§¨. Partner Connection à¦¥à§‡à¦•à§‡ à¦¸à¦‚à¦¯à§‹à¦— à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§à¦¨ à¦¬à¦¾ à¦ªà¦¾à¦“à§Ÿà¦¾ à¦•à§‹à¦¡ à¦¦à¦¿à§Ÿà§‡ à¦¯à§à¦•à§à¦¤ à¦¹à¦¨à¥¤\nà§©. Chat-à¦ à¦®à§‡à¦¸à§‡à¦œ à¦“ à¦­à§Ÿà§‡à¦¸ à¦®à§‡à¦¸à§‡à¦œ à¦ªà¦¾à¦ à¦¾à¦¨à¥¤\nà§ª. Gallery-à¦¤à§‡ à¦›à¦¬à¦¿ à¦“ à¦­à¦¿à¦¡à¦¿à¦“ à¦¶à§‡à§Ÿà¦¾à¦° à¦•à¦°à§à¦¨à¥¤\nà§«. Settings à¦¥à§‡à¦•à§‡ à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦², à¦¨à§‹à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦“ Data Saver à¦¨à¦¿à§Ÿà¦¨à§à¦¤à§à¦°à¦£ à¦•à¦°à§à¦¨à¥¤'),
-            _AppInfoSection(icon: Icons.sync_rounded, title: 'à¦¸à¦®à¦¸à§à¦¯à¦¾ à¦¸à¦®à¦¾à¦§à¦¾à¦¨', body: 'à¦®à§‡à¦¸à§‡à¦œ à¦¬à¦¾ à¦¤à¦¥à§à¦¯ à¦†à¦ªà¦¡à§‡à¦Ÿ à¦¨à¦¾ à¦¹à¦²à§‡ à¦‡à¦¨à§à¦Ÿà¦¾à¦°à¦¨à§‡à¦Ÿ à¦¸à¦‚à¦¯à§‹à¦— à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦…à§à¦¯à¦¾à¦ªà¦Ÿà¦¿ à¦†à¦¬à¦¾à¦° à¦–à§à¦²à§à¦¨à¥¤ à¦›à¦¬à¦¿ à¦¬à¦¾ à¦­à¦¿à¦¡à¦¿à¦“ à¦†à¦ªà¦²à§‹à¦¡ à¦¨à¦¾ à¦¹à¦²à§‡ à¦•à¦¿à¦›à§à¦•à§à¦·à¦£ à¦…à¦ªà§‡à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤'),
-            _AppInfoSection(icon: Icons.speed_rounded, title: 'à¦•à¦® à¦•à§à¦·à¦®à¦¤à¦¾à¦° à¦«à§‹à¦¨à§‡ à¦…à§à¦¯à¦¾à¦ª à¦§à§€à¦° à¦¹à¦²à§‡', body: 'à¦¬à§à¦¯à¦¾à¦•à¦—à§à¦°à¦¾à¦‰à¦¨à§à¦¡à§‡ à¦¥à¦¾à¦•à¦¾ à¦…à¦ªà§à¦°à§Ÿà§‹à¦œà¦¨à§€à§Ÿ à¦…à§à¦¯à¦¾à¦ª à¦¬à¦¨à§à¦§ à¦•à¦°à§à¦¨à¥¤ à¦¤à¦¾à¦¤à§‡à¦“ à¦§à§€à¦° à¦šà¦²à¦²à§‡: Settings â†’ Apps â†’ Orbit Two â†’ Storage & cache â†’ Clear cacheà¥¤ à¦«à§‹à¦¨à¦­à§‡à¦¦à§‡ à¦®à§‡à¦¨à§à¦° à¦¨à¦¾à¦® à¦†à¦²à¦¾à¦¦à¦¾ à¦¹à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¥¤ à¦¶à§à¦§à§ Clear cache à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¨ à¦•à¦°à§à¦¨à¥¤ Clear storage à¦¬à¦¾ Clear data à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¨ à¦•à¦°à¦¬à§‡à¦¨ à¦¨à¦¾, à¦à¦¤à§‡ à¦¸à§à¦¥à¦¾à¦¨à§€à§Ÿ à¦¤à¦¥à§à¦¯ à¦®à§à¦›à§‡ à¦¯à§‡à¦¤à§‡ à¦ªà¦¾à¦°à§‡.'),
-            _AppInfoSection(icon: Icons.notifications_outlined, title: 'à¦¨à§‹à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦¨à¦¾ à¦à¦²à§‡', body: 'à¦«à§‹à¦¨à§‡à¦° Settings à¦¥à§‡à¦•à§‡ Orbit Two-à¦à¦° Notifications à¦…à¦¨à§à¦®à§‹à¦¦à¦¿à¦¤ à¦†à¦›à§‡ à¦•à¦¿ à¦¨à¦¾ à¦¦à§‡à¦–à§à¦¨à¥¤ Battery Saver à¦¬à¦¾ à¦¬à§à¦¯à¦¾à¦•à¦—à§à¦°à¦¾à¦‰à¦¨à§à¦¡ à¦¸à§€à¦®à¦¾à¦¬à¦¦à§à¦§à¦¤à¦¾à¦° à¦•à¦¾à¦°à¦£à§‡ à¦¨à§‹à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦¦à§‡à¦°à¦¿ à¦¹à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¥¤'),
-            _AppInfoSection(icon: Icons.lock_outline_rounded, title: 'à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿ à¦“ à¦¨à¦¿à¦°à¦¾à¦ªà¦¤à§à¦¤à¦¾', body: 'à¦¨à¦¿à¦œà§‡à¦° à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡à¦° à¦¤à¦¥à§à¦¯ à¦¨à¦¿à¦°à¦¾à¦ªà¦¦à§‡ à¦°à¦¾à¦–à§à¦¨ à¦à¦¬à¦‚ à¦ªà¦¾à¦¸à¦“à§Ÿà¦¾à¦°à§à¦¡ à¦•à¦¾à¦°à¦“ à¦¸à¦™à§à¦—à§‡ à¦¶à§‡à§Ÿà¦¾à¦° à¦•à¦°à¦¬à§‡à¦¨ à¦¨à¦¾à¥¤ à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿ à¦¬à¦¾ à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦²à§‡à¦° à¦¸à§‡à¦Ÿà¦¿à¦‚à¦¸à§‡à¦° à¦œà¦¨à§à¦¯ Settings-à¦à¦° Privacy & account à¦…à¦ªà¦¶à¦¨ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§à¦¨à¥¤'),
+HÂˆÙ[XİY[™^H[™^ÂˆÜ˜š]Ú]š\ÚX›HH[™^OHNÂˆYˆ
+[™^OHJH\Õ[œ™XYÚ]H˜[ÙNÂˆJNÂˆYˆ
+[™^OHJHÂˆ[˜]ØZ]Y
+›İYšXØ][Û”š]˜XŞTÙ][™ÜË˜ÛX\“Y\ÜØYÙS›İYšXØ][ÛœÊ
+JNÂˆBˆKˆ\İ[˜][ÛœÎˆÂˆÛÛœİ˜]šYØ][Û‘\İ[˜][ÛŠˆXÛÛˆXÛÛŠXÛÛœËšÛYWÛİ][™Y
+KˆÙ[XİYXÛÛˆXÛÛŠXÛÛœËšÛYWÜ›İ[™Y
+KˆX™[ˆ	ÒÛYIËˆ
+Kˆ˜]šYØ][Û‘\İ[˜][ÛŠˆXÛÛˆØÚ]XÛÛŠˆXÛÛœË˜Ú]ØX˜›WÛİ][™WÜ›İ[™Yˆ
+KˆÙ[XİYXÛÛˆØÚ]XÛÛŠˆXÛÛœË˜Ú]ØX˜›WÜ›İ[™Yˆ
+KˆX™[ˆ	ĞÚ]	Ëˆ
+KˆÛÛœİ˜]šYØ][Û‘\İ[˜][ÛŠˆXÛÛˆXÛÛŠXÛÛœËœİ×ÛXœ˜\WÛİ][™Y
+KˆÙ[XİYXÛÛˆXÛÛŠXÛÛœËœİ×ÛXœ˜\WÜ›İ[™Y
+KˆX™[ˆ	ÑØ[\IËˆ
+KˆÛÛœİ˜]šYØ][Û‘\İ[˜][ÛŠˆXÛÛˆXÛÛŠXÛÛœËœÙ][™Ü×Ûİ][™Y
+KˆÙ[XİYXÛÛˆXÛÛŠXÛÛœËœÙ][™Ü×Ü›İ[™Y
+KˆX™[ˆ	ÔÙ][™ÜÉËˆ
+KˆKˆ
+Kˆ
+Kˆ
+NÂˆBŸB‚‚˜Û\ÜÈ\[™›Ü›X][Û”YÙH^[™Èİ][\ÜÕÚYÙ]ÂˆÛÛœİ\[™›Ü›X][Û”YÙJÜİ\\‹šÙ^_JNÂ‚ˆİ™\œšYBˆÚYÙ]Z[
+Z[ÛÛ^ÛÛ^
+HÂˆ™]\›ˆØØY™›Û
+ˆ˜XÚÙÜ›İ[™ÛÛÜˆ˜XÚÙÜ›İ[™ÛÛÜ‹ˆ\˜\ˆ\˜\Š]NˆÛÛœİ^
+	Ğ\[™›Ü›X][Û‰ÊK˜XÚÙÜ›İ[™ÛÛÜˆİ\™˜XÙPÛÛÜŠKˆ›ÙNˆÛİĞ˜XÚÙÜ›İ[™
+ˆÚ[ˆ\İšY]ÊˆY[™ÎˆÛÛœİYÙR[œÙ]Ë˜[
+Œ
+KˆÚ[™[ˆÛÛœİÂˆXÛÛŠXÛÛœË™˜]›Üš]WÜ›İ[™YÛÛÜˆ[šĞÛÛÜ‹Ú^™Nˆ
+KˆÚ^™Y›Ş
+ZYÚˆL
+KˆÙ[\ŠÚ[ˆ^
+	ÓÜ˜š]ÛÉËİ[Nˆ^İ[J›ÛÚ^™Nˆ‹›ÛÙZYÚˆ›ÛÙZYÚ˜›Û
+JJKˆÚ^™Y›Ş
+ZYÚˆ
+KˆÙ[\ŠÚ[ˆ^
+éhİ¨5£@€ÖÚóZ7ihß¤"éİyø§yßË5£~¼Ör§uçâçr›ƒZ7ğÍhß°"éİyø§yİ¨5£|œ°Ñ•áÑ±¥¸èQ•áÑ±¥¸¹•¹Ñ•È°ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÜÀ¤¤¤°(€€€€€€€€€€€M¥é•‘	½à¡¡•¥¡Ğè€ÈĞ¤°(€€€€€€€€€€€}ÁÁ%¹™½M•Ñ¥½¸¡¥½¸è%½¹Ì¹…ÁÁÍ}É½Õ¹‘•°Ñ¥Ñ±”è€¾ÖûãZ7ïÈºw^~)Şwpºw^~)Şwoh× 5£~^éİyø§yÜœ°‰½‘äè€=É‰¥ĞQİ¼€Ö¼².×ŸŠwüZ6qî×ŸŠw
+ghİ¯"éİyø§yİÈ5£|€ÖÙû§uçâçršÃZ7åMhİ¿5£P€ÖÚ£Z6Yºw^~)ŞwåhÙÇ"éİyø§yÛ¾5£v|ÖûZ4hÙÍ5£\€ÖÚóZ7Ëºw^~)Şvë.×ŸŠwÊdÈºw^~)ŞwoÍhß“"éİyø§yßÇ5£~À°¦´Öû‚.×ŸŠwüsZ7çºw^~)Şwë.×ŸŠwŠnhİª5£vTÖZ6lhİÍ5£oÖÚ2.×ŸŠwœÓZ6é.×ŸŠwÊcî×ŸŠwJghß—5£|€Öùk§uçâçbšóZ7Ù	ÊKˆĞ\[™›ÔÙXİ[ÛŠXÛÛˆXÛÛœËİXÚØ\Ü›İ[™Y]Nˆëhß¬5£~À‹§uçâçÖZ6khØ 5£~´ÖÜrrÂ&öG“¢n×ŸŠwrâ.×ŸŠw›óZ7ìºw^~)ŞwsMhß•5£f Öür.×ŸŠw¼ÓZ7qî×ŸŠwŠeMhÙ¨ºw^~)Şt\nºw^~)Şt. Partner Connection"éİyø§yİÇ5£\€ÖºóZ5ÈhÙ°ºw^~)Şw)•5£f ‹§uçâçvø‹§uçâçnøÖûâ.×ŸŠwÜ»§uçâçRšcZ7ñÈºw^~)ŞwğMhİ¤"éİyø§yÙ¨ºw^~)Şt\nºw^~)Şu. Chat-"éİyø§yßÇ5£~p‹§uçâçL€Öü{§uçâçBšãZ6qî×ŸŠw
+jhÙ¾5£Qq»§uçâçh¸…±±•Éä´ÖrZ7oÈºw^~)ŞtÈhß¡5£L€ÖıóZ4hÙÁ5£Qq»§uçâçl¸M•ÑÑ¥¹Ì‹§uçâçwÖrZ7lhÛ¾5£H°‹§uçâçg,Öú³Z7qÍhØ ºw^~)Şw Data Saver"éİyø§yÙ¿5£g4ÖÛ§uçâçr™SZ6j.×ŸŠw	ÊKˆĞ\[™›ÔÙXİ[ÛŠXÛÛˆXÛÛœËœŞ[˜×Ü›İ[™Y]Nˆ	ºw^~)Şvkhİ¯ºw^~)Şv)¸5£~œÖ‚rÂ&öG“¢sZ7îhÜ 5£x€ÖÜÛ§uçâçr˜cZ6qî×ŸŠwÊj.×ŸŠwŠnMh× 5£g4ÖûZ7çÈºw^~)Şv`hÛ—"éİyø§yÛ°5£w4ÖâZ6qÈºw^~)ŞwsMhßª5£|€ÖÛë§uçâçB™cZ6ğMhÔ 5£vü‹§uçâçvø‹§uçâçvüÖù2.×ŸŠwú£Z6èHºw^~)Şvoˆºw^~)Şvl®×ŸŠwÊeMhÛÁ5£vŞéİyø§yÜ¦ÖùSZ7ïˆºw^~)Şwl.×ŸŠwÊahß°"éİyø§yÛÇ5£v~éİyø§yØ¦TÖš‹§uçâçBr’À¢ô–æfõ6V7F–öâ†–6öã¢–6öç2ç7VVE÷&÷VæFVBÂF—FÆS¢ù[§uçâçb™SZ7ëhß°"éİyø§yÛË5£\€ÖÚóZ6ˆhÙ°"éİyø§yÙ²ºw^~)Şw', body: /¬5£~øÖüÓZ7âMhİ¡ºw^~)Şw)¥5£vø‹§uçâçv¨ÖóZ7jhß 5£v¼Ö¢Z6sn×ŸŠwÊeMhÙ¨ºw^~)Şt)¤5£wéİyø§yÜ¦œÖZ6ì®×ŸŠwÎˆÙ][™ÜÈ.×ŸŠwˆ\Èºw^~)ŞtˆÜ˜š]ÛÈºw^~)ŞtˆİÜ˜YÙH	ˆØXÚHºw^~)ŞtˆÛX\ˆØXÚYºw^~)ŞvòÍhİÇ5£\€ÖúƒZ4hß®"éİyø§yß²5£~ø‹§uçâçf’éİyø§yÜ¦¨Öœ{§uçâçB›cZ7ğHÛX\ˆØXÚHºw^~)ŞvoÍhİ¬5£n ‹§uçâçvÀÖ–B6ÆV"7F÷&vRZ7ˆÛX\ˆ]JjhÙÍ5£~jéİyø§yĞ¦TÖÜ{§uçâçBš‹§uçâçbÂZ7qÈºw^~)ŞvsMhß¨5£|€ÖÜÛ§uçâçršãZ6ñÈºw^~)ŞwñÍh× 5£~Âéİyø§yÜ¸œ¤°(€€€€€€€€€€€}ÁÁ%¹™½M•Ñ¥½¸¡¥½¸è%½¹Ì¹¹½Ñ¥™¥…Ñ¥½¹Í}½ÕÑ±¥¹•°Ñ¥Ñ±”è€œÖ¹óZ6ïÍhß¶ºw^~)Şt)¨ºw^~)Şv)5£\œ°‰½‘äè€œÖºƒZ4Ù][™ÜÈhß•ºw^~)Şw Orbit Two-5£@9½Ñ¥™¥…Ñ¥½¹Ì¦ÖšãZ7ïî×ŸŠw
+ah× 5£|€ÖâZ7åhÙd Battery Saver 5£x€ÖÚóZ7eÍhÙ¾5£g6éİyø§yÔ¦àÖûãZ7óMhİ¾ºw^~)Şt)•5£féİyø§yÜ¦ ÖûóZ7åMhß¨"éİyø§yßÇ5£|€ÖÜr.×ŸŠw»ãZ7Ù	ÊKˆĞ\[™›ÔÙXİ[ÛŠXÛÛˆXÛÛœË›ØÚ×Ûİ][™WÜ›İ[™Y]NˆáMhß¾5£~$ÖÙò.×ŸŠw2Z7ìhÛ¤5£vøœ°‰½‘äè€›§uçâçfüÖû.×ŸŠwÜÓZ7åMhÙ¨5£éİyø§yĞ¦ÖÚò.×ŸŠw›óZ7êh× 5£~XÖ‚Z7`ˆºw^~)ŞvïhÛß5£g6éİyø§yÔ¦TÖ™2.×ŸŠw™“Z7ñÈºw^~)ŞwñÍhß°"éİyø§yİ°5£~ ‹§uçâçfúéİyø§yĞ¦ÖûãZ7âMhİŸ"éİyø§yİ¾"éİyø§yÛÍ5£n¬Öû#Z4hßŸ5£nàÖZ6sn×ŸŠwÈÙ][™ÜËcî×ŸŠwš]˜XŞH	ˆXØÛİ[
+aMhß¨"éİyø§yİÍ5£väÖZ6pMhÔ'),
           ],
         ),
       ),
@@ -2639,22 +1525,15 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
     if (!widget.connected) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('à¦†à¦—à§‡ Partner Connection à¦šà¦¾à¦²à§ à¦•à¦°à§‹à¥¤'),
-        ),
-      );
-      return;
-    }
-
-    final initial = widget.startDate ?? DateTime.now();
-
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial.isAfter(DateTime.now())
-          ? DateTime.now()
-          : initial,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-      helpText: 'à¦à¦•à¦¸à¦™à§à¦—à§‡ à¦¥à¦¾à¦•à¦¾à¦° à¦¶à§à¦°à§à¦° à¦¤à¦¾à¦°à¦¿à¦–',
+          content: Text('5£A…ÉÑ¹•È½¹¹•Ñ¥½¸¦hÖ¼.×ŸŠwÛZ5	ÊKˆ
+Kˆ
+NÂˆ™]\›ÂˆB‚ˆš[˜[[š]X[HÚYÙ]œİ\]HÏÈ]U[YK››İÊ
+NÂ‚ˆš[˜[]HH]ØZ]ÚİÑ]TXÚÙ\ŠˆÛÛ^ˆÛÛ^ˆ[š]X[]Nˆ[š]X[š\ĞY\Š]U[YK››İÊ
+JBˆÈ]U[YK››İÊ
+Bˆˆ[š]X[ˆš\œİ]Nˆ]U[YJŒ
+Kˆ\İ]Nˆ]U[YK››İÊ
+Kˆ[^ˆ	Íhİ¸5£v^éİyø§yÜ¦”ÖÛë§uçâçB›cZ6pn×ŸŠw
+ihÙ¿ºw^~)Şv',
     );
 
     if (date == null || !mounted) return;
@@ -2662,117 +1541,26 @@ class _LoveCounterCardState extends State<LoveCounterCard> {
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: 'à¦¶à§à¦°à§à¦° à¦¸à¦®à§Ÿ à¦¬à§‡à¦›à§‡ à¦¨à¦¾à¦“',
-    );
-
-    if (time == null || !mounted) return;
-
-    final selected = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
-
-    if (selected.isAfter(DateTime.now())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('à¦­à¦¬à¦¿à¦·à§à¦¯à¦¤à§‡à¦° à¦¤à¦¾à¦°à¦¿à¦– à¦“ à¦¸à¦®à§Ÿ à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¨ à¦•à¦°à¦¾ à¦¯à¦¾à¦¬à§‡ à¦¨à¦¾à¥¤'),
-        ),
-      );
-      return;
-    }
-
-    setState(() => saving = true);
-    try {
-      await RelationshipService.saveRelationshipStart(selected);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('à¦¤à¦¾à¦°à¦¿à¦– à¦“ à¦¸à¦®à§Ÿ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦¹à§Ÿà§‡à¦›à§‡à¥¤')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨à¦—à§à¦²à§‹ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦…à¦¨à§à¦—à§à¦°à¦¹ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-      );
-    } finally {
-      if (mounted) setState(() => saving = false);
-    }
-  }
-
-  Future<void> _clearDateTime() async {
-    if (!widget.connected || widget.startDate == null) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('à¦¤à¦¾à¦°à¦¿à¦– à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¬à§‡?'),
-        content: const Text(
-          'à¦¦à§à¦‡ à¦«à§‹à¦¨ à¦¥à§‡à¦•à§‡à¦‡ Together for-à¦à¦° à¦¤à¦¾à¦°à¦¿à¦– à¦®à§à¦›à§‡ à¦¯à¦¾à¦¬à§‡à¥¤',
+      helpText: &éİyø§yßÁ5£fÀ‹§uçâçfºéİyø§yÜ¦°Ö¼r.×ŸŠw›ë§uçâçrrÀ¢“° ¢–b‡F–ÖRÓÒçVÆÂÇÂÖ÷VçFVB’&WGW&ã° ¢f–æÂ6VÆV7FVBÒFFUF–ÖR€¢FFRç–V"À¢FFRæÖöçF‚À¢FFRæF’À¢F–ÖRæ†÷W"À¢F–ÖRæÖ–çWFRÀ¢“° ¢–b‡6VÆV7FVBæ—4gFW"„FFUF–ÖRææ÷r‚’’’°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6öç7B6æ6´&"€¢6öçFVçC¢FW‡B‚sZ7oÍhİ¯5£~À‹§uçâçvøÖùb.×ŸŠw2Z7÷Èºw^~)ŞvoÍhİ¬5£n ‹§uçâçvÂéİyø§yØ¦¼ÖÜr.×ŸŠw›ë§uçâçBr’À¢’À¢“°¢&WGW&ã°¢Ğ ¢6WE7FFR‚‚’Óâ6f–ærÒG'VR“°¢G'’°¢v—B&VÆF–öç6†—6W'f–6Rç6fU&VÆF–öç6†—7F'B‡6VÆV7FVB“°¢–b‚Ö÷VçFVB’&WGW&ã°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6öç7B6æ6´&"†6öçFVçC¢FW‡B‚úCZ6oî×ŸŠwŠdÈºw^~)Şvk®×ŸŠwÊnhÙ•5£~Œ‹§uçâçg|Ö¼{§uçâçBr’’À¢“°¢Ò6F6‚†R’°¢–b‚Ö÷VçFVB’&WGW&ã°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6æ6´&"†6öçFVçC¢FW‡B‚ú£Z7ëhİ¤5£Ö²Z6ìhİ·ºw^~)Şw)•5£x€ÖıóZ7Ùºw^~)ŞwjhßÍ5£d€Öœr.×ŸŠwúÃZ4hß·5£~ø‹§uçâçvÀÖ–Br’’À¢“°¢Òf–æÆÇ’°¢–b†Ö÷VçFVB’6WE7FFR‚‚’Óâ6f–ærÒfÇ6R“°¢Ğ¢Ğ ¢gWGW&SÇfö–Câö6ÆV$FFUF–ÖR‚’7–æ2°¢–b‚v–FvWBæ6öææV7FVBÇÂv–FvWBç7F'DFFRÓÒçVÆÂ’&WGW&ã° ¢f–æÂ6öæf—&ÒÒv—B6†÷tF–ÆösÆ&ööÃâ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†6öçFW‡B’ÓâÆW'DF–Æör€¢F—FÆS¢6öç7BFW‡B‚úCZ6oî×ŸŠwŠkhÛÇ"éİyø§yÛÇ5£wüœ¤°(€€€€€€€½¹Ñ•¹Ğè½¹ÍĞQ•áĞ (€€€€€€€€€€œÖ˜r.×ŸŠw¼»§uçâçBšSZ7qî×ŸŠwÈÙÙ]\ˆ›Ü‹MhĞ 5£~ÀÖbZ6fî×ŸŠwÊkÍhİÇºw^~)Şt',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('à¦¨à¦¾'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('à¦®à§à¦›à§‡ à¦«à§‡à¦²à§‹'),
-          ),
-        ],
-      ),
-    );
+            child: const Text('5£xœ¤°(€€€€€€€€€€¤°(€€€€€€€€€¥±±•‘	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡½¹Ñ•áĞ°ÑÉÕ”¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ ›§uçâçÖrZ7ì®×ŸŠwÉÊKˆ
+KˆKˆ
+Kˆ
+NÂ‚ˆYˆ
+ÛÛ™š\›HOHYH[[İ[Y
+H™]\›Â‚ˆÙ]İ]J
 
-    if (confirm != true || !mounted) return;
+HOˆØ]š[™ÈHYJNÂˆHÂˆ]ØZ]™[][ÛœÚ\Ù\šXÙK˜ÛX\”™[][ÛœÚ\İ\
 
-    setState(() => saving = true);
-    try {
-      await RelationshipService.clearRelationshipStart();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦…à¦¨à§à¦—à§à¦°à¦¹ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-      );
-    } finally {
-      if (mounted) setState(() => saving = false);
-    }
-  }
-
-  String _two(int value) => value.toString().padLeft(2, '0');
-
-  @override
-  Widget build(BuildContext context) {
-    final start = widget.startDate;
-    final totalSeconds = start == null
-        ? 0
-        : max(0, now.difference(start).inSeconds);
-    final days = totalSeconds ~/ 86400;
-    final hours = (totalSeconds % 86400) ~/ 3600;
-    final minutes = (totalSeconds % 3600) ~/ 60;
-    final seconds = totalSeconds % 60;
-
-    return Container(
-      padding: const EdgeInsets.all(21),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: surfaceColor.withValues(alpha: 0.86),
-        border: Border.all(
-          color: pinkColor.withValues(alpha: 0.25),
-        ),
-      ),
-      child: Column(
-        children: [
-          const Icon(Icons.favorite, color: pinkColor, size: 26),
-          const SizedBox(height: 8),
-          const Text(
-            'Together for',
-            style: TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(height: 16),
-          if (!widget.connected)
-            const Text(
-              'Partner-à¦à¦° à¦¸à¦™à§à¦—à§‡ à¦¯à§à¦•à§à¦¤ à¦¹à¦“',
+NÂˆHØ]Ú
+JHÂˆYˆ
+[[İ[Y
+H™]\›ÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+ëhÛÇ"éİyø§yÛÇ5£x€ÖıóZ7Ùºw^~)ŞwjhßÍ5£d€Öœr.×ŸŠwúÃZ4hß·5£~ø‹§uçâçvÀÖ–Br’’À¢“°¢Òf–æÆÇ’°¢–b†Ö÷VçFVB’6WE7FFR‚‚’Óâ6f–ærÒfÇ6R“°¢Ğ¢Ğ ¢7G&–ær÷Gvò†–çBfÇVR’ÓâfÇVRçFõ7G&–ær‚’çDÆVgBƒ"Âsr“° ¢÷fW'&–FP¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°¢f–æÂ7F'BÒv–FvWBç7F'DFFS°¢f–æÂF÷FÅ6V6öæG2Ò7F'BÓÒçVÆÀ¢ò ¢¢Ö‚ƒÂæ÷ræF–ffW&Væ6R‡7F'B’æ–å6V6öæG2“°¢f–æÂF—2ÒF÷FÅ6V6öæG2âòƒcC°¢f–æÂ†÷W'2Ò‡F÷FÅ6V6öæG2RƒcC’âò3c°¢f–æÂÖ–çWFW2Ò‡F÷FÅ6V6öæG2R3c’âòc°¢f–æÂ6V6öæG2ÒF÷FÅ6V6öæG2Rc° ¢&WGW&â6öçF–æW"€¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒ#’À¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ#B’À¢6öÆ÷#¢7W&f6T6öÆ÷"çv—F…fÇVW2†Ç†¢ãƒb’À¢&÷&FW#¢&÷&FW"æÆÂ€¢6öÆ÷#¢–æ´6öÆ÷"çv—F…fÇVW2†Ç†¢ã#R’À¢’À¢’À¢6†–ÆC¢6öÇVÖâ€¢6†–ÆG&Vã¢°¢6öç7B–6öâ„–6öç2æff÷&—FRÂ6öÆ÷#¢–æ´6öÆ÷"Â6—¦S¢#b’À¢6öç7B6—¦VD&÷‚††V–v‡C¢‚’À¢6öç7BFW‡B€¢uFövWF†W"f÷"rÀ¢7G–ÆS¢FW‡E7G–ÆR†6öÆ÷#¢6öÆ÷'2çv†—FSs’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢b’À¢–b‚v–FvWBæ6öææV7FVB¢6öç7BFW‡B€¢u'FæW"Øû§uçâçB›ƒZ7eî×ŸŠwÊkÍhİÍºw^~)Şt)¹ºw^~)Şw',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white54),
             )
@@ -3177,206 +1965,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _appIsResumed = state == AppLifecycleState.resumed;
     if (_appIsResumed) {
       _retryFailedMediaDownloads();
-      // à¦…à§à¦¯à¦¾à¦ª Recents/background à¦¥à§‡à¦•à§‡ à¦«à¦¿à¦°à¦²à§‡ à¦¬à§à¦¯à¦°à§à¦¥ à¦®à¦¿à¦¡à¦¿à§Ÿà¦¾ FutureBuilder-à¦—à§à¦²à§‹
-      // à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à¦¤à§‡ à¦ªà¦¾à¦°à¦¬à§‡; à¦šà¦²à¦®à¦¾à¦¨ à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦¸à¦¾à¦°à§à¦­à¦¿à¦¸à§‡ deduplicate à¦¹à§Ÿà¥¤
-      if (mounted) setState(() {});
-      if (messages.isNotEmpty) {
-        unawaited(ChatSyncService.markMessagesSeen(messages).catchError(
-          (Object error) {
-            debugPrint('Mark seen after resume skipped: $error');
-          },
-        ));
-      }
-    } else {
-      _typingIdleTimer?.cancel();
-      _typingIdleTimer = null;
-      unawaited(_stopTyping());
-    }
-  }
-
-  void _handleTypingChanged(String value) {
-    _scheduleDraftSave(value);
-    final shouldType = value.trim().isNotEmpty;
-
-    if (shouldType) {
-      if (!_isTypingSent) {
-        _isTypingSent = true;
-        _typingSoundTimer?.cancel();
-        unawaited(ChatSyncService.setTyping(isTyping: true).catchError(
-          (Object error) {
-            debugPrint('Typing status update failed: $error');
-          },
-        ));
-      }
-
-      _typingIdleTimer?.cancel();
-      _typingIdleTimer = Timer(const Duration(milliseconds: 1200), () {
-        if (!mounted) return;
-        unawaited(_stopTyping());
-      });
-
-      _typingHeartbeatTimer ??= Timer.periodic(
-        const Duration(seconds: 2),
-        (_) {
-          if (!mounted ||
-              !_appIsResumed ||
-              controller.text.trim().isEmpty ||
-              _typingIdleTimer == null) {
-            return;
-          }
-          unawaited(ChatSyncService.setTyping(isTyping: true).catchError(
-            (Object error) {
-              debugPrint('Typing heartbeat failed: $error');
-            },
-          ));
-        },
-      );
-    } else {
-      _typingSoundTimer?.cancel();
-      _typingSoundTimer = null;
-      _typingIdleTimer?.cancel();
-      _typingIdleTimer = null;
-      _typingHeartbeatTimer?.cancel();
-      _typingHeartbeatTimer = null;
-      if (_isTypingSent) {
-        _isTypingSent = false;
-        unawaited(ChatSyncService.clearTyping().catchError(
-          (Object error) {
-            debugPrint('Typing status clear failed: $error');
-          },
-        ));
-      }
-    }
-  }
-
-  Future<void> _stopTyping() async {
-    _typingSoundTimer?.cancel();
-    _typingSoundTimer = null;
-    _typingHeartbeatTimer?.cancel();
-    _typingHeartbeatTimer = null;
-    _typingIdleTimer?.cancel();
-    _typingIdleTimer = null;
-    if (!_isTypingSent) return;
-    _isTypingSent = false;
-    try {
-      await ChatSyncService.clearTyping();
-    } catch (error) {
-      debugPrint('Typing status clear failed: $error');
-    }
-  }
-
-  Future<void> _saveOwnProfile() async {
-    try {
-      await ChatSyncService.saveMyProfileFromSpace();
-    } catch (error) {
-      debugPrint('Chat profile save skipped: $error');
-    }
-  }
-
-  Future<void> _loadLocallyDeletedMessageIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    _locallyDeletedMessageIds.addAll(prefs.getStringList('orbitDeletedForMeMessageIds') ?? const <String>[]);
-    if (mounted) setState(() {
-      messages.removeWhere((item) => _locallyDeletedMessageIds.contains('${item['id'] ?? ''}'));
-    });
-  }
-
-  Future<void> _startChatSync() async {
-    try {
-      final stream = ChatSyncService.watchMessages();
-
-      _chatSubscription = stream.listen(
-        (latestMessages) {
-          if (!mounted) return;
-
-          final firstSnapshot = !_hasLoadedInitialMessages;
-          final previousCount = messages.length;
-          final previousLastId =
-              messages.isEmpty ? '' : '${messages.last['id'] ?? ''}';
-          final nextLastId = latestMessages.isEmpty
-              ? ''
-              : '${latestMessages.last['id'] ?? ''}';
-          final hasNewTailMessage = latestMessages.length > previousCount ||
-              (latestMessages.isNotEmpty && nextLastId != previousLastId);
-          final shouldFollowTail = firstSnapshot ||
-              (!_userHasScrolledAwayFromBottom &&
-                  _isNearChatBottom &&
-                  hasNewTailMessage);
-
-          // Compute this once per Firestore snapshot instead of rescanning the
-          // complete message list while each visible row is being built.
-          var nextLastOwnMessageIndex = -1;
-          final currentUid = _currentUid;
-          for (var i = latestMessages.length - 1; i >= 0; i--) {
-            final item = latestMessages[i];
-            final senderUid = '${item['senderUid'] ?? ''}';
-            final mine = senderUid.isNotEmpty && currentUid.isNotEmpty
-                ? senderUid == currentUid
-                : item['mine'] == true;
-            if (mine && item['unsent'] != true) {
-              nextLastOwnMessageIndex = i;
-              break;
-            }
-          }
-
-          final previouslySeenIds = <String>{
-            for (final item in messages)
-              if (_isMine(item) && _isSeenByPartner(item))
-                '${item['id'] ?? ''}',
-          };
-          if (firstSnapshot) {
-            for (final item in latestMessages) {
-              if (_isMine(item) && _isSeenByPartner(item)) {
-                _seenSoundPlayedFor.add('${item['id'] ?? ''}');
-              }
-            }
-          } else {
-            for (final item in latestMessages) {
-              final id = '${item['id'] ?? ''}';
-              if (id.isNotEmpty &&
-                  _isMine(item) &&
-                  _isSeenByPartner(item) &&
-                  !previouslySeenIds.contains(id) &&
-                  _seenSoundPlayedFor.add(id)) {
-                unawaited(InteractionFeedbackSettings.playSeenSound());
-              }
-            }
-          }
-
-          setState(() {
-            messages = latestMessages.where((item) => !_locallyDeletedMessageIds.contains('${item['id'] ?? ''}')).toList();
-            _cachedLastOwnMessageIndex = nextLastOwnMessageIndex;
-          });
-          _hasLoadedInitialMessages = true;
-
-          if (_appIsResumed) {
-            unawaited(
-              ChatSyncService.markMessagesSeen(latestMessages).catchError(
-                (Object error) {
-                  debugPrint('Mark seen skipped: $error');
-                },
-              ),
-            );
-          }
-
-          // à¦¶à§à¦§à§ à¦ªà§à¦°à¦¥à¦® à¦²à§‹à¦¡ à¦¬à¦¾ à¦¨à¦¤à§à¦¨ à¦®à§‡à¦¸à§‡à¦œ à¦à¦²à§‡â€”à¦ªà§à¦°à¦¤à¦¿à¦Ÿà¦¿ Seen/metadata à¦†à¦ªà¦¡à§‡à¦Ÿà§‡ à¦¨à§Ÿà¥¤
-          if (shouldFollowTail) {
-            // Directly settle to the final extent instead of animating a changing
-            // text/emoji/link layout; this prevents the chat list from shaking.
-            _scrollToBottom(animate: false, settle: true);
-          }
-        },
-        onError: (Object error) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('à¦šà§à¦¯à¦¾à¦Ÿ à¦†à¦ªà¦¡à§‡à¦Ÿ à¦•à¦°à¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤ à¦¸à¦‚à¦¯à§‹à¦— à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-          );
-        },
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('à¦šà§à¦¯à¦¾à¦Ÿ à¦šà¦¾à¦²à§ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦…à¦¨à§à¦—à§à¦°à¦¹ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
+      // 5£v¼Ö¢&V6VçG2ö&6¶w&÷VæB.×ŸŠwÜsZ5Èhß°5£\€ÖÚóZ7iHºw^~)ŞwïÍhßßºw^~)Şv FutureBuilder.éİyø§yßÁ5£l(€€€€€€¼¼€ÖÛë§uçâçB™£Z7óMhŞ 5£f’éİyø§yÜ¦¨ÖšË§uçâçs²Z6ëhØ 5£~$Ö¼»§uçâçR›ƒZ6sMhß¸ºw^~)Şw deduplicate)¹5£P(€€€€€¥˜€¡µ½Õ¹Ñ•¤Í•ÑMÑ…Ñ”  ¤íô¤ì(€€€€€¥˜€¡µ•ÍÍ…•Ì¹¥Í9½ÑµÁÑä¤ì(€€€€€€€Õ¹…İ…¥Ñ•¡¡…ÑMå¹M•ÉÙ¥”¹µ…É­5•ÍÍ…•ÍM••¸¡µ•ÍÍ…•Ì¤¹…Ñ¡ÉÉ½È (€€€€€€€€€€¡=‰©•Ğ•ÉÉ½È¤ì(€€€€€€€€€€€‘•‰ÕAÉ¥¹Ğ 5…É¬Í••¸…™Ñ•ÈÉ•ÍÕµ”Í­¥ÁÁ•è€‘•ÉÉ½Èœ¤ì(€€€€€€€€€ô°(€€€€€€€€¤¤ì(€€€€€ô(€€€ô•±Í”ì(€€€€€}ÑåÁ¥¹%‘±•Q¥µ•Èü¹…¹•° ¤ì(€€€€€}ÑåÁ¥¹%‘±•Q¥µ•È€ô¹Õ±°ì(€€€€€Õ¹…İ…¥Ñ•¡}ÍÑ½ÁQåÁ¥¹œ ¤¤ì(€€€ô(€ô((€Ù½¥}¡…¹‘±•QåÁ¥¹¡…¹•¡MÑÉ¥¹œÙ…±Õ”¤ì(€€€}Í¡•‘Õ±•É…™ÑM…Ù”¡Ù…±Õ”¤ì(€€€™¥¹…°Í¡½Õ±‘QåÁ”€ôÙ…±Õ”¹ÑÉ¥´ ¤¹¥Í9½ÑµÁÑäì((€€€¥˜€¡Í¡½Õ±‘QåÁ”¤ì(€€€€€¥˜€ …}¥ÍQåÁ¥¹M•¹Ğ¤ì(€€€€€€€}¥ÍQåÁ¥¹M•¹Ğ€ôÑÉÕ”ì(€€€€€€€}ÑåÁ¥¹M½Õ¹‘Q¥µ•Èü¹…¹•° ¤ì(€€€€€€€Õ¹…İ…¥Ñ•¡¡…ÑMå¹M•ÉÙ¥”¹Í•ÑQåÁ¥¹œ¡¥ÍQåÁ¥¹œèÑÉÕ”¤¹…Ñ¡ÉÉ½È (€€€€€€€€€€¡=‰©•Ğ•ÉÉ½È¤ì(€€€€€€€€€€€‘•‰ÕAÉ¥¹Ğ QåÁ¥¹œÍÑ…ÑÕÌÕÁ‘…Ñ”™…¥±•è€‘•ÉÉ½Èœ¤ì(€€€€€€€€€ô°(€€€€€€€€¤¤ì(€€€€€ô((€€€€€}ÑåÁ¥¹%‘±•Q¥µ•Èü¹…¹•° ¤ì(€€€€€}ÑåÁ¥¹%‘±•Q¥µ•È€ôQ¥µ•È¡½¹ÍĞÕÉ…Ñ¥½¸¡µ¥±±¥Í•½¹‘Ìè€ÄÈÀÀ¤°€ ¤ì(€€€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€€€Õ¹…İ…¥Ñ•¡}ÍÑ½ÁQåÁ¥¹œ ¤¤ì(€€€€€ô¤ì((€€€€€}ÑåÁ¥¹!•…ÉÑ‰•…ÑQ¥µ•È€üüôQ¥µ•È¹Á•É¥½‘¥Œ (€€€€€€€½¹ÍĞÕÉ…Ñ¥½¸¡Í•½¹‘Ìè€È¤°(€€€€€€€€¡|¤ì(€€€€€€€€€¥˜€ …µ½Õ¹Ñ•ñğ(€€€€€€€€€€€€€€…}…ÁÁ%ÍI•ÍÕµ•ñğ(€€€€€€€€€€€€€½¹ÑÉ½±±•È¹Ñ•áĞ¹ÑÉ¥´ ¤¹¥ÍµÁÑäñğ(€€€€€€€€€€€€€}ÑåÁ¥¹%‘±•Q¥µ•È€ôô¹Õ±°¤ì(€€€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€€€ô(€€€€€€€€€Õ¹…İ…¥Ñ•¡¡…ÑMå¹M•ÉÙ¥”¹Í•ÑQåÁ¥¹œ¡¥ÍQåÁ¥¹œèÑÉÕ”¤¹…Ñ¡ÉÉ½È (€€€€€€€€€€€€¡=‰©•Ğ•ÉÉ½È¤ì(€€€€€€€€€€€€€‘•‰ÕAÉ¥¹Ğ QåÁ¥¹œ¡•…ÉÑ‰•…Ğ™…¥±•è€‘•ÉÉ½Èœ¤ì(€€€€€€€€€€€ô°(€€€€€€€€€€¤¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€ô•±Í”ì(€€€€€}ÑåÁ¥¹M½Õ¹‘Q¥µ•Èü¹…¹•° ¤ì(€€€€€}ÑåÁ¥¹M½Õ¹‘Q¥µ•È€ô¹Õ±°ì(€€€€€}ÑåÁ¥¹%‘±•Q¥µ•Èü¹…¹•° ¤ì(€€€€€}ÑåÁ¥¹%‘±•Q¥µ•È€ô¹Õ±°ì(€€€€€}ÑåÁ¥¹!•…ÉÑ‰•…ÑQ¥µ•Èü¹…¹•° ¤ì(€€€€€}ÑåÁ¥¹!•…ÉÑ‰•…ÑQ¥µ•È€ô¹Õ±°ì(€€€€€¥˜€¡}¥ÍQåÁ¥¹M•¹Ğ¤ì(€€€€€€€}¥ÍQåÁ¥¹M•¹Ğ€ô™…±Í”ì(€€€€€€€Õ¹…İ…¥Ñ•¡¡…ÑMå¹M•ÉÙ¥”¹±•…ÉQåÁ¥¹œ ¤¹…Ñ¡ÉÉ½È (€€€€€€€€€€¡=‰©•Ğ•ÉÉ½È¤ì(€€€€€€€€€€€‘•‰ÕAÉ¥¹Ğ QåÁ¥¹œÍÑ…ÑÕÌ±•…È™…¥±•è€‘•ÉÉ½Èœ¤ì(€€€€€€€€€ô°(€€€€€€€€¤¤ì(€€€€€ô(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}ÍÑ½ÁQåÁ¥¹œ ¤…Íå¹Œì(€€€}ÑåÁ¥¹M½Õ¹‘Q¥µ•Èü¹…¹•° ¤ì(€€€}ÑåÁ¥¹M½Õ¹‘Q¥µ•È€ô¹Õ±°ì(€€€}ÑåÁ¥¹!•…ÉÑ‰•…ÑQ¥µ•Èü¹…¹•° ¤ì(€€€}ÑåÁ¥¹!•…ÉÑ‰•…ÑQ¥µ•È€ô¹Õ±°ì(€€€}ÑåÁ¥¹%‘±•Q¥µ•Èü¹…¹•° ¤ì(€€€}ÑåÁ¥¹%‘±•Q¥µ•È€ô¹Õ±°ì(€€€¥˜€ …}¥ÍQåÁ¥¹M•¹Ğ¤É•ÑÕÉ¸ì(€€€}¥ÍQåÁ¥¹M•¹Ğ€ô™…±Í”ì(€€€ÑÉäì(€€€€€…İ…¥Ğ¡…ÑMå¹M•ÉÙ¥”¹±•…ÉQåÁ¥¹œ ¤ì(€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€‘•‰ÕAÉ¥¹Ğ QåÁ¥¹œÍÑ…ÑÕÌ±•…È™…¥±•è€‘•ÉÉ½Èœ¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í…Ù•=İ¹AÉ½™¥±” ¤…Íå¹Œì(€€€ÑÉäì(€€€€€…İ…¥Ğ¡…ÑMå¹M•ÉÙ¥”¹Í…Ù•5åAÉ½™¥±•É½µMÁ…” ¤ì(€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€‘•‰ÕAÉ¥¹Ğ ¡…ĞÁÉ½™¥±”Í…Ù”Í­¥ÁÁ•è€‘•ÉÉ½Èœ¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}±½…‘1½…±±å•±•Ñ•‘5•ÍÍ…•%‘Ì ¤…Íå¹Œì(€€€™¥¹…°ÁÉ•™Ì€ô…İ…¥ĞM¡…É•‘AÉ•™•É•¹•Ì¹•Ñ%¹ÍÑ…¹” ¤ì(€€€}±½…±±å•±•Ñ•‘5•ÍÍ…•%‘Ì¹…‘‘±°¡ÁÉ•™Ì¹•ÑMÑÉ¥¹1¥ÍĞ ½É‰¥Ñ•±•Ñ•‘½É5•5•ÍÍ…•%‘Ìœ¤€üü½¹ÍĞ€ñMÑÉ¥¹œùmt¤ì(€€€¥˜€¡µ½Õ¹Ñ•¤Í•ÑMÑ…Ñ”  ¤ì(€€€€€µ•ÍÍ…•Ì¹É•µ½Ù•]¡•É” ¡¥Ñ•´¤€ôø}±½…±±å•±•Ñ•‘5•ÍÍ…•%‘Ì¹½¹Ñ…¥¹Ì œ‘í¥Ñ•µl¥t€üü€œôœ¤¤ì(€€€ô¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}ÍÑ…ÉÑ¡…ÑMå¹Œ ¤…Íå¹Œì(€€€ÑÉäì(€€€€€™¥¹…°ÍÑÉ•…´€ô¡…ÑMå¹M•ÉÙ¥”¹İ…Ñ¡5•ÍÍ…•Ì ¤ì((€€€€€}¡…ÑMÕ‰ÍÉ¥ÁÑ¥½¸€ôÍÑÉ•…´¹±¥ÍÑ•¸ (€€€€€€€€¡±…Ñ•ÍÑ5•ÍÍ…•Ì¤ì(€€€€€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì((€€€€€€€€€™¥¹…°™¥ÉÍÑM¹…ÁÍ¡½Ğ€ô€…}¡…Í1½…‘•‘%¹¥Ñ¥…±5•ÍÍ…•Ìì(€€€€€€€€€™¥¹…°ÁÉ•Ù¥½ÕÍ½Õ¹Ğ€ôµ•ÍÍ…•Ì¹±•¹Ñ ì(€€€€€€€€€™¥¹…°ÁÉ•Ù¥½ÕÍ1…ÍÑ%€ô(€€€€€€€€€€€€€µ•ÍÍ…•Ì¹¥ÍµÁÑä€ü€œœ€è€œ‘íµ•ÍÍ…•Ì¹±…ÍÑl¥t€üü€œôœì(€€€€€€€€€™¥¹…°¹•áÑ1…ÍÑ%€ô±…Ñ•ÍÑ5•ÍÍ…•Ì¹¥ÍµÁÑä(€€€€€€€€€€€€€€ü€œœ(€€€€€€€€€€€€€€è€œ‘í±…Ñ•ÍÑ5•ÍÍ…•Ì¹±…ÍÑl¥t€üü€œôœì(€€€€€€€€€™¥¹…°¡…Í9•İQ…¥±5•ÍÍ…”€ô±…Ñ•ÍÑ5•ÍÍ…•Ì¹±•¹Ñ €øÁÉ•Ù¥½ÕÍ½Õ¹Ğñğ(€€€€€€€€€€€€€€¡±…Ñ•ÍÑ5•ÍÍ…•Ì¹¥Í9½ÑµÁÑä€˜˜¹•áÑ1…ÍÑ%€„ôÁÉ•Ù¥½ÕÍ1…ÍÑ%¤ì(€€€€€€€€€™¥¹…°Í¡½Õ±‘½±±½İQ…¥°€ô™¥ÉÍÑM¹…ÁÍ¡½Ğñğ(€€€€€€€€€€€€€€ …}ÕÍ•É!…ÍMÉ½±±•‘İ…åÉ½µ	½ÑÑ½´€˜˜(€€€€€€€€€€€€€€€€€}¥Í9•…É¡…Ñ	½ÑÑ½´€˜˜(€€€€€€€€€€€€€€€€€¡…Í9•İQ…¥±5•ÍÍ…”¤ì((€€€€€€€€€€¼¼½µÁÕÑ”Ñ¡¥Ì½¹”Á•È¥É•ÍÑ½É”Í¹…ÁÍ¡½Ğ¥¹ÍÑ•…½˜É•Í…¹¹¥¹œÑ¡”(€€€€€€€€€€¼¼½µÁ±•Ñ”µ•ÍÍ…”±¥ÍĞİ¡¥±”•… Ù¥Í¥‰±”É½Ü¥Ì‰•¥¹œ‰Õ¥±Ğ¸(€€€€€€€€€Ù…È¹•áÑ1…ÍÑ=İ¹5•ÍÍ…•%¹‘•à€ô€´Äì(€€€€€€€€€™¥¹…°ÕÉÉ•¹ÑU¥€ô}ÕÉÉ•¹ÑU¥ì(€€€€€€€€€™½È€¡Ù…È¤€ô±…Ñ•ÍÑ5•ÍÍ…•Ì¹±•¹Ñ €´€Äì¤€øô€Àì¤´´¤ì(€€€€€€€€€€€™¥¹…°¥Ñ•´€ô±…Ñ•ÍÑ5•ÍÍ…•Ím¥tì(€€€€€€€€€€€™¥¹…°Í•¹‘•ÉU¥€ô€œ‘í¥Ñ•µlÍ•¹‘•ÉU¥t€üü€œôœì(€€€€€€€€€€€™¥¹…°µ¥¹”€ôÍ•¹‘•ÉU¥¹¥Í9½ÑµÁÑä€˜˜ÕÉÉ•¹ÑU¥¹¥Í9½ÑµÁÑä(€€€€€€€€€€€€€€€€üÍ•¹‘•ÉU¥€ôôÕÉÉ•¹ÑU¥(€€€€€€€€€€€€€€€€è¥Ñ•µlµ¥¹”t€ôôÑÉÕ”ì(€€€€€€€€€€€¥˜€¡µ¥¹”€˜˜¥Ñ•µlÕ¹Í•¹Ğt€„ôÑÉÕ”¤ì(€€€€€€€€€€€€€¹•áÑ1…ÍÑ=İ¹5•ÍÍ…•%¹‘•à€ô¤ì(€€€€€€€€€€€€€‰É•…¬ì(€€€€€€€€€€€ô(€€€€€€€€€ô((€€€€€€€€€™¥¹…°ÁÉ•Ù¥½ÕÍ±åM••¹%‘Ì€ô€ñMÑÉ¥¹œùì(€€€€€€€€€€€™½È€¡™¥¹…°¥Ñ•´¥¸µ•ÍÍ…•Ì¤(€€€€€€€€€€€€€¥˜€¡}¥Í5¥¹”¡¥Ñ•´¤€˜˜}¥ÍM••¹	åA…ÉÑ¹•È¡¥Ñ•´¤¤(€€€€€€€€€€€€€€€€œ‘í¥Ñ•µl¥t€üü€œôœ°(€€€€€€€€€ôì(€€€€€€€€€¥˜€¡™¥ÉÍÑM¹…ÁÍ¡½Ğ¤ì(€€€€€€€€€€€™½È€¡™¥¹…°¥Ñ•´¥¸±…Ñ•ÍÑ5•ÍÍ…•Ì¤ì(€€€€€€€€€€€€€¥˜€¡}¥Í5¥¹”¡¥Ñ•´¤€˜˜}¥ÍM••¹	åA…ÉÑ¹•È¡¥Ñ•´¤¤ì(€€€€€€€€€€€€€€€}Í••¹M½Õ¹‘A±…å•‘½È¹…‘ œ‘í¥Ñ•µl¥t€üü€œôœ¤ì(€€€€€€€€€€€€€ô(€€€€€€€€€€€ô(€€€€€€€€€ô•±Í”ì(€€€€€€€€€€€™½È€¡™¥¹…°¥Ñ•´¥¸±…Ñ•ÍÑ5•ÍÍ…•Ì¤ì(€€€€€€€€€€€€€™¥¹…°¥€ô€œ‘í¥Ñ•µl¥t€üü€œôœì(€€€€€€€€€€€€€¥˜€¡¥¹¥Í9½ÑµÁÑä€˜˜(€€€€€€€€€€€€€€€€€}¥Í5¥¹”¡¥Ñ•´¤€˜˜(€€€€€€€€€€€€€€€€€}¥ÍM••¹	åA…ÉÑ¹•È¡¥Ñ•´¤€˜˜(€€€€€€€€€€€€€€€€€€…ÁÉ•Ù¥½ÕÍ±åM••¹%‘Ì¹½¹Ñ…¥¹Ì¡¥¤€˜˜(€€€€€€€€€€€€€€€€€}Í••¹M½Õ¹‘A±…å•‘½È¹…‘¡¥¤¤ì(€€€€€€€€€€€€€€€Õ¹…İ…¥Ñ•¡%¹Ñ•É…Ñ¥½¹••‘‰…­M•ÑÑ¥¹Ì¹Á±…åM••¹M½Õ¹ ¤¤ì(€€€€€€€€€€€€€ô(€€€€€€€€€€€ô(€€€€€€€€€ô((€€€€€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€€€€€µ•ÍÍ…•Ì€ô±…Ñ•ÍÑ5•ÍÍ…•Ì¹İ¡•É” ¡¥Ñ•´¤€ôø€…}±½…±±å•±•Ñ•‘5•ÍÍ…•%‘Ì¹½¹Ñ…¥¹Ì œ‘í¥Ñ•µl¥t€üü€œôœ¤¤¹Ñ½1¥ÍĞ ¤ì(€€€€€€€€€€€}…¡•‘1…ÍÑ=İ¹5•ÍÍ…•%¹‘•à€ô¹•áÑ1…ÍÑ=İ¹5•ÍÍ…•%¹‘•àì(€€€€€€€€€ô¤ì(€€€€€€€€€}¡…Í1½…‘•‘%¹¥Ñ¥…±5•ÍÍ…•Ì€ôÑÉÕ”ì((€€€€€€€€€¥˜€¡}…ÁÁ%ÍI•ÍÕµ•¤ì(€€€€€€€€€€€Õ¹…İ…¥Ñ• (€€€€€€€€€€€€€¡…ÑMå¹M•ÉÙ¥”¹µ…É­5•ÍÍ…•ÍM••¸¡±…Ñ•ÍÑ5•ÍÍ…•Ì¤¹…Ñ¡ÉÉ½È (€€€€€€€€€€€€€€€€¡=‰©•Ğ•ÉÉ½È¤ì(€€€€€€€€€€€€€€€€€‘•‰ÕAÉ¥¹Ğ 5…É¬Í••¸Í­¥ÁÁ•è€‘•ÉÉ½Èœ¤ì(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô((€€€€€€€€€€¼¼¦ØÖü.×ŸŠw¼ÓZ7kˆºw^~)Şvòî×ŸŠwJk.×ŸŠwŠjhÙ¨"éİyø§yßÇ5£~p‹§uçâç~ÈÖÚ£Z6ihß¿ Seen/metadata 5£n„Öür.×ŸŠwû§uçâç@¢–b‡6†÷VÆDföÆÆ÷uF–Â’°¢òòF—&V7FÇ’6WGFÆRFòF†Rf–æÂW‡FVçB–ç7FVBöbæ–ÖF–ær6†æv–æp¢òòFW‡BöVÖö¦’öÆ–æ²Æ–÷WC²F†—2&WfVçG2F†R6†BÆ—7Bg&öÒ6†¶–ærà¢÷67&öÆÅFô&÷GFöÒ†æ–ÖFS¢fÇ6RÂ6WGFÆS¢G'VR“°¢Ğ¢ÒÀ¢öäW'&÷#¢„ö&¦V7BW'&÷"’°¢–b‚Ö÷VçFVB’&WGW&ã°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6æ6´&"†6öçFVçC¢FW‡B‚sZ7kÍhß 5£n„ÖòZ6oˆºw^~)Şwïhİ›ºw^~)Şw)¨5£P€ÖºóZ5ÈhÙÀ5£vŞéİyø§yØ¦TÖrZ7o®×ŸŠw
+fhßÍ5£x€ÖœZ5	ÊJKˆ
+NÂˆKˆ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆYˆ
+[[İ[Y
+H™]\›ÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+	ºw^~)ŞvóMhßŸ"éİyø§yÛ¾5£D€Ö›â.×ŸŠwûãZ6oî×ŸŠw
+aMhÙ—5£fä‹§uçâçvÂéİyø§yÜ¦Öû.×ŸŠw¼sZ7gî×ŸŠwŠeMhÙ¨ºw^~)Şt')),
       );
     }
   }
@@ -3453,7 +2051,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('à¦†à¦—à§‡ Partner Space-à¦ à¦¯à§à¦•à§à¦¤ à¦¹à§Ÿà§‡ à¦¨à¦¾à¦“à¥¤'),
+          content: Text(&éİyø§yß—ºw^~)Şw Partner Space.éİyø§yß 5£fTÖBZ7ñÈºw^~)ŞvohÔ'),
         ),
       );
       return;
@@ -3469,11 +2067,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         'replyToId': '${replyTo['id'] ?? ''}',
         'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
             ? '${replyTo['text'] ?? ''}'
-            : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'à¦­à¦¿à¦¡à¦¿à¦“' : 'à¦›à¦¬à¦¿'),
-        'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
-        'replyToSenderName': _profileNameForUid(
-          '${replyTo['senderUid'] ?? ''}',
-          _isMine(replyTo) ? 'à¦¤à§à¦®à¦¿' : 'à¦¸à¦™à§à¦—à§€',
+            : ('${replyTo['type'] ?? 'media'}' == 'video' ? '5£~„Ö2r¢n×ŸŠwºË§uçâçrr’À¢w&WÇ•Fõ6VæFW%V–Bs¢rG·&WÇ•Fõ²w6VæFW%V–BuÒóòrwÒrÀ¢w&WÇ•Fõ6VæFW$æÖRs¢÷&öf–ÆTæÖTf÷%V–B€¢rG·&WÇ•Fõ²w6VæFW%V–BuÒóòrwÒrÀ¢ö—4Ö–æR‡&WÇ•Fò’òúCZ7ïÉÈˆîhİ—ºw^~)Şt',
         ),
       },
       'mine': true,
@@ -3502,31 +2096,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('à¦®à§‡à¦¸à§‡à¦œ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤'),
-        ),
-      );
-    }
-  }
-
-  Future<void> _sendMedia(
-    bool video, {
-    ImageSource source = ImageSource.gallery,
-  }) async {
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('à¦†à¦—à§‡ Partner Space-à¦ à¦¯à§à¦•à§à¦¤ à¦¹à¦“à¥¤'),
-        ),
-      );
-      return;
-    }
-
-    if (_pendingMediaName != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('à¦†à¦—à§‡à¦° à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿à¦° à¦†à¦ªà¦²à§‹à¦¡ à¦¶à§‡à¦· à¦¹à¦²à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤'),
+          content: Text(&éİyø§yßÇ5£~p‹§uçâçnøÖú‹§uçâçršóZ7êhÔ 5£vúéİyø§yĞ¦hÖüÓZ7ˆhÙÁ5£Pœ¤°(€€€€€€€€¤°(€€€€€€¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í•¹‘5•‘¥„ (€€€‰½½°Ù¥‘•¼°ì(€€€%µ…•M½ÕÉ”Í½ÕÉ”€ô%µ…•M½ÕÉ”¹…±±•Éä°(€ô¤…Íå¹Œì(€€€™¥¹…°ÕÍ•È€ô¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•Èì((€€€¥˜€¡ÕÍ•È€ôô¹Õ±°¤ì(€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€½¹ÍĞM¹…­	…È (€€€€€€€€€½¹Ñ•¹ĞèQ•áĞ ¾Ör'FæW"76RØò.×ŸŠwüZ7iºw^~)Şvdî×ŸŠw	ÊKˆ
+Kˆ
+NÂˆ™]\›ÂˆB‚ˆYˆ
+Ü[™[™ÓYYXS˜[YHOH[
+HÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛÛœİÛ˜XÚĞ˜\ŠˆÛÛ[ˆ^
+áhß°"éİyø§yÛ¾5£n|ÖZ6ìhÑ 5£~Ü‹§uçâçfÊéİyø§yÜ¦Öû.×ŸŠw¼sZ7gî×ŸŠwŠeMhÛd'),
         ),
       );
       return;
@@ -3570,19 +2146,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           debugPrint('Video compatibility optimization failed: $error');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('à¦­à¦¿à¦¡à¦¿à¦“ à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿; à¦…à¦¨à§à¦¯ à¦­à¦¿à¦¡à¦¿à¦“ à¦¦à¦¿à§Ÿà§‡ à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-            );
-          }
-          return;
-        }
-        try {
-          final thumbnailBytes = await VideoThumbnail.thumbnailData(
-            video: file.path,
-            imageFormat: ImageFormat.JPEG,
-            maxHeight: 240,
-            quality: 45,
-          );
-          // Firestore-à¦à¦° 1 MiB document limit à¦¨à¦¿à¦°à¦¾à¦ªà¦¦ à¦°à¦¾à¦–à¦¤à§‡ thumbnail à¦›à§‹à¦Ÿ à¦°à¦¾à¦–à¦¿à¥¤
+              const SnackBar(content: Text(&éİyø§yİ¿5£~L‹§uçâçv¨ÖúãZ7çºw^~)Şwl.×ŸŠwŠkÍhß¨ºw^~)Şw; 5£g6éİyø§yÜ¦´Ö›û§uçâçršcZ7ñÈºw^~)ŞvñÍhİŸºw^~)Şv)•5£f¢éİyø§yĞœ¤¤°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€ÑÉäì(€€€€€€€€€™¥¹…°Ñ¡Õµ‰¹…¥±	åÑ•Ì€ô…İ…¥ĞY¥‘•½Q¡Õµ‰¹…¥°¹Ñ¡Õµ‰¹…¥±…Ñ„ (€€€€€€€€€€€Ù¥‘•¼è™¥±”¹Á…Ñ °(€€€€€€€€€€€¥µ…•½Éµ…Ğè%µ…•½Éµ…Ğ¹)A°(€€€€€€€€€€€µ…á!•¥¡Ğè€ÈĞÀ°(€€€€€€€€€€€ÅÕ…±¥Ñäè€ĞÔ°(€€€€€€€€€€¤ì(€€€€€€€€€€¼¼¥É•ÍÑ½É”´ÖÖ”"Fö7VÖVçBÆ–Ö—BZ7ìhÛ¦"éİyø§yÙ¾5£wÑ¡Õµ‰¹…¥°¦lÖòZ7åhÔ
           if (thumbnailBytes != null &&
               thumbnailBytes.isNotEmpty &&
               thumbnailBytes.length <= 180 * 1024) {
@@ -3606,11 +2170,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             'replyToId': '${replyTo['id'] ?? ''}',
             'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
                 ? '${replyTo['text'] ?? ''}'
-                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'à¦­à¦¿à¦¡à¦¿à¦“' : 'à¦›à¦¬à¦¿'),
-            'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
-            'replyToSenderName': _profileNameForUid(
-              '${replyTo['senderUid'] ?? ''}',
-              _isMine(replyTo) ? 'à¦¤à§à¦®à¦¿' : 'à¦¸à¦™à§à¦—à§€',
+                : ('${replyTo['type'] ?? 'media'}' == 'video' ? &éİyø§yİ¿5£~Lœ€è€¾lÖòr’À¢w&WÇ•Fõ6VæFW%V–Bs¢rG·&WÇ•Fõ²w6VæFW%V–BuÒóòrwÒrÀ¢w&WÇ•Fõ6VæFW$æÖRs¢÷&öf–ÆTæÖTf÷%V–B€¢rG·&WÇ•Fõ²w6VæFW%V–BuÒóòrwÒrÀ¢ö—4Ö–æR‡&WÇ•Fò’òn×ŸŠwÜZ7ÉÈˆ	ºw^~)ŞvfMhßÀ',
             ),
           },
         },
@@ -3620,64 +2180,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           (uploaded['fileId'] ?? uploaded['driveFileId'] ?? '').trim();
 
       if (fileId.isEmpty) {
-        throw Exception('à¦†à¦ªà¦²à§‹à¦¡ à¦•à¦°à¦¾ à¦«à¦¾à¦‡à¦²à§‡à¦° ID à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-      }
+        throw Exception(&éİyø§yßª5£n„‹§uçâçvÂéİyø§yØ¦¬Öû#Z4Qhß“5£x€ÖıóZ7Ù	ÊNÂˆB‚ˆš[˜[Y\ÜØYÙHHİš[™Ë[˜[ZXÏÂˆ	ÚY	ÎˆY\ÜØYÙRYˆ	ÜÙ[™\•ZY	Îˆ\Ù\‹ZYˆ	İ^	Îˆš[Kœ]ˆ	İ\IÎˆšY[ÈÈ	İšY[ÉÈˆ	Ú[XYÙIËˆ	Ùš[RY	Îˆš[RYˆ	Ùš]™Qš[RY	Îˆš[RYˆ	Ùš]™Qš[S˜[YIÎˆ\ØYYÉÙš]™Qš[S˜[YI×HÏÈš[S˜[YKˆ	ÛZ[YU\IÎˆ\ØYYÉÛZ[YU\I×HÏÈ	ÉËˆ	ÜÚ^™IÎˆ\ØYYÉÜÚ^™I×HÏÈ	ÉËˆ	ÜİÜ˜YÙIÎˆ	ÜÚ\™Y	ËˆYˆ
+šY[Õ[X›˜Z[˜\ÙMOH[
+Bˆ	İ[X›˜Z[˜\ÙM	ÎˆšY[Õ[X›˜Z[˜\ÙMˆYˆ
+™\UÈOH[
+H‹‹Âˆ	Ü™\UÒY	Îˆ	ÉÜ™\UÖÉÚY	×HÏÈ	ÉßIËˆ	Ü™\UÕ^	Îˆ	ÉÜ™\UÖÉİ\I×HÏÈ	İ^	ßIÈOH	İ^	ÂˆÈ	ÉÜ™\UÖÉİ^	×HÏÈ	ÉßIÂˆˆ
+	ÉÜ™\UÖÉİ\I×HÏÈ	ÛYYXIßIÈOH	İšY[ÉÈÈ	ºw^~)ŞwoÍhß“' : /›5£|œ¤°(€€€€€€€€€€É•Á±åQ½M•¹‘•ÉU¥œè€œ‘íÉ•Á±åQ½lÍ•¹‘•ÉU¥t€üü€œôœ°(€€€€€€€€€€É•Á±åQ½M•¹‘•É9…µ”œè}ÁÉ½™¥±•9…µ•½ÉU¥ (€€€€€€€€€€€€œ‘íÉ•Á±åQ½lÍ•¹‘•ÉU¥t€üü€œôœ°(€€€€€€€€€€€}¥Í5¥¹”¡É•Á±åQ¼¤€ü€¾Öûòr¢ûƒZ7eî×ŸŠw	Ëˆ
+KˆKˆ	ÛZ[™IÎˆYKˆ	İ[œÙ[	Îˆ˜[ÙKˆ	İ[YIÎˆ\ØYÜ™X]Y]ˆNÂ‚ˆYˆ
+[İ[Y
+HÂˆÙ]İ]J
 
-      final message = <String, dynamic>{
-        'id': messageId,
-        'senderUid': user.uid,
-        'text': file.path,
-        'type': video ? 'video' : 'image',
-        'fileId': fileId,
-        'driveFileId': fileId,
-        'driveFileName': uploaded['driveFileName'] ?? fileName,
-        'mimeType': uploaded['mimeType'] ?? '',
-        'size': uploaded['size'] ?? '',
-        'storage': 'shared',
-        if (videoThumbnailBase64 != null)
-          'thumbnailBase64': videoThumbnailBase64,
-        if (replyTo != null) ...{
-          'replyToId': '${replyTo['id'] ?? ''}',
-          'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
-              ? '${replyTo['text'] ?? ''}'
-              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'à¦­à¦¿à¦¡à¦¿à¦“' : 'à¦›à¦¬à¦¿'),
-          'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
-          'replyToSenderName': _profileNameForUid(
-            '${replyTo['senderUid'] ?? ''}',
-            _isMine(replyTo) ? 'à¦¤à§à¦®à¦¿' : 'à¦¸à¦™à§à¦—à§€',
-          ),
-        },
-        'mine': true,
-        'unsent': false,
-        'time': uploadCreatedAt,
-      };
-
-      if (mounted) {
-        setState(() {
-          _pendingMediaProgress = 1;
-        });
-      }
-
-      Object? sendError;
-
-      for (var attempt = 0; attempt < 3; attempt++) {
-        try {
-          await ChatSyncService.sendMessage(message);
-          sendError = null;
-          break;
-        } catch (error) {
-          sendError = error;
-
-          if (attempt < 2) {
-            await Future.delayed(
-              Duration(milliseconds: 500 * (attempt + 1)),
-            );
-          }
-        }
-      }
-
-      if (sendError != null) {
-        throw Exception('à¦®à§‡à¦¸à§‡à¦œ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤');
+HÂˆÜ[™[™ÓYYXT›ÙÜ™\ÜÈHNÂˆJNÂˆB‚ˆØš™XİÈÙ[™\œ›ÜÂ‚ˆ›Üˆ
+˜\ˆ][\HÈ][\ÎÈ][\
+ÊÊHÂˆHÂˆ]ØZ]Ú]Ş[˜ÔÙ\šXÙKœÙ[™Y\ÜØYÙJY\ÜØYÙJNÂˆÙ[™\œ›ÜˆH[Âˆœ™XZÎÂˆHØ]Ú
+\œ›ÜŠHÂˆÙ[™\œ›ÜˆH\œ›ÜÂ‚ˆYˆ
+][\ŠHÂˆ]ØZ]]\™K™[^YY
+ˆ\˜][ÛŠZ[\ÙXÛÛ™ÎˆL
+ˆ
+][\
+ÈJJKˆ
+NÂˆBˆBˆB‚ˆYˆ
+Ù[™\œ›ÜˆOH[
+HÂˆ›İÈ^Ù\[ÛŠëhÙÇºw^~)Şt)ª5£føÖ²Z7÷Íhßd"éİyø§yß¬5£@€ÖûsZ7ïˆºw^~)ŞwlhÔ');
       }
       unawaited(InteractionFeedbackSettings.playSentSound());
       
@@ -3701,7 +2225,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            video ? 'à¦­à¦¿à¦¡à¦¿à¦“ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡à¥¤' : 'à¦›à¦¬à¦¿ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡à¥¤',
+            video ? &éİyø§yİ¿5£~L‹§uçâçnøÖú‹§uçâçr›“Z7æÍhÔ' : &éİyø§yÛ¬ºw^~)Şw)ª5£føÖ²Z7ñÍhßd',
           ),
         ),
       );
@@ -3709,121 +2233,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('à¦®à¦¿à¦¡à¦¿à§Ÿà¦¾ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _pendingMediaName = null;
-          _pendingMediaProgress = 0;
-          _pendingMediaSpeed = 0;
-        });
-      }
-    }
-  }
-
-  String _formatRecordingDuration(Duration duration) {
-    final totalSeconds = duration.inSeconds;
-    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  Future<void> _startVoiceRecording() async {
-    if (_isRecordingVoice || _recordedVoicePath != null) return;
-    if (FirebaseAuth.instance.currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('à¦†à¦—à§‡ Partner Space-à¦ à¦¯à§à¦•à§à¦¤ à¦¹à¦“à¥¤')),
+            content: Text(&éİyø§yß¿5£~éİyø§yØ¦¨Ö›ãZ6Èhßß5£}‹§uçâç~°ÖZ7íÍhß¾"éİyø§yİ°5£eœ¤°(€€€€€€€€€€¤°(€€€€€€€€¤ì(€€€€€ô(€€€ô™¥¹…±±äì(€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€€€}Á•¹‘¥¹5•‘¥…9…µ”€ô¹Õ±°ì(€€€€€€€€€}Á•¹‘¥¹5•‘¥…AÉ½É•ÍÌ€ô€Àì(€€€€€€€€€}Á•¹‘¥¹5•‘¥…MÁ••€ô€Àì(€€€€€€€ô¤ì(€€€€€ô(€€€ô(€ô((€MÑÉ¥¹œ}™½Éµ…ÑI•½É‘¥¹ÕÉ…Ñ¥½¸¡ÕÉ…Ñ¥½¸‘ÕÉ…Ñ¥½¸¤ì(€€€™¥¹…°Ñ½Ñ…±M•½¹‘Ì€ô‘ÕÉ…Ñ¥½¸¹¥¹M•½¹‘Ìì(€€€™¥¹…°µ¥¹ÕÑ•Ì€ô€¡Ñ½Ñ…±M•½¹‘Ìø¼€ØÀ¤¹Ñ½MÑÉ¥¹œ ¤¹Á…‘1•™Ğ È°€œÀœ¤ì(€€€™¥¹…°Í•½¹‘Ì€ô€¡Ñ½Ñ…±M•½¹‘Ì€”€ØÀ¤¹Ñ½MÑÉ¥¹œ ¤¹Á…‘1•™Ğ È°€œÀœ¤ì(€€€É•ÑÕÉ¸€œ‘µ¥¹ÕÑ•Ìè‘Í•½¹‘Ìœì(€ô((€ÕÑÕÉ”ñÙ½¥ø}ÍÑ…ÉÑY½¥•I•½É‘¥¹œ ¤…Íå¹Œì(€€€¥˜€¡}¥ÍI•½É‘¥¹Y½¥”ñğ}É•½É‘•‘Y½¥•A…Ñ €„ô¹Õ±°¤É•ÑÕÉ¸ì(€€€¥˜€¡¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•È€ôô¹Õ±°¤ì(€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€½¹ÍĞM¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ œÖür'FæW"76RÛ§uçâçršóZ7sn×ŸŠw
+nMhÔ')),
       );
       return;
     }
     if (_pendingMediaName != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('à¦†à¦—à§‡à¦° à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿à¦° à¦†à¦ªà¦²à§‹à¦¡ à¦¶à§‡à¦· à¦¹à¦²à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤')),
-      );
-      return;
-    }
-    try {
-      if (!await _voiceRecorder.hasPermission()) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('à¦­à§Ÿà§‡à¦¸ à¦ªà¦¾à¦ à¦¾à¦¤à§‡ Microphone permission à¦¦à¦¿à¦¤à§‡ à¦¹à¦¬à§‡à¥¤')),
-          );
-        }
-        return;
-      }
-      final support = await getApplicationSupportDirectory();
-      final voiceDirectory = Directory('${support.path}/chat_voice');
-      await voiceDirectory.create(recursive: true);
-      final path = '${voiceDirectory.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
-      await _voiceRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: path,
-      );
-      if (mounted) {
-        setState(() {
-          _recordingPath = path;
-          _recordedVoicePath = null;
-          _recordingStartedAt = DateTime.now();
-          _recordingElapsed = Duration.zero;
-          _isRecordingVoice = true;
-        });
-      }
-      _recordingTimer?.cancel();
-      _recordingTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
-        final started = _recordingStartedAt;
-        if (!mounted || !_isRecordingVoice || started == null) return;
-        setState(() {
-          _recordingElapsed = DateTime.now().difference(started);
-        });
-      });
-    } catch (error) {
-      debugPrint('Voice recording start failed: $error');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('à¦­à§Ÿà§‡à¦¸ à¦°à§‡à¦•à¦°à§à¦¡ à¦¶à§à¦°à§ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦®à¦¾à¦‡à¦•à§à¦°à§‹à¦«à§‹à¦¨à§‡à¦° à¦…à¦¨à§à¦®à¦¤à¦¿ à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-        );
-      }
-    }
-  }
-
-  Future<void> _stopVoiceRecording() async {
-    if (!_isRecordingVoice) return;
-    try {
-      final path = await _voiceRecorder.stop();
-      _recordingTimer?.cancel();
-      _recordingTimer = null;
-      if (path == null || path.isEmpty) {
-        if (mounted) setState(() => _isRecordingVoice = false);
-        return;
-      }
-      final file = File(path);
-      if (!await file.exists() || await file.length() == 0) {
-        throw Exception('à¦°à§‡à¦•à¦°à§à¦¡ à¦•à¦°à¦¾ à¦­à§Ÿà§‡à¦¸ à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-      }
-      await _voicePreviewPlayer.stop();
-      if (mounted) {
-        setState(() {
-          _isVoicePreviewPlaying = false;
-          _isRecordingVoice = false;
-          _recordingPath = path;
-          _recordedVoicePath = path;
-        });
-      }
-    } catch (error) {
-      debugPrint('Voice recording stop failed: $error');
-      _recordingTimer?.cancel();
-      _recordingTimer = null;
-      if (mounted) {
-        setState(() => _isRecordingVoice = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('à¦­à§Ÿà§‡à¦¸ à¦°à§‡à¦•à¦°à§à¦¡ à¦¶à§‡à¦· à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
+        const SnackBar(content: Text(/†5£~À‹§uçâçnøÖ¹óZ4hÛ²5£D€Öûr.×ŸŠw›+§uçâçr˜cZ7ìºw^~)ŞvñÍhİŸºw^~)Şv)•5£mœ¤¤°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€ÑÉäì(€€€€€¥˜€ ……İ…¥Ğ}Ù½¥•I•½É‘•È¹¡…ÍA•Éµ¥ÍÍ¥½¸ ¤¤ì(€€€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€€€€€½¹ÍĞM¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ ›§uçâçw|Ö‚Z7èhİÇ Microphone permission)¦5£w‹§uçâçf°ÖBr’’À¢“°¢Ğ¢&WGW&ã°¢Ğ¢f–æÂ7W÷'BÒv—BvWDÆ–6F–öå7W÷'DF—&V7F÷'’‚“°¢f–æÂfö–6TF—&V7F÷'’ÒF—&V7F÷'’‚rG·7W÷'BçF‡Òö6†E÷fö–6Rr“°¢v—Bfö–6TF—&V7F÷'’æ7&VFR‡&V7W'6—fS¢G'VR“°¢f–æÂF‚ÒrG·fö–6TF—&V7F÷'’çF‡Ò÷fö–6UòG´FFUF–ÖRææ÷r‚’æÖ–7&÷6V6öæG56–æ6TWö6‡ÒæÓFs°¢v—B÷fö–6U&V6÷&FW"ç7F'B€¢6öç7B&V6÷&D6öæf–r€¢Væ6öFW#¢VF–ôVæ6öFW"æ4Æ2À¢&—E&FS¢#ƒÀ¢6×ÆU&FS¢CCÀ¢’À¢Fƒ¢F‚À¢“°¢–b†Ö÷VçFVB’°¢6WE7FFR‚‚’°¢÷&V6÷&F–æuF‚ÒFƒ°¢÷&V6÷&FVEfö–6UF‚ÒçVÆÃ°¢÷&V6÷&F–æu7F'FVDBÒFFUF–ÖRææ÷r‚“°¢÷&V6÷&F–ætVÆ6VBÒGW&F–öâç¦W&ó°¢ö—5&V6÷&F–æufö–6RÒG'VS°¢Ò“°¢Ğ¢÷&V6÷&F–æuF–ÖW#òæ6æ6VÂ‚“°¢÷&V6÷&F–æuF–ÖW"ÒF–ÖW"çW&–öF–2†6öç7BGW&F–öâ†Ö–ÆÆ—6V6öæG3¢#’Â…ò’°¢f–æÂ7F'FVBÒ÷&V6÷&F–æu7F'FVDC°¢–b‚Ö÷VçFVBÇÂö—5&V6÷&F–æufö–6RÇÂ7F'FVBÓÒçVÆÂ’&WGW&ã°¢6WE7FFR‚‚’°¢÷&V6÷&F–ætVÆ6VBÒFFUF–ÖRææ÷r‚’æF–ffW&Væ6R‡7F'FVB“°¢Ò“°¢Ò“°¢Ò6F6‚†W'&÷"’°¢FV'Vu&–çB‚ufö–6R&V6÷&F–ær7F'Bf–ÆVC¢FW'&÷"r“°¢–b†Ö÷VçFVB’°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6æ6´&"†6öçFVçC¢FW‡B‚úÓZ7îºw^~)ŞvqÍhÙÍºw^~)Şu)¶5£g‹§uçâçvÂéİyø§yØ¦¼ÖúƒZ5hß‡5£vÀÖ¼³Z7ìºw^~)Şwjhß¤ºw^~)Şw)ª5£fTÖûâ.×ŸŠwÛ§uçâçr˜cZ7ìºw^~)ŞvñÍhİŸºw^~)Şv)•5£f¢éİyø§yĞœ¤¤°(€€€€€€€€¤ì(€€€€€ô(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}ÍÑ½ÁY½¥•I•½É‘¥¹œ ¤…Íå¹Œì(€€€¥˜€ …}¥ÍI•½É‘¥¹Y½¥”¤É•ÑÕÉ¸ì(€€€ÑÉäì(€€€€€™¥¹…°Á…Ñ €ô…İ…¥Ğ}Ù½¥•I•½É‘•È¹ÍÑ½À ¤ì(€€€€€}É•½É‘¥¹Q¥µ•Èü¹…¹•° ¤ì(€€€€€}É•½É‘¥¹Q¥µ•È€ô¹Õ±°ì(€€€€€¥˜€¡Á…Ñ €ôô¹Õ±°ñğÁ…Ñ ¹¥ÍµÁÑä¤ì(€€€€€€€¥˜€¡µ½Õ¹Ñ•¤Í•ÑMÑ…Ñ”  ¤€ôø}¥ÍI•½É‘¥¹Y½¥”€ô™…±Í”¤ì(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô(€€€€€™¥¹…°™¥±”€ô¥±”¡Á…Ñ ¤ì(€€€€€¥˜€ ……İ…¥Ğ™¥±”¹•á¥ÍÑÌ ¤ñğ…İ…¥Ğ™¥±”¹±•¹Ñ  ¤€ôô€À¤ì(€€€€€€€Ñ¡É½Üá•ÁÑ¥½¸ œÖùSZ7hHºw^~)Şwl.×ŸŠwŠkMhß¸"éİyø§yÛ¾5£~ø‹§uçâç~øÖ›û§uçâçBr“°¢Ğ¢v—B÷fö–6U&Wf–WuÆ–W"ç7F÷‚“°¢–b†Ö÷VçFVB’°¢6WE7FFR‚‚’°¢ö—5fö–6U&Wf–WuÆ––ærÒfÇ6S°¢ö—5&V6÷&F–æufö–6RÒfÇ6S°¢÷&V6÷&F–æuF‚ÒFƒ°¢÷&V6÷&FVEfö–6UF‚ÒFƒ°¢Ò“°¢Ğ¢Ò6F6‚†W'&÷"’°¢FV'Vu&–çB‚ufö–6R&V6÷&F–ær7F÷f–ÆVC¢FW'&÷"r“°¢÷&V6÷&F–æuF–ÖW#òæ6æ6VÂ‚“°¢÷&V6÷&F–æuF–ÖW"ÒçVÆÃ°¢–b†Ö÷VçFVB’°¢6WE7FFR‚‚’Óâö—5&V6÷&F–æufö–6RÒfÇ6R“°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6æ6´&"†6öçFVçC¢FW‡B‚n×ŸŠwİóZ6hß•5£v„‹§uçâçéİyø§yÜ¦TÖâZ7÷Íhßd"éİyø§yß¬5£@€ÖûsZ7ïˆºw^~)ŞwlhÙd')),
         );
       }
     }
@@ -3849,187 +2266,33 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await _voicePreviewPlayer.play(DeviceFileSource(path));
       }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('à¦­à§Ÿà§‡à¦¸ à¦®à§‡à¦¸à§‡à¦œ à¦šà¦¾à¦²à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')));
-    }
-  }
-
-  Future<void> _sendVoiceImmediately() async {
-    if (_isSendingRecordedVoice) return;
-    if (_isRecordingVoice) await _stopVoiceRecording();
-    if (!mounted || _recordedVoicePath == null) return;
-    await _sendRecordedVoice();
-  }
-
-  Future<void> _resetVoiceRecording() async {
-    await _voicePreviewPlayer.stop();
-    final oldPath = _recordedVoicePath ?? _recordingPath;
-    _recordingTimer?.cancel();
-    _recordingTimer = null;
-    if (oldPath != null) {
-      try {
-        final oldFile = File(oldPath);
-        if (await oldFile.exists()) await oldFile.delete();
-      } catch (error) {
-        debugPrint('Old voice recording cleanup skipped: $error');
-      }
-    }
-    if (!mounted) return;
-    setState(() {
-      _recordingPath = null;
-      _recordedVoicePath = null;
-      _recordingStartedAt = null;
-      _recordingElapsed = Duration.zero;
-      _isRecordingVoice = false;
-    });
-    await _startVoiceRecording();
-  }
-
-  Future<void> _deleteVoiceRecording() async {
-    await _voicePreviewPlayer.stop();
-    String? path = _recordedVoicePath ?? _recordingPath;
-    if (_isRecordingVoice) {
-      try {
-        path = await _voiceRecorder.stop() ?? path;
-      } catch (_) {}
-    }
-    _recordingTimer?.cancel();
-    _recordingTimer = null;
-    if (path != null) {
-      try {
-        final file = File(path);
-        if (await file.exists()) await file.delete();
-      } catch (error) {
-        debugPrint('Voice recording delete skipped: $error');
-      }
-    }
-    if (mounted) {
-      setState(() {
-        _isRecordingVoice = false;
-        _recordingPath = null;
-        _recordedVoicePath = null;
-        _recordingStartedAt = null;
-        _recordingElapsed = Duration.zero;
-      });
-    }
-  }
-
-  Future<void> _sendRecordedVoice() async {
-    if (_isSendingRecordedVoice) return;
-    final path = _recordedVoicePath;
-    if (path == null) return;
-    final file = File(path);
-    if (!await file.exists()) {
-      await _deleteVoiceRecording();
-      return;
-    }
-    if (mounted) setState(() => _isSendingRecordedVoice = true);
-    await _voicePreviewPlayer.stop();
-    try {
-      await _sendVoiceFile(file);
-    } finally {
-      if (mounted) setState(() => _isSendingRecordedVoice = false);
-    }
-  }
-
-  Widget _buildVoiceRecordingPanel() {
-    if (!_isRecordingVoice && _recordedVoicePath == null) {
-      return const SizedBox.shrink();
-    }
-    final elapsed = _recordingElapsed;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: surfaceColor,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: pinkColor.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isRecordingVoice ? Icons.fiber_manual_record_rounded : Icons.mic_rounded,
-            color: _isRecordingVoice ? Colors.redAccent : pinkColor,
-            size: 19,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            _formatRecordingDuration(elapsed),
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: SizedBox(
-              height: 28,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: List.generate(28, (index) {
-                  final phase = (elapsed.inMilliseconds ~/ 120 + index * 7) % 19;
-                  final height = 5.0 + (phase % 13);
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    width: 2.5,
-                    height: height,
-                    decoration: BoxDecoration(
-                      color: _isRecordingVoice ? pinkColor : Colors.white54,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-          if (_isRecordingVoice) ...[
-            IconButton(
-              tooltip: 'à¦°à§‡à¦•à¦°à§à¦¡ à¦¬à¦¨à§à¦§ à¦•à¦°à§‡ à¦¶à§à¦¨à§à¦¨',
-              visualDensity: VisualDensity.compact,
-              onPressed: _stopVoiceRecording,
-              icon: const Icon(Icons.stop_circle_rounded, color: Colors.redAccent),
-            ),
-            IconButton(
-              tooltip: 'à¦¶à§à¦¨à§‡ à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦¨à¦¾ à¦•à¦°à§‡à¦‡ à¦¸à¦°à¦¾à¦¸à¦°à¦¿ à¦ªà¦¾à¦ à¦¾à¦¨',
-              visualDensity: VisualDensity.compact,
-              onPressed: _isSendingRecordedVoice ? null : _sendVoiceImmediately,
-              icon: const Icon(Icons.send_rounded, color: pinkColor),
-            ),
-          ] else ...[
-            IconButton(
-              tooltip: _isVoicePreviewPlaying ? 'à¦¶à§‹à¦¨à¦¾ à¦¥à¦¾à¦®à¦¾à¦“ / Pause' : 'à¦ªà¦¾à¦ à¦¾à¦¨à§‹à¦° à¦†à¦—à§‡ Play à¦•à¦°à§‡ à¦¶à§à¦¨à§à¦¨',
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(&éİyø§yİß5£`€ÖûƒZ7hß²5£g,‹§uçâç~øÖ›û§uçâçB˜cZ7ìºw^~)ŞvñÍhİŸºw^~)Şv)•5£f¢éİyø§yĞœ¤¤¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í•¹‘Y½¥•%µµ•‘¥…Ñ•±ä ¤…Íå¹Œì(€€€¥˜€¡}¥ÍM•¹‘¥¹I•½É‘•‘Y½¥”¤É•ÑÕÉ¸ì(€€€¥˜€¡}¥ÍI•½É‘¥¹Y½¥”¤…İ…¥Ğ}ÍÑ½ÁY½¥•I•½É‘¥¹œ ¤ì(€€€¥˜€ …µ½Õ¹Ñ•ñğ}É•½É‘•‘Y½¥•A…Ñ €ôô¹Õ±°¤É•ÑÕÉ¸ì(€€€…İ…¥Ğ}Í•¹‘I•½É‘•‘Y½¥” ¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}É•Í•ÑY½¥•I•½É‘¥¹œ ¤…Íå¹Œì(€€€…İ…¥Ğ}Ù½¥•AÉ•Ù¥•İA±…å•È¹ÍÑ½À ¤ì(€€€™¥¹…°½±‘A…Ñ €ô}É•½É‘•‘Y½¥•A…Ñ €üü}É•½É‘¥¹A…Ñ ì(€€€}É•½É‘¥¹Q¥µ•Èü¹…¹•° ¤ì(€€€}É•½É‘¥¹Q¥µ•È€ô¹Õ±°ì(€€€¥˜€¡½±‘A…Ñ €„ô¹Õ±°¤ì(€€€€€ÑÉäì(€€€€€€€™¥¹…°½±‘¥±”€ô¥±”¡½±‘A…Ñ ¤ì(€€€€€€€¥˜€¡…İ…¥Ğ½±‘¥±”¹•á¥ÍÑÌ ¤¤…İ…¥Ğ½±‘¥±”¹‘•±•Ñ” ¤ì(€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€‘•‰ÕAÉ¥¹Ğ =±Ù½¥”É•½É‘¥¹œ±•…¹ÕÀÍ­¥ÁÁ•è€‘•ÉÉ½Èœ¤ì(€€€€€ô(€€€ô(€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€}É•½É‘¥¹A…Ñ €ô¹Õ±°ì(€€€€€}É•½É‘•‘Y½¥•A…Ñ €ô¹Õ±°ì(€€€€€}É•½É‘¥¹MÑ…ÉÑ•‘Ğ€ô¹Õ±°ì(€€€€€}É•½É‘¥¹±…ÁÍ•€ôÕÉ…Ñ¥½¸¹é•É¼ì(€€€€€}¥ÍI•½É‘¥¹Y½¥”€ô™…±Í”ì(€€€ô¤ì(€€€…İ…¥Ğ}ÍÑ…ÉÑY½¥•I•½É‘¥¹œ ¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}‘•±•Ñ•Y½¥•I•½É‘¥¹œ ¤…Íå¹Œì(€€€…İ…¥Ğ}Ù½¥•AÉ•Ù¥•İA±…å•È¹ÍÑ½À ¤ì(€€€MÑÉ¥¹œüÁ…Ñ €ô}É•½É‘•‘Y½¥•A…Ñ €üü}É•½É‘¥¹A…Ñ ì(€€€¥˜€¡}¥ÍI•½É‘¥¹Y½¥”¤ì(€€€€€ÑÉäì(€€€€€€€Á…Ñ €ô…İ…¥Ğ}Ù½¥•I•½É‘•È¹ÍÑ½À ¤€üüÁ…Ñ ì(€€€€€ô…Ñ €¡|¤íô(€€€ô(€€€}É•½É‘¥¹Q¥µ•Èü¹…¹•° ¤ì(€€€}É•½É‘¥¹Q¥µ•È€ô¹Õ±°ì(€€€¥˜€¡Á…Ñ €„ô¹Õ±°¤ì(€€€€€ÑÉäì(€€€€€€€™¥¹…°™¥±”€ô¥±”¡Á…Ñ ¤ì(€€€€€€€¥˜€¡…İ…¥Ğ™¥±”¹•á¥ÍÑÌ ¤¤…İ…¥Ğ™¥±”¹‘•±•Ñ” ¤ì(€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€‘•‰ÕAÉ¥¹Ğ Y½¥”É•½É‘¥¹œ‘•±•Ñ”Í­¥ÁÁ•è€‘•ÉÉ½Èœ¤ì(€€€€€ô(€€€ô(€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€}¥ÍI•½É‘¥¹Y½¥”€ô™…±Í”ì(€€€€€€€}É•½É‘¥¹A…Ñ €ô¹Õ±°ì(€€€€€€€}É•½É‘•‘Y½¥•A…Ñ €ô¹Õ±°ì(€€€€€€€}É•½É‘¥¹MÑ…ÉÑ•‘Ğ€ô¹Õ±°ì(€€€€€€€}É•½É‘¥¹±…ÁÍ•€ôÕÉ…Ñ¥½¸¹é•É¼ì(€€€€€ô¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í•¹‘I•½É‘•‘Y½¥” ¤…Íå¹Œì(€€€¥˜€¡}¥ÍM•¹‘¥¹I•½É‘•‘Y½¥”¤É•ÑÕÉ¸ì(€€€™¥¹…°Á…Ñ €ô}É•½É‘•‘Y½¥•A…Ñ ì(€€€¥˜€¡Á…Ñ €ôô¹Õ±°¤É•ÑÕÉ¸ì(€€€™¥¹…°™¥±”€ô¥±”¡Á…Ñ ¤ì(€€€¥˜€ ……İ…¥Ğ™¥±”¹•á¥ÍÑÌ ¤¤ì(€€€€€…İ…¥Ğ}‘•±•Ñ•Y½¥•I•½É‘¥¹œ ¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€¥˜€¡µ½Õ¹Ñ•¤Í•ÑMÑ…Ñ”  ¤€ôø}¥ÍM•¹‘¥¹I•½É‘•‘Y½¥”€ôÑÉÕ”¤ì(€€€…İ…¥Ğ}Ù½¥•AÉ•Ù¥•İA±…å•È¹ÍÑ½À ¤ì(€€€ÑÉäì(€€€€€…İ…¥Ğ}Í•¹‘Y½¥•¥±”¡™¥±”¤ì(€€€ô™¥¹…±±äì(€€€€€¥˜€¡µ½Õ¹Ñ•¤Í•ÑMÑ…Ñ”  ¤€ôø}¥ÍM•¹‘¥¹I•½É‘•‘Y½¥”€ô™…±Í”¤ì(€€€ô(€ô((€]¥‘•Ğ}‰Õ¥±‘Y½¥•I•½É‘¥¹A…¹•° ¤ì(€€€¥˜€ …}¥ÍI•½É‘¥¹Y½¥”€˜˜}É•½É‘•‘Y½¥•A…Ñ €ôô¹Õ±°¤ì(€€€€€É•ÑÕÉ¸½¹ÍĞM¥é•‘	½à¹Í¡É¥¹¬ ¤ì(€€€ô(€€€™¥¹…°•±…ÁÍ•€ô}É•½É‘¥¹±…ÁÍ•ì(€€€É•ÑÕÉ¸½¹Ñ…¥¹•È (€€€€€µ…É¥¸è½¹ÍĞ‘•%¹Í•ÑÌ¹™É½µ1QI à°€À°€à°€à¤°(€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ¡¡½É¥é½¹Ñ…°è€ÄÈ°Ù•ÉÑ¥…°è€ä¤°(€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È Äà¤°(€€€€€€€‰½É‘•Èè	½É‘•È¹…±°¡½±½ÈèÁ¥¹­½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÌÔ¤¤°(€€€€€€¤°(€€€€€¡¥±èI½Ü (€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€%½¸ (€€€€€€€€€€€}¥ÍI•½É‘¥¹Y½¥”€ü%½¹Ì¹™¥‰•É}µ…¹Õ…±}É•½É‘}É½Õ¹‘•€è%½¹Ì¹µ¥}É½Õ¹‘•°(€€€€€€€€€€€½±½Èè}¥ÍI•½É‘¥¹Y½¥”€ü½±½ÉÌ¹É•‘•¹Ğ€èÁ¥¹­½±½È°(€€€€€€€€€€€Í¥é”è€Ää°(€€€€€€€€€€¤°(€€€€€€€€€½¹ÍĞM¥é•‘	½à¡İ¥‘Ñ è€à¤°(€€€€€€€€€Q•áĞ (€€€€€€€€€€€}™½Éµ…ÑI•½É‘¥¹ÕÉ…Ñ¥½¸¡•±…ÁÍ•¤°(€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”°™½¹ÑM¥é”è€ÄÈ¤°(€€€€€€€€€€¤°(€€€€€€€€€½¹ÍĞM¥é•‘	½à¡İ¥‘Ñ è€ÄÀ¤°(€€€€€€€€€áÁ…¹‘• (€€€€€€€€€€€¡¥±èM¥é•‘	½à (€€€€€€€€€€€€€¡•¥¡Ğè€Èà°(€€€€€€€€€€€€€¡¥±èI½Ü (€€€€€€€€€€€€€€€µ…¥¹á¥Í±¥¹µ•¹Ğè5…¥¹á¥Í±¥¹µ•¹Ğ¹ÍÁ…•Ù•¹±ä°(€€€€€€€€€€€€€€€É½ÍÍá¥Í±¥¹µ•¹ĞèÉ½ÍÍá¥Í±¥¹µ•¹Ğ¹•¹Ñ•È°(€€€€€€€€€€€€€€€¡¥±‘É•¸è1¥ÍĞ¹•¹•É…Ñ” Èà°€¡¥¹‘•à¤ì(€€€€€€€€€€€€€€€€€™¥¹…°Á¡…Í”€ô€¡•±…ÁÍ•¹¥¹5¥±±¥Í•½¹‘Ìø¼€ÄÈÀ€¬¥¹‘•à€¨€Ü¤€”€Ääì(€€€€€€€€€€€€€€€€€™¥¹…°¡•¥¡Ğ€ô€Ô¸À€¬€¡Á¡…Í”€”€ÄÌ¤ì(€€€€€€€€€€€€€€€€€É•ÑÕÉ¸¹¥µ…Ñ•‘½¹Ñ…¥¹•È (€€€€€€€€€€€€€€€€€€€‘ÕÉ…Ñ¥½¸è½¹ÍĞÕÉ…Ñ¥½¸¡µ¥±±¥Í•½¹‘Ìè€ÄØÀ¤°(€€€€€€€€€€€€€€€€€€€İ¥‘Ñ è€È¸Ô°(€€€€€€€€€€€€€€€€€€€¡•¥¡Ğè¡•¥¡Ğ°(€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€½±½Èè}¥ÍI•½É‘¥¹Y½¥”€üÁ¥¹­½±½È€è½±½ÉÌ¹İ¡¥Ñ”ÔĞ°(€€€€€€€€€€€€€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È Ì¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€ô¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€€¥˜€¡}¥ÍI•½É‘¥¹Y½¥”¤€¸¸¹l(€€€€€€€€€€€%½¹	ÕÑÑ½¸ (€€€€€€€€€€€€€Ñ½½±Ñ¥Àè€¾ÀÖÛZ4HhÙÍºw^~)Şw)•5£\€ÖšƒZ6	Ëˆš\İX[[œÚ]Nˆš\İX[[œÚ]K˜ÛÛ\XİˆÛ”™\ÜÙYˆÜİÜ›ÚXÙT™XÛÜ™[™ËˆXÛÛˆÛÛœİXÛÛŠXÛÛœËœİÜØÚ\˜ÛWÜ›İ[™YÛÛÜˆÛÛÜœËœ™YXØÙ[
+Kˆ
+KˆXÛÛ]ÛŠˆÛÛ\ˆ	ºw^~)ŞwğMh× 5£g ÖÛ{§uçâçbš‹§uçâçb™SZ7áÈºw^~)ŞvlhÙ°ºw^~)Şw)ª5£fúéİyø§yĞœ°(€€€€€€€€€€€€€Ù¥ÍÕ…±•¹Í¥ÑäèY¥ÍÕ…±•¹Í¥Ñä¹½µÁ…Ğ°(€€€€€€€€€€€€€½¹AÉ•ÍÍ•è}¥ÍM•¹‘¥¹I•½É‘•‘Y½¥”€ü¹Õ±°€è}Í•¹‘Y½¥•%µµ•‘¥…Ñ•±ä°(€€€€€€€€€€€€€¥½¸è½¹ÍĞ%½¸¡%½¹Ì¹Í•¹‘}É½Õ¹‘•°½±½ÈèÁ¥¹­½±½È¤°(€€€€€€€€€€€€¤°(€€€€€€€€€t•±Í”€¸¸¹l(€€€€€€€€€€€%½¹	ÕÑÑ½¸ (€€€€€€€€€€€€€Ñ½½±Ñ¥Àè}¥ÍY½¥•AÉ•Ù¥•İA±…å¥¹œ€ü€¾ØÖ›â.×ŸŠwÛãZ7äÈÈ]\ÙIÈˆ	ºw^~)Şvïhß¨5£@€ÖürÆ’Z6qÈºw^~)ŞwğMhÙ¨',
               visualDensity: VisualDensity.compact,
               onPressed: _toggleVoicePreview,
               icon: Icon(_isVoicePreviewPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: pinkColor),
             ),
             IconButton(
-              tooltip: 'à¦°à¦¿à¦¸à§‡à¦Ÿ à¦•à¦°à§‡ à¦¨à¦¤à§à¦¨ à¦•à¦°à§‡ à¦°à§‡à¦•à¦°à§à¦¡',
+              tooltip: &éİyø§yÙ¿5£~|‹§uçâçvÂéİyø§yÜ¦ Öš‚.×ŸŠwÛ§uçâçr›Z7lhÑ',
               visualDensity: VisualDensity.compact,
               onPressed: _resetVoiceRecording,
               icon: const Icon(Icons.replay_rounded, color: pinkColor),
             ),
             IconButton(
-              tooltip: 'à¦°à§‡à¦•à¦°à§à¦¡ à¦•à¦°à¦¾ à¦­à§Ÿà§‡à¦¸ à¦¡à¦¿à¦²à¦¿à¦Ÿ',
-              visualDensity: VisualDensity.compact,
-              onPressed: _deleteVoiceRecording,
-              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-            ),
-            IconButton(
-              tooltip: _isVoicePreviewPlaying ? 'à¦¶à§‹à¦¨à¦¾ à¦¥à¦¾à¦®à¦¾à¦¤à§‡ à¦¹à¦¬à§‡ à¦¨à¦¾ â€” à¦ªà¦¾à¦ à¦¾à¦¨' : 'à¦¨à¦¾ à¦¶à§à¦¨à§‡à¦“ à¦¸à¦°à¦¾à¦¸à¦°à¦¿ à¦ªà¦¾à¦ à¦¾à¦¨',
-              visualDensity: VisualDensity.compact,
-              onPressed: _isSendingRecordedVoice ? null : _sendRecordedVoice,
-              icon: _isSendingRecordedVoice ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: pinkColor)) : const Icon(Icons.send_rounded, color: pinkColor),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Future<void> _sendVoiceFile(File file) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    if (_pendingMediaName != null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('à¦†à¦—à§‡à¦° à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿à¦° à¦†à¦ªà¦²à§‹à¦¡ à¦¶à§‡à¦· à¦¹à¦²à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤')),
+              tooltip: /°5£vÀÖZ6oˆºw^~)ŞwwÍhØ 5£~ÈÖòrÀ¢f—7VÄFVç6—G“¢f—7VÄFVç6—G’æ6ö×7BÀ¢öå&W76VC¢öFVÆWFUfö–6U&V6÷&F–ærÀ¢–6öã¢6öç7B–6öâ„–6öç2æFVÆWFUö÷WFÆ–æU÷&÷VæFVBÂ6öÆ÷#¢6öÆ÷'2ç&VD66VçB’À¢’À¢–6öä'WGFöâ€¢FööÇF—¢ö—5fö–6U&Wf–WuÆ––æròn×ŸŠwü³Z7ˆhß®5£w‹§uçâçf²éİyø§yÜ¦¢éİyø§yØ®×ŸŠwP‹§uçâçnøÖú‚r¢ú‹§uçâçb›cZ6qî×ŸŠwÊnhß¸5£|€ÖúZ6	Ëˆš\İX[[œÚ]Nˆš\İX[[œÚ]K˜ÛÛ\XİˆÛ”™\ÜÙYˆÚ\ÔÙ[™[™Ô™XÛÜ™Y›ÚXÙHÈ[ˆÜÙ[™™XÛÜ™Y›ÚXÙKˆXÛÛˆÚ\ÔÙ[™[™Ô™XÛÜ™Y›ÚXÙHÈÛÛœİÚ^™Y›Ş
+ÚYˆNZYÚˆNÚ[ˆÚ\˜İ[\”›ÙÜ™\ÜÒ[™XØ]ÜŠİ›ÚÙUÚYˆ‹ÛÛÜˆ[šĞÛÛÜŠJHˆÛÛœİXÛÛŠXÛÛœËœÙ[™Ü›İ[™YÛÛÜˆ[šĞÛÛÜŠKˆ
+KˆKˆKˆ
+Kˆ
+NÂˆB‚ˆ]\™O›ÚYˆÜÙ[™›ÚXÙQš[Jš[Hš[JH\Ş[˜ÈÂˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ÂˆYˆ
+\Ù\ˆOH[
+H™]\›ÂˆYˆ
+Ü[™[™ÓYYXS˜[YHOH[
+HÂˆYˆ
+[İ[Y
+HÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛÛœİÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+áhß°"éİyø§yÛ¾5£n|ÖZ6ìhÑ 5£~Ü‹§uçâçfÊéİyø§yÜ¦Öû.×ŸŠw¼sZ7gî×ŸŠwŠeMhÛd')),
         );
       }
       return;
@@ -4061,177 +2324,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             'replyToId': '${replyTo['id'] ?? ''}',
             'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
                 ? '${replyTo['text'] ?? ''}'
-                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'à¦­à¦¿à¦¡à¦¿à¦“' : 'à¦›à¦¬à¦¿'),
-            'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
-            'replyToSenderName': _profileNameForUid(
-              '${replyTo['senderUid'] ?? ''}',
-              _isMine(replyTo) ? 'à¦¤à§à¦®à¦¿' : 'à¦¸à¦™à§à¦—à§€',
+                : ('${replyTo['type'] ?? 'media'}' == 'video' ? /­5£fşéİyø§yÜœ€è€œÖÛòr’À¢w&WÇ•Fõ6VæFW%V–Bs¢rG·&WÇ•Fõ²w6VæFW%V–BuÒóòrwÒrÀ¢w&WÇ•Fõ6VæFW$æÖRs¢÷&öf–ÆTæÖTf÷%V–B€¢rG·&WÇ•Fõ²w6VæFW%V–BuÒóòrwÒrÀ¢ö—4Ö–æR‡&WÇ•Fò’òúCZ7ïÉÈˆîhİ—ºw^~)Şt',
             ),
           },
         },
       );
       final fileId = '${uploaded['fileId'] ?? uploaded['driveFileId'] ?? ''}'.trim();
-      if (fileId.isEmpty) throw Exception('à¦­à§Ÿà§‡à¦¸ à¦«à¦¾à¦‡à¦²à§‡à¦° ID à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-      await ChatSyncService.sendMessage({
-        'id': messageId,
-        'senderUid': user.uid,
-        'text': file.path,
-        'type': 'voice',
-        'durationMs': _recordingElapsed.inMilliseconds,
-        'fileId': fileId,
-        'driveFileId': fileId,
-        'driveFileName': uploaded['driveFileName'] ?? fileName,
-        'mimeType': uploaded['mimeType'] ?? 'audio/mp4',
-        'size': uploaded['size'] ?? await file.length(),
-        'storage': 'shared',
-        if (replyTo != null) ...{
-          'replyToId': '${replyTo['id'] ?? ''}',
-          'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
-              ? '${replyTo['text'] ?? ''}'
-              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'à¦­à¦¿à¦¡à¦¿à¦“' : 'à¦›à¦¬à¦¿'),
-          'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
-          'replyToSenderName': _profileNameForUid(
-            '${replyTo['senderUid'] ?? ''}',
-            _isMine(replyTo) ? 'à¦¤à§à¦®à¦¿' : 'à¦¸à¦™à§à¦—à§€',
-          ),
-        },
-        'mine': true,
-        'unsent': false,
-        'time': createdAt,
-      });
-      unawaited(InteractionFeedbackSettings.playSentSound());
-      final taskId = uploaded['_uploadTaskId'] ?? '';
-      if (taskId.toString().isNotEmpty) {
-        await SpaceSyncService.acknowledgeUpload(taskId.toString());
-      }
-      if (mounted) {
-        setState(() {
-          if (_replyToMessage?['id'] == replyTo?['id']) _replyToMessage = null;
-          _recordedVoicePath = null;
-          _recordingPath = null;
-          _recordingStartedAt = null;
-          _recordingElapsed = Duration.zero;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('à¦­à§Ÿà§‡à¦¸ à¦®à§‡à¦¸à§‡à¦œ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡à¥¤')),
-        );
-      }
-      _scrollToBottom();
-    } catch (error) {
-      debugPrint('Voice upload failed: $error');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('à¦­à§Ÿà§‡à¦¸ à¦®à§‡à¦¸à§‡à¦œ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦¸à¦‚à¦¯à§‹à¦— à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _pendingMediaName = null;
-          _pendingMediaProgress = 0;
-          _pendingMediaSpeed = 0;
-        });
-      }
-    }
-  }
-
-  String _formatChatUploadSpeed(double bytesPerSecond) {
-    if (bytesPerSecond >= 1024 * 1024) {
-      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
-    }
-
-    if (bytesPerSecond >= 1024) {
-      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
-    }
-
-    return '${bytesPerSecond.toStringAsFixed(0)} B/s';
-  }
-
-  void _scrollToBottom({bool animate = true, bool settle = false}) {
-    final requestToken = ++_scrollRequestToken;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      if (settle) {
-        await Future<void>.delayed(const Duration(milliseconds: 90));
-      }
-      if (!mounted ||
-          !scrollController.hasClients ||
-          requestToken != _scrollRequestToken ||
-          _userIsScrolling ||
-          _userHasScrolledAwayFromBottom ||
-          scrollController.position.isScrollingNotifier.value) {
-        return;
-      }
-
-      final position = scrollController.position;
-      final target = position.maxScrollExtent;
-      if (animate) {
-        await scrollController.animateTo(
-          target,
-          duration: const Duration(milliseconds: 240),
-          curve: Curves.easeOutCubic,
-        );
-      } else {
-        scrollController.jumpTo(target);
-      }
-
-      // Do not issue a second corrective jump after the first frame.
-      // Repeated jumps during lazy media layout cause visible chat-list shaking.
-    });
-  }
-
-  String _formatTime(dynamic value) {
-    final date = DateTime.tryParse('${value ?? ''}');
-    if (date == null) return '';
-
-    final local = date.toLocal();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final messageDay = DateTime(local.year, local.month, local.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final minute = local.minute.toString().padLeft(2, '0');
-    final period = local.hour >= 12 ? 'PM' : 'AM';
-    final time = '$hour:$minute $period';
-
-    if (messageDay == today) return 'Today â€¢ $time';
-    if (messageDay == yesterday) return 'Yesterday â€¢ $time';
-
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${local.day} ${months[local.month - 1]} ${local.year} â€¢ $time';
-  }
-
-  void _setReplyTo(Map<String, dynamic> message) {
-    if (message['unsent'] == true) return;
-    setState(() => _replyToMessage = Map<String, dynamic>.from(message));
-  }
-
-  void _updateChatScrollPosition() {
-    if (!scrollController.hasClients) return;
-    final position = scrollController.position;
-    _isNearChatBottom = position.maxScrollExtent - position.pixels <= 120;
-  }
-
-  Future<void> _jumpToMessage(String targetId) async {
-    final targetIndex =
-        messages.indexWhere((item) => '${item['id'] ?? ''}' == targetId);
-    if (targetIndex < 0 ||
-        messages.isEmpty ||
-        messages[targetIndex]['unsent'] == true ||
-        !scrollController.hasClients) {
-      return;
-    }
-
-    _messageHighlightTimer?.cancel();
-    if (mounted) setState(() => _highlightedMessageId = targetId);
-
-    final key = _messageKeys.putIfAbsent(targetId, () => GlobalKey());
-
-    // Index-à¦à¦° à¦…à¦¨à§à¦ªà¦¾à¦¤ à¦¦à¦¿à§Ÿà§‡ offset à¦†à¦¨à§à¦¦à¦¾à¦œ à¦•à¦°à¦¾ à¦¯à¦¾à¦¬à§‡ à¦¨à¦¾â€”à¦®à§‡à¦¸à§‡à¦œà§‡à¦° à¦‰à¦šà§à¦šà¦¤à¦¾ à¦à¦•à§‡à¦• à¦°à¦•à¦®à¥¤
-    // à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨à§‡ à¦¤à§ˆà¦°à¦¿ à¦¹à¦“à§Ÿà¦¾ row-à¦—à§à¦²à§‹à¦° index à¦¦à§‡à¦–à§‡ à¦à¦• viewport à¦•à¦°à§‡ à¦¸à¦ à¦¿à¦• à¦¦à¦¿à¦•à§‡ à¦¯à¦¾à¦‡à¥¤
+      if (fileId.isEmpty) throw Exception(&éİyø§yİß5£`€ÖøsZ7ìQºw^~)Şvïhß¾"éİyø§yß¾5£fşéİyø§yĞœ¤ì(€€€€€…İ…¥Ğ¡…ÑMå¹M•ÉÙ¥”¹Í•¹‘5•ÍÍ…”¡ì(€€€€€€€€¥œèµ•ÍÍ…•%°(€€€€€€€€Í•¹‘•ÉU¥œèÕÍ•È¹Õ¥°(€€€€€€€€Ñ•áĞœè™¥±”¹Á…Ñ °(€€€€€€€€ÑåÁ”œè€Ù½¥”œ°(€€€€€€€€‘ÕÉ…Ñ¥½¹5Ìœè}É•½É‘¥¹±…ÁÍ•¹¥¹5¥±±¥Í•½¹‘Ì°(€€€€€€€€™¥±•%œè™¥±•%°(€€€€€€€€‘É¥Ù•¥±•%œè™¥±•%°(€€€€€€€€‘É¥Ù•¥±•9…µ”œèÕÁ±½…‘•‘l‘É¥Ù•¥±•9…µ”t€üü™¥±•9…µ”°(€€€€€€€€µ¥µ•QåÁ”œèÕÁ±½…‘•‘lµ¥µ•QåÁ”t€üü€…Õ‘¥¼½µÀĞœ°(€€€€€€€€Í¥é”œèÕÁ±½…‘•‘lÍ¥é”t€üü…İ…¥Ğ™¥±”¹±•¹Ñ  ¤°(€€€€€€€€ÍÑ½É…”œè€Í¡…É•œ°(€€€€€€€¥˜€¡É•Á±åQ¼€„ô¹Õ±°¤€¸¸¹ì(€€€€€€€€€€É•Á±åQ½%œè€œ‘íÉ•Á±åQ½l¥t€üü€œôœ°(€€€€€€€€€€É•Á±åQ½Q•áĞœè€œ‘íÉ•Á±åQ½lÑåÁ”t€üü€Ñ•áĞôœ€ôô€Ñ•áĞœ(€€€€€€€€€€€€€€ü€œ‘íÉ•Á±åQ½lÑ•áĞt€üü€œôœ(€€€€€€€€€€€€€€è€ œ‘íÉ•Á±åQ½lÑåÁ”t€üü€µ•‘¥„ôœ€ôô€Ù¥‘•¼œ€ü€›§uçâçvüÖù2r¢ù³Z7ÉÊKˆ	Ü™\UÔÙ[™\•ZY	Îˆ	ÉÜ™\UÖÉÜÙ[™\•ZY	×HÏÈ	ÉßIËˆ	Ü™\UÔÙ[™\“˜[YIÎˆÜ›Ùš[S˜[YQ›Ü•ZY
+ˆ	ÉÜ™\UÖÉÜÙ[™\•ZY	×HÏÈ	ÉßIËˆÚ\ÓZ[™J™\UÊHÈéhß¿' : /¸5£v^éİyø§yĞœ°(€€€€€€€€€€¤°(€€€€€€€ô°(€€€€€€€€µ¥¹”œèÑÉÕ”°(€€€€€€€€Õ¹Í•¹Ğœè™…±Í”°(€€€€€€€€Ñ¥µ”œèÉ•…Ñ•‘Ğ°(€€€€€ô¤ì(€€€€€Õ¹…İ…¥Ñ•¡%¹Ñ•É…Ñ¥½¹••‘‰…­M•ÑÑ¥¹Ì¹Á±…åM•¹ÑM½Õ¹ ¤¤ì(€€€€€™¥¹…°Ñ…Í­%€ôÕÁ±½…‘•‘l}ÕÁ±½…‘Q…Í­%t€üü€œœì(€€€€€¥˜€¡Ñ…Í­%¹Ñ½MÑÉ¥¹œ ¤¹¥Í9½ÑµÁÑä¤ì(€€€€€€€…İ…¥ĞMÁ…•Må¹M•ÉÙ¥”¹…­¹½İ±•‘•UÁ±½…¡Ñ…Í­%¹Ñ½MÑÉ¥¹œ ¤¤ì(€€€€€ô(€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€€€¥˜€¡}É•Á±åQ½5•ÍÍ…”ıl¥t€ôôÉ•Á±åQ¼ıl¥t¤}É•Á±åQ½5•ÍÍ…”€ô¹Õ±°ì(€€€€€€€€€}É•½É‘•‘Y½¥•A…Ñ €ô¹Õ±°ì(€€€€€€€€€}É•½É‘¥¹A…Ñ €ô¹Õ±°ì(€€€€€€€€€}É•½É‘¥¹MÑ…ÉÑ•‘Ğ€ô¹Õ±°ì(€€€€€€€€€}É•½É‘¥¹±…ÁÍ•€ôÕÉ…Ñ¥½¸¹é•É¼ì(€€€€€€€ô¤ì(€€€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€€€½¹ÍĞM¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ ›§uçâçw|Ö‚Z7îhÜ 5£~€Öœ².×ŸŠwóZ6ñî×ŸŠw	ÊJKˆ
+NÂˆBˆÜØÜ›ÛĞ›İÛJ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Õ›ÚXÙH\ØY˜Z[Yˆ	\œ›Ü‰ÊNÂˆYˆ
+[İ[Y
+HÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+	ÍhßÇºw^~)Şt)®5£géİyø§yĞ¦¨Ö›ãZ6Èhßß5£}‹§uçâçfÖ¹r.×ŸŠw»Z7sMhŞ 5£g‹§uçâç~°ÖZ7íÍhß¾"éİyø§yİ°5£eœ¤¤°(€€€€€€€€¤ì(€€€€€ô(€€€ô™¥¹…±±äì(€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€€€}Á•¹‘¥¹5•‘¥…9…µ”€ô¹Õ±°ì(€€€€€€€€€}Á•¹‘¥¹5•‘¥…AÉ½É•ÍÌ€ô€Àì(€€€€€€€€€}Á•¹‘¥¹5•‘¥…MÁ••€ô€Àì(€€€€€€€ô¤ì(€€€€€ô(€€€ô(€ô((€MÑÉ¥¹œ}™½Éµ…Ñ¡…ÑUÁ±½…‘MÁ••¡‘½Õ‰±”‰åÑ•ÍA•ÉM•½¹¤ì(€€€¥˜€¡‰åÑ•ÍA•ÉM•½¹€øô€ÄÀÈĞ€¨€ÄÀÈĞ¤ì(€€€€€É•ÑÕÉ¸€œ‘ì¡‰åÑ•ÍA•ÉM•½¹€¼€ ÄÀÈĞ€¨€ÄÀÈĞ¤¤¹Ñ½MÑÉ¥¹Í¥á• Ä¥ô5½Ìœì(€€€ô((€€€¥˜€¡‰åÑ•ÍA•ÉM•½¹€øô€ÄÀÈĞ¤ì(€€€€€É•ÑÕÉ¸€œ‘ì¡‰åÑ•ÍA•ÉM•½¹€¼€ÄÀÈĞ¤¹Ñ½MÑÉ¥¹Í¥á• Ä¥ô-½Ìœì(€€€ô((€€€É•ÑÕÉ¸€œ‘í‰åÑ•ÍA•ÉM•½¹¹Ñ½MÑÉ¥¹Í¥á• À¥ô½Ìœì(€ô((€Ù½¥}ÍÉ½±±Q½	½ÑÑ½´¡í‰½½°…¹¥µ…Ñ”€ôÑÉÕ”°‰½½°Í•ÑÑ±”€ô™…±Í•ô¤ì(€€€™¥¹…°É•ÅÕ•ÍÑQ½­•¸€ô€¬­}ÍÉ½±±I•ÅÕ•ÍÑQ½­•¸ì(€€€]¥‘•ÑÍ	¥¹‘¥¹œ¹¥¹ÍÑ…¹”¹…‘‘A½ÍÑÉ…µ•…±±‰…¬ ¡|¤…Íå¹Œì(€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€¥˜€¡Í•ÑÑ±”¤ì(€€€€€€€…İ…¥ĞÕÑÕÉ”ñÙ½¥ø¹‘•±…å•¡½¹ÍĞÕÉ…Ñ¥½¸¡µ¥±±¥Í•½¹‘Ìè€äÀ¤¤ì(€€€€€ô(€€€€€¥˜€ …µ½Õ¹Ñ•ñğ(€€€€€€€€€€…ÍÉ½±±½¹ÑÉ½±±•È¹¡…Í±¥•¹ÑÌñğ(€€€€€€€€€É•ÅÕ•ÍÑQ½­•¸€„ô}ÍÉ½±±I•ÅÕ•ÍÑQ½­•¸ñğ(€€€€€€€€€}ÕÍ•É%ÍMÉ½±±¥¹œñğ(€€€€€€€€€}ÕÍ•É!…ÍMÉ½±±•‘İ…åÉ½µ	½ÑÑ½´ñğ(€€€€€€€€€ÍÉ½±±½¹ÑÉ½±±•È¹Á½Í¥Ñ¥½¸¹¥ÍMÉ½±±¥¹9½Ñ¥™¥•È¹Ù…±Õ”¤ì(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô((€€€€€™¥¹…°Á½Í¥Ñ¥½¸€ôÍÉ½±±½¹ÑÉ½±±•È¹Á½Í¥Ñ¥½¸ì(€€€€€™¥¹…°Ñ…É•Ğ€ôÁ½Í¥Ñ¥½¸¹µ…áMÉ½±±áÑ•¹Ğì(€€€€€¥˜€¡…¹¥µ…Ñ”¤ì(€€€€€€€…İ…¥ĞÍÉ½±±½¹ÑÉ½±±•È¹…¹¥µ…Ñ•Q¼ (€€€€€€€€€Ñ…É•Ğ°(€€€€€€€€€‘ÕÉ…Ñ¥½¸è½¹ÍĞÕÉ…Ñ¥½¸¡µ¥±±¥Í•½¹‘Ìè€ÈĞÀ¤°(€€€€€€€€€ÕÉÙ”èÕÉÙ•Ì¹•…Í•=ÕÑÕ‰¥Œ°(€€€€€€€€¤ì(€€€€€ô•±Í”ì(€€€€€€€ÍÉ½±±½¹ÑÉ½±±•È¹©ÕµÁQ¼¡Ñ…É•Ğ¤ì(€€€€€ô((€€€€€€¼¼¼¹½Ğ¥ÍÍÕ”„Í•½¹½ÉÉ•Ñ¥Ù”©ÕµÀ…™Ñ•ÈÑ¡”™¥ÉÍĞ™É…µ”¸(€€€€€€¼¼I•Á•…Ñ•©ÕµÁÌ‘ÕÉ¥¹œ±…éäµ•‘¥„±…å½ÕĞ…ÕÍ”Ù¥Í¥‰±”¡…Ğµ±¥ÍĞÍ¡…­¥¹œ¸(€€€ô¤ì(€ô((€MÑÉ¥¹œ}™½Éµ…ÑQ¥µ”¡‘å¹…µ¥ŒÙ…±Õ”¤ì(€€€™¥¹…°‘…Ñ”€ô…Ñ•Q¥µ”¹ÑÉåA…ÉÍ” œ‘íÙ…±Õ”€üü€œôœ¤ì(€€€¥˜€¡‘…Ñ”€ôô¹Õ±°¤É•ÑÕÉ¸€œœì((€€€™¥¹…°±½…°€ô‘…Ñ”¹Ñ½1½…° ¤ì(€€€™¥¹…°¹½Ü€ô…Ñ•Q¥µ”¹¹½Ü ¤ì(€€€™¥¹…°Ñ½‘…ä€ô…Ñ•Q¥µ”¡¹½Ü¹å•…È°¹½Ü¹µ½¹Ñ °¹½Ü¹‘…ä¤ì(€€€™¥¹…°µ•ÍÍ…•…ä€ô…Ñ•Q¥µ”¡±½…°¹å•…È°±½…°¹µ½¹Ñ °±½…°¹‘…ä¤ì(€€€™¥¹…°å•ÍÑ•É‘…ä€ôÑ½‘…ä¹ÍÕ‰ÑÉ…Ğ¡½¹ÍĞÕÉ…Ñ¥½¸¡‘…åÌè€Ä¤¤ì(€€€™¥¹…°¡½ÕÈ€ô±½…°¹¡½ÕÈ€”€ÄÈ€ôô€À€ü€ÄÈ€è±½…°¹¡½ÕÈ€”€ÄÈì(€€€™¥¹…°µ¥¹ÕÑ”€ô±½…°¹µ¥¹ÕÑ”¹Ñ½MÑÉ¥¹œ ¤¹Á…‘1•™Ğ È°€œÀœ¤ì(€€€™¥¹…°Á•É¥½€ô±½…°¹¡½ÕÈ€øô€ÄÈ€ü€A4œ€è€4œì(€€€™¥¹…°Ñ¥µ”€ô€œ‘¡½ÕÈè‘µ¥¹ÕÑ”€‘Á•É¥½œì((€€€¥˜€¡µ•ÍÍ…•…ä€ôôÑ½‘…ä¤É•ÑÕÉ¸€Q½‘…ä‚éİyø§yØ€‘Ñ¥µ”œì(€€€¥˜€¡µ•ÍÍ…•…ä€ôôå•ÍÑ•É‘…ä¤É•ÑÕÉ¸€e•ÍÑ•É‘…ä‹§uçâçH€‘Ñ¥µ”œì((€€€½¹ÍĞµ½¹Ñ¡Ì€ôl(€€€€€€)…¸œ°€•ˆœ°€5…Èœ°€ÁÈœ°€5…äœ°€)Õ¸œ°(€€€€€€)Õ°œ°€Õœœ°€M•Àœ°€=Ğœ°€9½Øœ°€•Œœ°(€€€tì(€€€É•ÑÕÉ¸€œ‘í±½…°¹‘…åô€‘íµ½¹Ñ¡Ím±½…°¹µ½¹Ñ €´€Åuô€‘í±½…°¹å•…Éô‹§uçâçH€‘Ñ¥µ”œì(€ô((€Ù½¥}Í•ÑI•Á±åQ¼¡5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøµ•ÍÍ…”¤ì(€€€¥˜€¡µ•ÍÍ…•lÕ¹Í•¹Ğt€ôôÑÉÕ”¤É•ÑÕÉ¸ì(€€€Í•ÑMÑ…Ñ”  ¤€ôø}É•Á±åQ½5•ÍÍ…”€ô5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œø¹™É½´¡µ•ÍÍ…”¤¤ì(€ô((€Ù½¥}ÕÁ‘…Ñ•¡…ÑMÉ½±±A½Í¥Ñ¥½¸ ¤ì(€€€¥˜€ …ÍÉ½±±½¹ÑÉ½±±•È¹¡…Í±¥•¹ÑÌ¤É•ÑÕÉ¸ì(€€€™¥¹…°Á½Í¥Ñ¥½¸€ôÍÉ½±±½¹ÑÉ½±±•È¹Á½Í¥Ñ¥½¸ì(€€€}¥Í9•…É¡…Ñ	½ÑÑ½´€ôÁ½Í¥Ñ¥½¸¹µ…áMÉ½±±áÑ•¹Ğ€´Á½Í¥Ñ¥½¸¹Á¥á•±Ì€ğô€ÄÈÀì(€ô((€ÕÑÕÉ”ñÙ½¥ø}©ÕµÁQ½5•ÍÍ…”¡MÑÉ¥¹œÑ…É•Ñ%¤…Íå¹Œì(€€€™¥¹…°Ñ…É•Ñ%¹‘•à€ô(€€€€€€€µ•ÍÍ…•Ì¹¥¹‘•á]¡•É” ¡¥Ñ•´¤€ôø€œ‘í¥Ñ•µl¥t€üü€œôœ€ôôÑ…É•Ñ%¤ì(€€€¥˜€¡Ñ…É•Ñ%¹‘•à€ğ€Àñğ(€€€€€€€µ•ÍÍ…•Ì¹¥ÍµÁÑäñğ(€€€€€€€µ•ÍÍ…•ÍmÑ…É•Ñ%¹‘•áulÕ¹Í•¹Ğt€ôôÑÉÕ”ñğ(€€€€€€€€…ÍÉ½±±½¹ÑÉ½±±•È¹¡…Í±¥•¹ÑÌ¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô((€€€}µ•ÍÍ…•!¥¡±¥¡ÑQ¥µ•Èü¹…¹•° ¤ì(€€€¥˜€¡µ½Õ¹Ñ•¤Í•ÑMÑ…Ñ”  ¤€ôø}¡¥¡±¥¡Ñ•‘5•ÍÍ…•%€ôÑ…É•Ñ%¤ì((€€€™¥¹…°­•ä€ô}µ•ÍÍ…•-•åÌ¹ÁÕÑ%™‰Í•¹Ğ¡Ñ…É•Ñ%°€ ¤€ôø±½‰…±-•ä ¤¤ì((€€€€¼¼%¹‘•à¶>éİyø§yĞ¦Öš£Z5hßßºw^~)Şw offset 5£g4ÖùÂ.×ŸŠwÛ§uçâçbšóZ7qÈºw^~)ŞvohßÇ5£~pÖZ6óMhİ¾"éİyø§yß•5£T€ÖÚë§uçâç@¢òòZ6sMhß¾5£\€Ö›§uçâçr›“Z7ïˆ›İËeÍhÛËºw^~)Şt index)¦5£‹§uçâç~TÙ¥•İÁ½ÉĞ‹§uçâçvÂéİyø§yÜ¦àÖùR.×ŸŠwûóZ5Èhß‡ºw^~)Şt
     for (var attempt = 0; attempt < 60; attempt++) {
       if (!mounted || !scrollController.hasClients) return;
 
@@ -4340,145 +2448,63 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget _buildReplyQuote(Map<String, dynamic> message) {
     final replyId = '${message['replyToId'] ?? ''}';
     if (replyId.isEmpty) return const SizedBox.shrink();
-    final senderName = '${message['replyToSenderName'] ?? 'à¦¸à¦™à§à¦—à§€'}';
-    final preview = '${message['replyToText'] ?? ''}';
-    return InkWell(
-      onTap: () => _jumpToMessage(replyId),
-      borderRadius: BorderRadius.circular(7),
-      child: Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.18),
-          border: const Border(left: BorderSide(color: pinkColor, width: 3)),
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(senderName, style: const TextStyle(color: pinkColor, fontSize: 11, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-          ],
-        ),
-      ),
-    );
-  }
+    final senderName = '${message['replyToSenderName'] ?? '5£g4ÖwÒs°¢f–æÂ&Wf–WrÒrG¶ÖW76vU²w&WÇ•FõFW‡BuÒóòrwÒs°¢&WGW&â–æµvVÆÂ€¢öåF¢‚’Óâö§V×FôÖW76vR‡&WÇ”–B’À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒr’À¢6†–ÆC¢6öçF–æW"€¢v–GFƒ¢F÷V&ÆRæ–æf–æ—G’À¢Ö&v–ã¢6öç7BVFvT–ç6WG2æöæÇ’†&÷GFöÓ¢‚’À¢FF–æs¢6öç7BVFvT–ç6WG2æg&öÔÅE$"ƒ’ÂbÂ’Âb’À¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢6öÆ÷#¢6öÆ÷'2æ&Æ6²çv—F…fÇVW2†Ç†¢ã‚’À¢&÷&FW#¢6öç7B&÷&FW"†ÆVgC¢&÷&FW%6–FR†6öÆ÷#¢–æ´6öÆ÷"Âv–GFƒ¢2’’À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒr’À¢’À¢6†–ÆC¢6öÇVÖâ€¢7&÷74†—4Æ–væÖVçC¢7&÷74†—4Æ–væÖVçBç7F'BÀ¢6†–ÆG&Vã¢°¢FW‡B‡6VæFW$æÖRÂ7G–ÆS¢6öç7BFW‡E7G–ÆR†6öÆ÷#¢–æ´6öÆ÷"ÂföçE6—¦S¢ÂföçEvV–v‡C¢föçEvV–v‡Bçss’’À¢6öç7B6—¦VD&÷‚††V–v‡C¢"’À¢FW‡B‡&Wf–WrÂÖ„Æ–æW3¢"Â÷fW&fÆ÷s¢FW‡D÷fW&fÆ÷ræVÆÆ—6—2Â7G–ÆS¢6öç7BFW‡E7G–ÆR†6öÆ÷#¢6öÆ÷'2çv†—FSsÂföçE6—¦S¢"’’À¢ÒÀ¢’À¢’À¢“°¢Ğ ¢gWGW&SÇfö–Câ÷6†÷tÖW76vT÷F–öç2„ÖÅ7G&–ærÂG–æÖ–3â6÷W&6TÖW76vR’7–æ2°¢f–æÂÖW76vRÒÖÅ7G&–ærÂG–æÖ–3âæg&öÒ‡6÷W&6TÖW76vR“°¢f–æÂÖW76vT–BÒrG¶ÖW76vU²v–BuÒóòrwÒs°¢f–æÂ6VæFW%V–BÒrG¶ÖW76vU²w6VæFW%V–BuÒóòrwÒs°¢òòf—&W7F÷&R6VæFW%V–B—2WF†÷&—FF—fRf÷"W&Ö—76–öâ×6Vç6—F—fR7F–öç2à¢f–æÂÖ–æRÒ6VæFW%V–Bæ—4æ÷DV×G’bbö7W'&VçEV–Bæ—4æ÷DV×G’b`¢6VæFW%V–BÓÒö7W'&VçEV–C°¢f–æÂVç6VçBÒÖW76vU²wVç6VçBuÒÓÒG'VS° ¢v—B6†÷tÖöFÄ&÷GFöÕ6†VWCÇfö–Câ€¢6öçFW‡C¢6öçFW‡BÀ¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢6†S¢6öç7B&÷VæFVE&V7FævÆT&÷&FW"€¢&÷&FW%&F—W3¢&÷&FW%&F—W2çfW'F–6Â€¢F÷¢&F—W2æ6—&7VÆ"ƒ#"’À¢’À¢’À¢'V–ÆFW#¢‡6†VWD6öçFW‡B’°¢&WGW&â6fT&V€¢6†–ÆC¢w&€¢6†–ÆG&Vã¢°¢–b‚Vç6VçB¢FF–ær€¢FF–æs¢6öç7BVFvT–ç6WG2æg&öÔÅE$"ƒbÂbÂbÂ‚’À¢6†–ÆC¢w&€¢76–æs¢‚À¢'Vå76–æs¢‚À¢Æ–væÖVçC¢w&Æ–væÖVçBç76T&WGvVVâÀ¢6†–ÆG&Vã¢°¢ââå÷V–6µ&V7F–öäVÖö¦—2æÖ‚†VÖö¦’’Óâ–æµvVÆÂ€¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ#’À¢öåF¢‚’°¢æf–vF÷"ç÷‡6†VWD6öçFW‡B“°¢Væv—FVB…÷6WDÖW76vU&V7F–öâ†ÖW76vT–BÂVÖö¦’’“°¢ÒÀ¢6†–ÆC¢FF–ær€¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒB’À¢6†–ÆC¢FW‡B†VÖö¦’Â7G–ÆS¢6öç7BFW‡E7G–ÆR†föçE6—¦S¢#r’’À¢’À¢’’À¢–6öä'WGFöâ€¢FööÇF—¢n×ŸŠwšÂ.×ŸŠwúãZ7oÉËˆÛ”™\ÜÙYˆ
 
-  Future<void> _showMessageOptions(Map<String, dynamic> sourceMessage) async {
-    final message = Map<String, dynamic>.from(sourceMessage);
-    final messageId = '${message['id'] ?? ''}';
-    final senderUid = '${message['senderUid'] ?? ''}';
-    // Firestore senderUid is authoritative for permission-sensitive actions.
-    final mine = senderUid.isNotEmpty && _currentUid.isNotEmpty &&
-        senderUid == _currentUid;
-    final unsent = message['unsent'] == true;
+HÂˆ˜]šYØ]Ü‹œÜ
+ÚY]ÛÛ^
+NÂˆÜÚİÔ™XXİ[Û”XÚÙ\ŠY\ÜØYÙJNÂˆKˆXÛÛˆÛÛœİXÛÛŠXÛÛœË˜YØÚ\˜ÛWÛİ][™WÜ›İ[™YÛÛÜˆ[šĞÛÛÜŠKˆ
+KˆKˆ
+Kˆ
+Kˆ\İ[Jˆ[˜X›Yˆ][œÙ[	‰ˆ	ÉÛY\ÜØYÙVÉİ\I×HÏÈ	İ^	ßIÈOH	İ^	È	‰ˆ	ÉÛY\ÜØYÙVÉİ^	×HÏÈ	ÉßIËš[J
+Kš\Ó›İ[\KˆXY[™ÎˆXÛÛŠXÛÛœË˜ÛÜWÜ›İ[™YÛÛÜˆ[œÙ[ÈÛÛÜœËÚ]Lˆ[šĞÛÛÜŠKˆ]NˆÛÛœİ^
+	ĞÛÜHY\ÜØYÙIÊKˆÛ•\ˆ[œÙ[	ÉÛY\ÜØYÙVÉİ\I×HÏÈ	İ^	ßIÈOH	İ^	È	ÉÛY\ÜØYÙVÉİ^	×HÏÈ	ÉßIËš[J
+Kš\Ñ[\HÈ[ˆ
 
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(22),
-        ),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              if (!unsent)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.spaceBetween,
-                    children: [
-                      ..._quickReactionEmojis.map((emoji) => InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: () {
-                          Navigator.pop(sheetContext);
-                          unawaited(_setMessageReaction(messageId, emoji));
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: Text(emoji, style: const TextStyle(fontSize: 27)),
-                        ),
-                      )),
-                      IconButton(
-                        tooltip: 'à¦¸à¦¬ à¦‡à¦®à§‹à¦œà¦¿',
-                        onPressed: () {
-                          Navigator.pop(sheetContext);
-                          _showReactionPicker(message);
-                        },
-                        icon: const Icon(Icons.add_circle_outline_rounded, color: pinkColor),
-                      ),
-                    ],
-                  ),
-                ),
-              ListTile(
-                enabled: !unsent && '${message['type'] ?? 'text'}' == 'text' && '${message['text'] ?? ''}'.trim().isNotEmpty,
-                leading: Icon(Icons.copy_rounded, color: unsent ? Colors.white24 : pinkColor),
-                title: const Text('Copy message'),
-                onTap: unsent || '${message['type'] ?? 'text'}' != 'text' || '${message['text'] ?? ''}'.trim().isEmpty ? null : () async {
-                  await Clipboard.setData(ClipboardData(text: '${message['text'] ?? ''}'));
-                  if (sheetContext.mounted) Navigator.pop(sheetContext);
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('à¦®à§‡à¦¸à§‡à¦œ à¦•à¦ªà¦¿ à¦¹à§Ÿà§‡à¦›à§‡')));
-                },
-              ),
-              if (!unsent)
-                ListTile(
-                  leading: Icon(Icons.push_pin_rounded, color: message['pinned'] == true ? pinkColor : Colors.white70),
-                  title: Text(message['pinned'] == true ? 'Unpin' : 'Pin'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    try {
-                      await ChatSyncService.setMessagePinned(messageId: messageId, pinned: message['pinned'] != true);
-                    } catch (error) {
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('à¦®à§‡à¦¸à§‡à¦œà¦Ÿà¦¿ à¦ªà¦¿à¦¨ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')));
-                    }
-                  },
-                ),
-              ListTile(
-                enabled: !unsent,
-                leading: Icon(
-                  Icons.reply_rounded,
-                  color: unsent ? Colors.white24 : pinkColor,
-                ),
-                title: Text(
-                  unsent ? 'à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à§Ÿà¦¨à¦¿â€”Reply à¦•à¦°à¦¾ à¦¯à¦¾à¦¬à§‡ à¦¨à¦¾' : 'Reply / à¦‰à¦¤à§à¦¤à¦° à¦¦à¦¾à¦“',
-                  style: TextStyle(
-                    color: unsent ? Colors.white38 : Colors.white,
-                  ),
-                ),
-                onTap: unsent
-                    ? null
-                    : () {
-                        Navigator.pop(sheetContext);
-                        _setReplyTo(message);
-                      },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.info_outline,
-                  color: pinkColor,
-                ),
-                title: const Text('à¦®à§‡à¦¸à§‡à¦œà§‡à¦° à¦¬à¦¿à¦¬à¦°à¦£'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showDetails(message);
-                },
-              ),
-              if (!unsent &&
-                  ('${message['type'] ?? ''}' == 'image' ||
-                      '${message['type'] ?? ''}' == 'video'))
-                ListTile(
-                  leading: const Icon(
-                    Icons.save_alt_rounded,
-                    color: pinkColor,
-                  ),
-                  title: const Text('à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿à¦¤à§‡ à¦¸à¦‚à¦°à¦•à§à¦·à¦£'),
+H\Ş[˜ÈÂˆ]ØZ]Û\›Ø\™œÙ]]JÛ\›Ø\™]J^ˆ	ÉÛY\ÜØYÙVÉİ^	×HÏÈ	ÉßIÊJNÂˆYˆ
+ÚY]ÛÛ^›[İ[Y
+H˜]šYØ]Ü‹œÜ
+ÚY]ÛÛ^
+NÂˆYˆ
+[İ[Y
+HØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠÛÛœİÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+ëhÙÇºw^~)Şt)•5£|€ÖüsZ5ÉÊJJNÂˆKˆ
+KˆYˆ
+][œÙ[
+Bˆ\İ[JˆXY[™ÎˆXÛÛŠXÛÛœËœ\ÚÜ[—Ü›İ[™YÛÛÜˆY\ÜØYÙVÉÜ[›™Y	×HOHYHÈ[šĞÛÛÜˆˆÛÛÜœËÚ]MÌ
+Kˆ]Nˆ^
+Y\ÜØYÙVÉÜ[›™Y	×HOHYHÈ	Õ[œ[‰Èˆ	Ô[‰ÊKˆÛ•\ˆ
+
+H\Ş[˜ÈÂˆ˜]šYØ]Ü‹œÜ
+ÚY]ÛÛ^
+NÂˆHÂˆ]ØZ]Ú]Ş[˜ÔÙ\šXÙKœÙ]Y\ÜØYÙT[›™Y
+Y\ÜØYÙRYˆY\ÜØYÙRY[›™YˆY\ÜØYÙVÉÜ[›™Y	×HOHYJNÂˆHØ]Ú
+\œ›ÜŠHÂˆYˆ
+[İ[Y
+HØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+	Íhß¸5£v~éİyø§yÜ¦¨Ö‚Z6oˆºw^~)ŞwïhÙ¿ºw^~)Şt)†5£~À‹§uçâçoÖÙû§uçâçb™SZ6j.×ŸŠw	ÊJJNÂˆBˆKˆ
+Kˆ\İ[Jˆ[˜X›Yˆ][œÙ[ˆXY[™ÎˆXÛÛŠˆXÛÛœËœ™\WÜ›İ[™YˆÛÛÜˆ[œÙ[ÈÛÛÜœËÚ]Lˆ[šĞÛÛÜ‹ˆ
+Kˆ]Nˆ^
+ˆ[œÙ[ÈêhÙ¾5£l€ÖúƒZ5™\JeMhŞ 5£~²éİyø§yÜ¦¢éİyø§yØœ€è€I•Á±ä€¼¦$ÖÚK§uçâçBšcZ4ÉËˆİ[Nˆ^İ[JˆÛÛÜˆ[œÙ[ÈÛÛÜœËÚ]LÎˆÛÛÜœËÚ]Kˆ
+Kˆ
+KˆÛ•\ˆ[œÙ[ˆÈ[ˆˆ
+
+HÂˆ˜]šYØ]Ü‹œÜ
+ÚY]ÛÛ^
+NÂˆÜÙ]™\UÊY\ÜØYÙJNÂˆKˆ
+Kˆ\İ[JˆXY[™ÎˆÛÛœİXÛÛŠˆXÛÛœËš[™›×Ûİ][™KˆÛÛÜˆ[šĞÛÛÜ‹ˆ
+Kˆ]NˆÛÛœİ^
+	ºw^~)ŞwñÍhßœ5£@€ÖúÃZ4ÉÊKˆÛ•\ˆ
+
+HÂˆ˜]šYØ]Ü‹œÜ
+ÚY]ÛÛ^
+NÂˆÜÚİÑ]Z[ÊY\ÜØYÙJNÂˆKˆ
+KˆYˆ
+][œÙ[	‰‚ˆ
+	ÉÛY\ÜØYÙVÉİ\I×HÏÈ	ÉßIÈOH	Ú[XYÙIÈˆ	ÉÛY\ÜØYÙVÉİ\I×HÏÈ	ÉßIÈOH	İšY[ÉÊJBˆ\İ[JˆXY[™ÎˆÛÛœİXÛÛŠˆXÛÛœËœØ]™WØ[Ü›İ[™YˆÛÛÜˆ[šĞÛÛÜ‹ˆ
+Kˆ]NˆÛÛœİ^
+	ºw^~)ŞwóMhß²5£füÖrZ6ìhİ·ºw^~)Şw'),
                   onTap: () async {
                     Navigator.pop(sheetContext);
                     await _saveChatMediaToGallery(message);
@@ -4509,133 +2535,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     Navigator.pop(sheetContext);
 
                     try {
-                      // à¦†à¦—à§‡ Firestore-à¦ à¦®à§‡à¦¸à§‡à¦œà¦Ÿà¦¿ à¦¸à¦°à¦¾à¦“, à¦¯à¦¾à¦¤à§‡ à¦šà§à¦¯à¦¾à¦Ÿ à¦¸à¦™à§à¦—à§‡ à¦¸à¦™à§à¦—à§‡ à¦†à¦ªà¦¡à§‡à¦Ÿ à¦¹à§Ÿà¥¤
-                      await ChatSyncService.unsendMessage(messageId);
-
-                      final mediaType = '${message['type'] ?? ''}';
-                      final fileId = (
-                        message['fileId'] ??
-                        message['driveFileId'] ??
-                        ''
-                      ).toString().trim();
-
-                      if ((mediaType == 'image' || mediaType == 'video' || mediaType == 'voice') &&
-                          fileId.isNotEmpty) {
-                        // à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿à¦¤à§‡ à¦à¦•à¦‡ Drive à¦«à¦¾à¦‡à¦² à¦°à§‡à¦«à¦¾à¦°à§‡à¦¨à§à¦¸ à¦¥à¦¾à¦•à¦²à§‡ à¦¸à§‡à¦Ÿà¦¿ à¦…à¦•à¦¾à¦°à¦£à§‡ à¦­à¦¾à¦™à¦¬à§‡ à¦¨à¦¾à¥¤
-                        final linkedInGallery = SpaceStore
-                            .readList('galleryMedia')
-                            .any((item) =>
-                                '${item['fileId'] ?? item['driveFileId'] ?? ''}' ==
-                                fileId);
-
-                        if (!linkedInGallery) {
-                          unawaited(
-                            SpaceSyncService.deleteSharedMedia(fileId).catchError(
-                              (Object error) {
-                                debugPrint('Chat media Drive cleanup failed: $error');
-                              },
-                            ),
-                          );
-                        }
-                      }
-                    } catch (error) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('à¦®à§‡à¦¸à§‡à¦œà¦Ÿà¦¿ à¦¸à¦°à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-                      );
-                    }
-                  },
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _saveChatMediaToGallery(
-    Map<String, dynamic> message,
-  ) async {
-    final type = '${message['type'] ?? ''}';
-    final fileId = (
-      message['fileId'] ??
-      message['driveFileId'] ??
-      ''
-    ).toString().trim();
-
-    if (fileId.isEmpty ||
-        (type != 'image' && type != 'video')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('à¦à¦‡ à¦›à¦¬à¦¿/à¦­à¦¿à¦¡à¦¿à¦“ à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿à¦¤à§‡ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤'),
-        ),
-      );
-      return;
-    }
-
-    final galleryItems = SpaceStore.readList('galleryMedia');
-
-    final alreadySaved = galleryItems.any((item) {
-      final savedId = (
-        item['fileId'] ??
-        item['driveFileId'] ??
-        ''
-      ).toString().trim();
-
-      return savedId == fileId;
-    });
-
-    if (alreadySaved) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('à¦à¦‡ à¦›à¦¬à¦¿/à¦­à¦¿à¦¡à¦¿à¦“ à¦†à¦—à§‡ à¦¥à§‡à¦•à§‡à¦‡ à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿à¦¤à§‡ à¦†à¦›à§‡à¥¤'),
-        ),
-      );
-      return;
-    }
-
-    final item = <String, dynamic>{
-      'id': 'chat_$fileId',
-      'fileId': fileId,
-      'driveFileId': fileId,
-      'driveFileName':
-          message['driveFileName'] ?? 'chat_media',
-      'mimeType': message['mimeType'] ?? '',
-      'type': type,
-      'folderId': 'all',
-      'storage': 'shared',
-      'source': 'chat',
-      'createdAt': DateTime.now().toIso8601String(),
-    };
-
-    galleryItems.add(item);
-    await SpaceStore.saveList('galleryMedia', galleryItems);
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿à¦¤à§‡ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à¦¾ à¦¹à§Ÿà§‡à¦›à§‡à¥¤'),
-      ),
-    );
-  }
-
-  void _showDetails(Map<String, dynamic> message) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('à¦®à§‡à¦¸à§‡à¦œà§‡à¦° à¦¬à¦¿à¦¬à¦°à¦£'),
-        content: Text(
-          'à¦ªà§à¦°à§‡à¦°à¦•: ${_isMine(message) ? 'à¦¤à§à¦®à¦¿' : 'à¦¸à¦™à§à¦—à§€'}\n'
-          'à¦§à¦°à¦¨: ${message['type'] ?? 'text'}\n'
-          'à¦¸à¦®à§Ÿ: ${_formatTime(message['time'])}\n'
-          'à¦…à¦¬à¦¸à§à¦¥à¦¾: ${message['unsent'] == true ? 'Unsent' : 'à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡'}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('à¦¬à¦¨à§à¦§ à¦•à¦°à§‹'),
+                      //"éİyø§yß—ºw^~)Şw Firestore-ºw^~)Şw)®5£gÖûò.×ŸŠw›Z4Ëºw^~)Şwïh× 5£v¼ÖòZ6sMh× 5£g4ÖrZ6èMhß 5£}(€€€€€€€€€€€€€€€€€€€€€…İ…¥Ğ¡…ÑMå¹M•ÉÙ¥”¹Õ¹Í•¹‘5•ÍÍ…”¡µ•ÍÍ…•%¤ì((€€€€€€€€€€€€€€€€€€€€€™¥¹…°µ•‘¥…QåÁ”€ô€œ‘íµ•ÍÍ…•lÑåÁ”t€üü€œôœì(€€€€€€€€€€€€€€€€€€€€€™¥¹…°™¥±•%€ô€ (€€€€€€€€€€€€€€€€€€€€€€€µ•ÍÍ…•l™¥±•%t€üü(€€€€€€€€€€€€€€€€€€€€€€€µ•ÍÍ…•l‘É¥Ù•¥±•%t€üü(€€€€€€€€€€€€€€€€€€€€€€€€œœ(€€€€€€€€€€€€€€€€€€€€€€¤¹Ñ½MÑÉ¥¹œ ¤¹ÑÉ¥´ ¤ì((€€€€€€€€€€€€€€€€€€€€€¥˜€ ¡µ•‘¥…QåÁ”€ôô€¥µ…”œñğµ•‘¥…QåÁ”€ôô€Ù¥‘•¼œñğµ•‘¥…QåÁ”€ôô€Ù½¥”œ¤€˜˜(€€€€€€€€€€€€€€€€€€€€€€€€€™¥±•%¹¥Í9½ÑµÁÑä¤ì(€€€€€€€€€€€€€€€€€€€€€€€€¼¼€ÖÚóZ6ïhß¤ºw^~)Şw)5£\É¥Ù”€Öø{§uçâçb›Z6ïhß¨5£`€ÖùSZ5ÈhßŸºw^~)Şw)…5£~ÀÖrZ7æMh× 5£}(€€€€€€€€€€€€€€€€€€€€€€€™¥¹…°±¥¹­•‘%¹…±±•Éä€ôMÁ…•MÑ½É”(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¹É•…‘1¥ÍĞ …±±•Éå5•‘¥„œ¤(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¹…¹ä ¡¥Ñ•´¤€ôø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€œ‘í¥Ñ•µl™¥±•%t€üü¥Ñ•µl‘É¥Ù•¥±•%t€üü€œôœ€ôô(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™¥±•%¤ì((€€€€€€€€€€€€€€€€€€€€€€€¥˜€ …±¥¹­•‘%¹…±±•Éä¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€Õ¹…İ…¥Ñ• (€€€€€€€€€€€€€€€€€€€€€€€€€€€MÁ…•Må¹M•ÉÙ¥”¹‘•±•Ñ•M¡…É•‘5•‘¥„¡™¥±•%¤¹…Ñ¡ÉÉ½È (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡=‰©•Ğ•ÉÉ½È¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‘•‰ÕAÉ¥¹Ğ ¡…Ğµ•‘¥„É¥Ù”±•…¹ÕÀ™…¥±•è€‘•ÉÉ½Èœ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€€€€€€€€€€€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€€€€€€€€€€€€€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€€€€€€€€€€€€€€€€€M¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ œÖûƒZ7gî×ŸŠwÊnhß¨ºw^~)Şw)¯5£~ ÖBZ7o®×ŸŠw
+fhßÍ5£x€ÖœZ5	ÊJKˆ
+NÂˆBˆKˆ
+KˆKˆ
+Kˆ
+NÂˆKˆ
+NÂˆB‚ˆ]\™O›ÚYˆÜØ]™PÚ]YYXUÑØ[\JˆX\İš[™Ë[˜[ZXÏˆY\ÜØYÙKˆ
+H\Ş[˜ÈÂˆš[˜[\HH	ÉÛY\ÜØYÙVÉİ\I×HÏÈ	ÉßIÎÂˆš[˜[š[RYH
+ˆY\ÜØYÙVÉÙš[RY	×HÏÂˆY\ÜØYÙVÉÙš]™Qš[RY	×HÏÂˆ	ÉÂˆ
+KÔİš[™Ê
+Kš[J
+NÂ‚ˆYˆ
+š[RYš\Ñ[\Hˆ
+\HOH	Ú[XYÙIÈ	‰ˆ\HOH	İšY[ÉÊJHÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛÛœİÛ˜XÚĞ˜\ŠˆÛÛ[ˆ^
+	Íh× 5£vü»§uçâçvüÖù2.×ŸŠwüÓZ7ìhÙ¿5£\€Ö»Z7mî×ŸŠwÊeMhŞ 5£~hÖ¼r.×ŸŠw›ë§uçâçBr’À¢’À¢“°¢&WGW&ã°¢Ğ ¢f–æÂvÆÆW'”—FV×2Ò76U7F÷&Rç&VDÆ—7B‚vvÆÆW'”ÖVF–r“° ¢f–æÂÇ&VG•6fVBÒvÆÆW'”—FV×2æç’‚†—FVÒ’°¢f–æÂ6fVD–BÒ€¢—FVÕ²vf–ÆT–BuÒóğ¢—FVÕ²vG&—fTf–ÆT–BuÒóğ¢rp¢’çFõ7G&–ær‚’çG&–Ò‚“° ¢&WGW&â6fVD–BÓÒf–ÆT–C°¢Ò“° ¢–b†Ç&VG•6fVB’°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6öç7B6æ6´&"€¢6öçFVçC¢FW‡B‚sZ5Èhİ¿.éİyø§yİ¿5£~L‹§uçâç~^éİyø§yÜ¦”ÖÜ{§uçâçr™sZ7ïhß°5£w‹§uçâç~lÖBr’À¢’À¢“°¢&WGW&ã°¢Ğ ¢f–æÂ—FVÒÒÅ7G&–ærÂG–æÖ–3ç°¢v–Bs¢v6†EòFf–ÆT–BrÀ¢vf–ÆT–Bs¢f–ÆT–BÀ¢vG&—fTf–ÆT–Bs¢f–ÆT–BÀ¢vG&—fTf–ÆTæÖRs ¢ÖW76vU²vG&—fTf–ÆTæÖRuÒóòv6†EöÖVF–rÀ¢vÖ–ÖUG—Rs¢ÖW76vU²vÖ–ÖUG—RuÒóòrrÀ¢wG—Rs¢G—RÀ¢vföÆFW$–Bs¢vÆÂrÀ¢w7F÷&vRs¢w6†&VBrÀ¢w6÷W&6Rs¢v6†BrÀ¢v7&VFVDBs¢FFUF–ÖRææ÷r‚’çFô—6óƒc7G&–ær‚’À¢Ó° ¢vÆÆW'”—FV×2æFB†—FVÒ“°¢v—B76U7F÷&Rç6fTÆ—7B‚vvÆÆW'”ÖVF–rÂvÆÆW'”—FV×2“° ¢–b‚Ö÷VçFVB’&WGW&ã° ¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6öç7B6æ6´&"€¢6öçFVçC¢FW‡B‚sZ7kÍhÛ¾5£~’éİyø§yÜ¦àÖ™SZ7èÈºw^~)Şwl.×ŸŠwŠnMhß›5£Pœ¤°(€€€€€€¤°(€€€€¤ì(€ô((€Ù½¥}Í¡½İ•Ñ…¥±Ì¡5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøµ•ÍÍ…”¤ì(€€€Í¡½İ¥…±½œñÙ½¥ø (€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€‰Õ¥±‘•Èè€¡‘¥…±½½¹Ñ•áĞ¤€ôø±•ÉÑ¥…±½œ (€€€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ ›§uçâçÖùÃZ4hß¬5£Lœ¤°(€€€€€€€½¹Ñ•¹ĞèQ•áĞ (€€€€€€€€€€›§uçâço4Öû§uçâçS¢Gµö—4Ö–æR†ÖW76vR’òn×ŸŠwÜZ7ÉÈˆ	ºw^~)ŞvfMhßÀ'}\n'
+          /§5£`è€‘íµ•ÍÍ…•lÑåÁ”t€üü€Ñ•áĞõq¸œ(€€€€€€€€€€¾àÖó¢Gµöf÷&ÖEF–ÖR†ÖW76vU²wF–ÖRuÒ—ÕÆâp¢øSZ6sMhŞ: ${message['unsent'] == true ? 'Unsent' : &éİyø§yÛ¾5£~¢éİyø§yÜ¦äÖù»§uçâçrwÒrÀ¢’À¢7F–öç3¢°¢FW‡D'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡B’À¢6†–ÆC¢6öç7BFW‡B‚n×ŸŠwÚƒZ5ÈhÙË'),
           ),
         ],
       ),
@@ -4645,7 +2561,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String _formatMediaSize(dynamic value) {
     final bytes = int.tryParse('${value ?? ''}') ?? 0;
 
-    if (bytes <= 0) return 'à¦«à¦¾à¦‡à¦²à§‡à¦° à¦¸à¦¾à¦‡à¦œ à¦œà¦¾à¦¨à¦¾ à¦¨à§‡à¦‡';
+    if (bytes <= 0) return /«5£~ÈÖZ7áî×ŸŠw
+ghÙ¾"éİyø§yÙÇºw^~)Şw';
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) {
       return '${(bytes / 1024).toStringAsFixed(1)} KB';
@@ -4660,7 +2577,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final isMine = _isMine(media);
     final localPath = '${media['text'] ?? media['path'] ?? ''}'.trim();
     final fileId = '${media['fileId'] ?? media['driveFileId'] ?? ''}'.trim();
-    // à¦¨à¦¿à¦œà§‡à¦° à¦«à§‹à¦¨à§‡à¦° à¦²à§‹à¦•à¦¾à¦² à¦ªà¦¥ à¦¶à§à¦§à§ à¦¨à¦¿à¦œà§‡à¦° à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦®à§‡à¦¸à§‡à¦œà§‡ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦¹à¦¬à§‡à¥¤
+    // 5£~pÖZ6êhĞ 5£nTÖ"Z5HhÙ§ºw^~)Şu)¨5£wéİyø§yĞ¦¨Ö›ãZ6Èhß¸5£w‹§uçâçw4ÖÛ“Z4hİÇºw^~)Şt
     final usableLocalPath = isMine ? localPath : '';
     final key = fileId.isNotEmpty ? fileId : usableLocalPath;
     final existing = _mediaPathFutures[key];
@@ -4676,21 +2593,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           } catch (_) {}
         }
         if (fileId.isEmpty) return null;
-        // à¦†à¦—à§‡ à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à¦¾ à¦«à¦¾à¦‡à¦² à¦¥à¦¾à¦•à¦²à§‡ à¦¸à§‡à¦Ÿà¦¿à¦‡ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à¦¬à§‡à¥¤
-        final cachedPath = await SpaceSyncService.getCachedMediaPath(
-          fileId,
-          shared: true,
-        );
-        if (cachedPath != null) {
-          try {
-            if (await File(cachedPath).exists()) {
-              return cachedPath;
-            }
-          } catch (_) {}
-        }
-        final name = '${media['driveFileName'] ?? 'chat_media'}';
-        Object? lastDownloadError;
-        // à¦…à§à¦¯à¦¾à¦ª Recents-à¦ à¦—à§‡à¦²à§‡ à¦¬à¦¾ à¦¦à§à¦°à§à¦¬à¦² à¦¨à§‡à¦Ÿà¦“à§Ÿà¦¾à¦°à§à¦•à§‡ à¦¸à¦¾à¦®à§Ÿà¦¿à¦• à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦²à§‡ retryà¥¤
+        //"éİyø§yß—ºw^~)Şw)¡5£f Öº.×ŸŠwÛ§uçâçbš³Z7ìˆºw^~)ŞwohÛÇ"éİyø§yÙÇ5£~‹§uçâçw4ÖÛ“Z4hÙ¬5£P(€€€€€€€™¥¹…°…¡•‘A…Ñ €ô…İ…¥ĞMÁ…•Må¹M•ÉÙ¥”¹•Ñ…¡•‘5•‘¥…A…Ñ  (€€€€€€€€€™¥±•%°(€€€€€€€€€Í¡…É•èÑÉÕ”°(€€€€€€€€¤ì(€€€€€€€¥˜€¡…¡•‘A…Ñ €„ô¹Õ±°¤ì(€€€€€€€€€ÑÉäì(€€€€€€€€€€€¥˜€¡…İ…¥Ğ¥±”¡…¡•‘A…Ñ ¤¹•á¥ÍÑÌ ¤¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸…¡•‘A…Ñ ì(€€€€€€€€€€€ô(€€€€€€€€€ô…Ñ €¡|¤íô(€€€€€€€ô(€€€€€€€™¥¹…°¹…µ”€ô€œ‘íµ•‘¥…l‘É¥Ù•¥±•9…µ”t€üü€¡…Ñ}µ•‘¥„ôœì(€€€€€€€€¼¼¦Öûë§uçâçb&V6VçG2î×ŸŠwòZ7ì®×ŸŠwÊk.×ŸŠwŠihÙÍ5£H€ÖùóZ7ïhİ•ºw^~)Şw)¸5£|ÖRZ7kÍhİ¥"éİyø§yÙ²ºw^~)Şw retrzéİyø§yÔ
         for (var attempt = 0; attempt < 3; attempt++) {
           try {
             final result = await SpaceSyncService.downloadMedia(
@@ -4700,12 +2603,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (await File(result).exists()) {
               return result;
             }
-            lastDownloadError = Exception('à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡à§‡à¦° à¦«à¦¾à¦‡à¦² à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
           } catch (error) {
-            lastDownloadError = error;
             final message = error.toString();
             final permanentError = RegExp(
-              r'à¦¸à¦¾à¦°à§à¦­à¦¾à¦° à¦¤à§à¦°à§à¦Ÿà¦¿: (400|401|403|404)',
+              r'5£~ÀÖÛë§uçâçBšCZ6pMhß: (400|401|403|404)',
             ).hasMatch(message);
             if (permanentError || attempt == 2) rethrow;
           }
@@ -4713,398 +2614,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             Duration(milliseconds: 700 * (attempt + 1)),
           );
         }
-        throw Exception('à¦«à¦¾à¦‡à¦² à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦…à¦¨à§à¦—à§à¦°à¦¹ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤');
-      } catch (error) {
-        debugPrint('Chat media download error: $error');
-        return null;
-      }
-    });
-    _mediaPathFutures[key] = future;
-    future.then((path) {
-      if (path == null) {
-        if (identical(_mediaPathFutures[key], future)) {
-          _mediaPathFutures.remove(key);
-        }
-        _failedMediaMessages[key] = Map<String, dynamic>.from(media);
-      } else {
-        _failedMediaMessages.remove(key);
-      }
-    });
-    return future;
-  }
-
-  void _retryFailedMediaDownloads() {
-    if (!mounted || _failedMediaMessages.isEmpty) return;
-    final pending = _failedMediaMessages.entries.toList(growable: false);
-    for (final entry in pending) {
-      if (_mediaPathFutures.containsKey(entry.key)) continue;
-      unawaited(_resolveMediaPath(entry.value).then((path) {
-        if (!mounted) return;
-        setState(() {});
-      }).catchError((Object error) {
-        debugPrint('Automatic media retry failed: $error');
-      }));
-    }
-    if (mounted) setState(() {});
-  }
-
-  Widget _messageContent(Map<String, dynamic> message) {
-    if (message['unsent'] == true) {
-      return const Text(
-        'Unsent a message',
-        style: TextStyle(
-          color: Colors.white60,
-          fontStyle: FontStyle.italic,
-        ),
-      );
-    }
-
-    final type = '${message['type'] ?? 'text'}';
-    final path = '${message['text'] ?? ''}';
-
-    if (type == 'image' || type == 'video' || type == 'voice') {
-      final fileId =
-          '${message['fileId'] ?? message['driveFileId'] ?? ''}'.trim();
-
-      final mediaKey = fileId.isNotEmpty ? fileId : path;
-      Uint8List? embeddedVideoThumbnail = _embeddedVideoThumbnails[mediaKey];
-      if (type == 'video' && embeddedVideoThumbnail == null) {
-        final encodedThumbnail =
-            '${message['thumbnailBase64'] ?? ''}'.trim();
-        if (encodedThumbnail.isNotEmpty) {
-          try {
-            embeddedVideoThumbnail = base64Decode(encodedThumbnail);
-            _embeddedVideoThumbnails[mediaKey] = embeddedVideoThumbnail;
-          } catch (error) {
-            debugPrint('Embedded chat video preview decode skipped: $error');
-          }
-        }
-      }
-
-      return ValueListenableBuilder<bool>(
-        valueListenable: DataSaverSettings.enabled,
-        builder: (context, dataSaverEnabled, _) {
-          final localMediaPath =
-              '${message['text'] ?? message['path'] ?? ''}'.trim();
-
-          // File existence is checked asynchronously inside _resolveMediaPath.
-          // Synchronous disk checks here were blocking the UI while scrolling media.
-          final senderHasLocalFile = _isMine(message) && localMediaPath.isNotEmpty;
-
-          final shouldDownload = senderHasLocalFile ||
-              !dataSaverEnabled ||
-              _requestedMediaDownloads.contains(mediaKey);
-
-          return FutureBuilder<String?>(
-            future: shouldDownload ? _resolveMediaPath(message) : null,
-            builder: (context, snapshot) {
-              final resolvedPath = snapshot.data;
-
-              if (!shouldDownload) {
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    setState(() {
-                      _requestedMediaDownloads.add(mediaKey);
-                    });
-                  },
-                  child: type == 'video'
-                      ? SizedBox(
-                          width: 210,
-                          height: 130,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                if (embeddedVideoThumbnail != null)
-                                  Image.memory(
-                                    embeddedVideoThumbnail,
-                                    cacheWidth: 420,
-                                    cacheHeight: 260,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const ColoredBox(color: Colors.black26),
-                                  )
-                                else
-                                  const ColoredBox(color: Colors.black26),
-                                const DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Colors.transparent,
-                                        Color(0xAA000000),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const Center(
-                                  child: Icon(
-                                    Icons.play_circle_fill_rounded,
-                                    size: 48,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 8,
-                                  bottom: 7,
-                                  child: Text(
-                                    'à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à¦¤à§‡ à¦Ÿà§à¦¯à¦¾à¦ª à¦•à¦°à§‹ â€¢ ${_formatMediaSize(message['size'])}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : Container(
-                          width: 210,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white12),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.image_outlined,
-                                size: 36,
-                                color: pinkColor,
-                              ),
-                              const SizedBox(height: 8),
-                              const Text('à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à¦¤à§‡ à¦Ÿà§à¦¯à¦¾à¦ª à¦•à¦°à§‹'),
-                              const SizedBox(height: 4),
-                              Text(
-                                _formatMediaSize(message['size']),
-                                style: const TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                );
-              }
-
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                if (type == 'video' && embeddedVideoThumbnail != null) {
-                  return SizedBox(
-                    width: 210,
-                    height: 130,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.memory(
-                            embeddedVideoThumbnail,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const ColoredBox(color: Colors.black26),
-                          ),
-                          const DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Color(0xCC000000),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const Center(
-                            child: Icon(
-                              Icons.play_circle_fill_rounded,
-                              size: 46,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Positioned(
-                            left: 8,
-                            right: 8,
-                            bottom: 7,
-                            child: ValueListenableBuilder<List<DownloadProgress>>(
-                              valueListenable: SpaceSyncService.downloadProgress,
-                              builder: (context, downloads, _) {
-                                DownloadProgress? current;
-                                for (final item in downloads) {
-                                  if (item.fileId == fileId) {
-                                    current = item;
-                                    break;
-                                  }
-                                }
-                                return Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      current == null
-                                          ? 'à¦­à¦¿à¦¡à¦¿à¦“ à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦¹à¦šà§à¦›à§‡...'
-                                          : '${(current.progress * 100).toStringAsFixed(0)}% à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    LinearProgressIndicator(
-                                      value: current?.progress,
-                                      backgroundColor: Colors.white24,
-                                      color: pinkColor,
-                                      minHeight: 3,
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-
-                // à¦›à¦¬à¦¿ à¦²à§‹à¦¡ à¦¹à¦“à§Ÿà¦¾à¦° à¦¸à¦®à§Ÿà¦“ à¦šà§‚à§œà¦¾à¦¨à§à¦¤ 210x210 à¦œà¦¾à§Ÿà¦—à¦¾ à¦§à¦°à§‡ à¦°à¦¾à¦–à¦¿;
-                // à¦¨à¦‡à¦²à§‡ 120px placeholder à¦¥à§‡à¦•à§‡ 210px à¦›à¦¬à¦¿à¦¤à§‡ à¦¬à¦¦à¦²à§‡ scroll offset à¦²à¦¾à¦«à¦¾à§Ÿà¥¤
-                if (type == 'image') {
-                  return SizedBox(
-                    width: 210,
-                    height: 210,
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(
-                              color: pinkColor,
-                              strokeWidth: 2,
-                            ),
-                            const SizedBox(height: 10),
-                            ValueListenableBuilder<List<DownloadProgress>>(
-                              valueListenable: SpaceSyncService.downloadProgress,
-                              builder: (context, downloads, _) {
-                                DownloadProgress? current;
-                                for (final item in downloads) {
-                                  if (item.fileId == fileId) {
-                                    current = item;
-                                    break;
-                                  }
-                                }
-                                return Text(
-                                  current == null
-                                      ? 'à¦›à¦¬à¦¿ à¦²à§‹à¦¡ à¦¹à¦šà§à¦›à§‡...'
-                                      : '${(current.progress * 100).toStringAsFixed(0)}%',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 11,
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                // Keep the voice bubble close to its final height while downloading,
-                // so resolving a voice file does not move neighbouring chat rows.
-                return SizedBox(
-                  width: 270,
-                  height: 52,
-                  child: ValueListenableBuilder<List<DownloadProgress>>(
-                    valueListenable: SpaceSyncService.downloadProgress,
-                    builder: (context, downloads, _) {
-                      DownloadProgress? current;
-                      for (final item in downloads) {
-                        if (item.fileId == fileId) {
-                          current = item;
-                          break;
-                        }
-                      }
-                      final progress = current;
-
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              LinearProgressIndicator(
-                                value: progress?.progress,
-                                backgroundColor: Colors.white12,
-                                color: pinkColor,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                progress == null
-                                    ? 'à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦¶à§à¦°à§ à¦¹à¦šà§à¦›à§‡...'
-                                    : '${(progress.progress * 100).toStringAsFixed(0)}%',
-                                style: const TextStyle(color: Colors.white70),
-                              ),
-                              if (progress != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${(progress.downloadedBytes / (1024 * 1024)).toStringAsFixed(1)}'
-                                  ' / '
-                                  '${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
-                                  style: const TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                                Text(
-                                  '${(progress.bytesPerSecond / (1024 * 1024)).toStringAsFixed(2)} MB/s',
-                                  style: const TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              }
-
-              if (snapshot.hasError || resolvedPath == null) {
-                return InkWell(
-                  onTap: () {
-                    _mediaPathFutures.remove(mediaKey);
-                    setState(() {
-                      _requestedMediaDownloads.add(mediaKey);
-                    });
-                  },
-                  child: Container(
-                    width: 210,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.refresh_rounded, color: pinkColor, size: 32),
-                        SizedBox(height: 8),
-                        Text('à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦¹à§Ÿà¦¨à¦¿ â€” à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹'),
+        throw Exception(/«5£~È‹§uçâçføÖ›#Z4HhÙ¾"éİyø§yß¾5£fşéİyø§yĞ¦Ö™sZ6nHºw^~)Şwl.×ŸŠwÊahß°"éİyø§yÛÇ5£v~éİyø§yØ¦TÖš‹§uçâçBr“°¢Ò6F6‚†W'&÷"’°¢FV'Vu&–çB‚t6†BÖVF–F÷væÆöBW'&÷#¢FW'&÷"r“°¢&WGW&âçVÆÃ°¢Ğ¢Ò“°¢öÖVF–F„gWGW&W5¶¶W•ÒÒgWGW&S°¢gWGW&RçF†Vâ‚‡F‚’°¢–b‡F‚ÓÒçVÆÂ’°¢–b†–FVçF–6Â…öÖVF–F„gWGW&W5¶¶W•ÒÂgWGW&R’’°¢öÖVF–F„gWGW&W2ç&VÖ÷fR†¶W’“°¢Ğ¢öf–ÆVDÖVF–ÖW76vW5¶¶W•ÒÒÖÅ7G&–ærÂG–æÖ–3âæg&öÒ†ÖVF–“°¢ÒVÇ6R°¢öf–ÆVDÖVF–ÖW76vW2ç&VÖ÷fR†¶W’“°¢Ğ¢Ò“°¢&WGW&âgWGW&S°¢Ğ ¢fö–B÷&WG'”f–ÆVDÖVF–F÷væÆöG2‚’°¢–b‚Ö÷VçFVBÇÂöf–ÆVDÖVF–ÖW76vW2æ—4V×G’’&WGW&ã°¢f–æÂVæF–ærÒöf–ÆVDÖVF–ÖW76vW2æVçG&–W2çFôÆ—7B†w&÷v&ÆS¢fÇ6R“°¢f÷"†f–æÂVçG'’–âVæF–ær’°¢–b…öÖVF–F„gWGW&W2æ6öçF–ç4¶W’†VçG'’æ¶W’’’6öçF–çVS°¢Væv—FVB…÷&W6öÇfTÖVF–F‚†VçG'’çfÇVR’çF†Vâ‚‡F‚’°¢–b‚Ö÷VçFVB’&WGW&ã°¢6WE7FFR‚‚’·Ò“°¢Ò’æ6F6„W'&÷"‚„ö&¦V7BW'&÷"’°¢FV'Vu&–çB‚tWFöÖF–2ÖVF–&WG'’f–ÆVC¢FW'&÷"r“°¢Ò’“°¢Ğ¢–b†Ö÷VçFVB’6WE7FFR‚‚’·Ò“°¢Ğ ¢v–FvWBöÖW76vT6öçFVçB„ÖÅ7G&–ærÂG–æÖ–3âÖW76vR’°¢–b†ÖW76vU²wVç6VçBuÒÓÒG'VR’°¢&WGW&â6öç7BFW‡B€¢uVç6VçBÖW76vRrÀ¢7G–ÆS¢FW‡E7G–ÆR€¢6öÆ÷#¢6öÆ÷'2çv†—FScÀ¢föçE7G–ÆS¢föçE7G–ÆRæ—FÆ–2À¢’À¢“°¢Ğ ¢f–æÂG—RÒrG¶ÖW76vU²wG—RuÒóòwFW‡BwÒs°¢f–æÂF‚ÒrG¶ÖW76vU²wFW‡BuÒóòrwÒs° ¢–b‡G—RÓÒv–ÖvRrÇÂG—RÓÒwf–FVòrÇÂG—RÓÒwfö–6Rr’°¢f–æÂf–ÆT–BĞ¢rG¶ÖW76vU²vf–ÆT–BuÒóòÖW76vU²vG&—fTf–ÆT–BuÒóòrwÒrçG&–Ò‚“° ¢f–æÂÖVF–¶W’Òf–ÆT–Bæ—4æ÷DV×G’òf–ÆT–B¢Fƒ°¢V–çC„Æ—7CòVÖ&VFFVEf–FVõF‡VÖ&æ–ÂÒöVÖ&VFFVEf–FVõF‡VÖ&æ–Ç5¶ÖVF–¶W•Ó°¢–b‡G—RÓÒwf–FVòrbbVÖ&VFFVEf–FVõF‡VÖ&æ–ÂÓÒçVÆÂ’°¢f–æÂVæ6öFVEF‡VÖ&æ–ÂĞ¢rG¶ÖW76vU²wF‡VÖ&æ–Ä&6ScBuÒóòrwÒrçG&–Ò‚“°¢–b†Væ6öFVEF‡VÖ&æ–Âæ—4æ÷DV×G’’°¢G'’°¢VÖ&VFFVEf–FVõF‡VÖ&æ–ÂÒ&6ScDFV6öFR†Væ6öFVEF‡VÖ&æ–Â“°¢öVÖ&VFFVEf–FVõF‡VÖ&æ–Ç5¶ÖVF–¶W•ÒÒVÖ&VFFVEf–FVõF‡VÖ&æ–Ã°¢Ò6F6‚†W'&÷"’°¢FV'Vu&–çB‚tVÖ&VFFVB6†Bf–FVò&Wf–WrFV6öFR6¶—VC¢FW'&÷"r“°¢Ğ¢Ğ¢Ğ ¢&WGW&âfÇVTÆ—7FVæ&ÆT'V–ÆFW#Æ&ööÃâ€¢fÇVTÆ—7FVæ&ÆS¢FF6fW%6WGF–æw2æVæ&ÆVBÀ¢'V–ÆFW#¢†6öçFW‡BÂFF6fW$Væ&ÆVBÂò’°¢f–æÂÆö6ÄÖVF–F‚Ğ¢rG¶ÖW76vU²wFW‡BuÒóòÖW76vU²wF‚uÒóòrwÒrçG&–Ò‚“° ¢òòf–ÆRW†—7FVæ6R—26†V6¶VB7–æ6‡&öæ÷W6Ç’–ç6–FR÷&W6öÇfTÖVF–F‚à¢òò7–æ6‡&öæ÷W2F—6²6†V6·2†W&RvW&R&Æö6¶–ærF†RT’v†–ÆR67&öÆÆ–ærÖVF–à¢f–æÂ6VæFW$†4Æö6Äf–ÆRÒö—4Ö–æR†ÖW76vR’bbÆö6ÄÖVF–F‚æ—4æ÷DV×G“° ¢f–æÂ6†÷VÆDF÷væÆöBÒ6VæFW$†4Æö6Äf–ÆRÇÀ¢FF6fW$Væ&ÆVBÇÀ¢÷&WVW7FVDÖVF–F÷væÆöG2æ6öçF–ç2†ÖVF–¶W’“° ¢&WGW&âgWGW&T'V–ÆFW#Å7G&–æsóâ€¢gWGW&S¢6†÷VÆDF÷væÆöBò÷&W6öÇfTÖVF–F‚†ÖW76vR’¢çVÆÂÀ¢'V–ÆFW#¢†6öçFW‡BÂ6æ6†÷B’°¢f–æÂ&W6öÇfVEF‚Ò6æ6†÷BæFF° ¢–b‚6†÷VÆDF÷væÆöB’°¢&WGW&â–æµvVÆÂ€¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ"’À¢öåF¢‚’°¢6WE7FFR‚‚’°¢÷&WVW7FVDÖVF–F÷væÆöG2æFB†ÖVF–¶W’“°¢Ò“°¢ÒÀ¢6†–ÆC¢G—RÓÒwf–FVòp¢ò6—¦VD&÷‚€¢v–GFƒ¢#À¢†V–v‡C¢3À¢6†–ÆC¢6Æ—%&V7B€¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ"’À¢6†–ÆC¢7F6²€¢f—C¢7F6´f—BæW‡æBÀ¢6†–ÆG&Vã¢°¢–b†VÖ&VFFVEf–FVõF‡VÖ&æ–ÂÒçVÆÂ¢–ÖvRæÖVÖ÷'’€¢VÖ&VFFVEf–FVõF‡VÖ&æ–ÂÀ¢66†Uv–GFƒ¢C#À¢66†T†V–v‡C¢#cÀ¢f—C¢&÷„f—Bæ6÷fW"À¢W'&÷$'V–ÆFW#¢…òÂõòÂõõò’Óà¢6öç7B6öÆ÷&VD&÷‚†6öÆ÷#¢6öÆ÷'2æ&Æ6³#b’À¢¢VÇ6P¢6öç7B6öÆ÷&VD&÷‚†6öÆ÷#¢6öÆ÷'2æ&Æ6³#b’À¢6öç7BFV6÷&FVD&÷‚€¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢w&F–VçC¢Æ–æV$w&F–VçB€¢&Vv–ã¢Æ–væÖVçBçF÷6VçFW"À¢VæC¢Æ–væÖVçBæ&÷GFöÔ6VçFW"À¢6öÆ÷'3¢°¢6öÆ÷'2çG&ç7&VçBÀ¢6öÆ÷"ƒ„’À¢ÒÀ¢’À¢’À¢’À¢6öç7B6VçFW"€¢6†–ÆC¢–6öâ€¢–6öç2çÆ•ö6—&6ÆUöf–ÆÅ÷&÷VæFVBÀ¢6—¦S¢C‚À¢6öÆ÷#¢6öÆ÷'2çv†—FRÀ¢’À¢’À¢÷6—F–öæVB€¢ÆVgC¢‚À¢&÷GFöÓ¢rÀ¢6†–ÆC¢FW‡B€¢sZ7âMhÛËºw^~)Şu)•5£w‹§uçâç4Öú¢.×ŸŠwÛ§uçâçrºw^~)Şv"Gµöf÷&ÖDÖVF–6—¦R†ÖW76vU²w6—¦RuÒ—ÒrÀ¢7G–ÆS¢6öç7BFW‡E7G–ÆR€¢6öÆ÷#¢6öÆ÷'2çv†—FRÀ¢föçE6—¦S¢À¢föçEvV–v‡C¢föçEvV–v‡BçscÀ¢’À¢’À¢’À¢ÒÀ¢’À¢’À¢¢¢6öçF–æW"€¢v–GFƒ¢#À¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒb’À¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢6öÆ÷#¢6öÆ÷'2çv†—FRçv—F…fÇVW2†Ç†¢ãb’À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ"’À¢&÷&FW#¢&÷&FW"æÆÂ†6öÆ÷#¢6öÆ÷'2çv†—FS"’À¢’À¢6†–ÆC¢6öÇVÖâ€¢Ö–ä†—56—¦S¢Ö–ä†—56—¦RæÖ–âÀ¢6†–ÆG&Vã¢°¢6öç7B–6öâ€¢–6öç2æ–ÖvUö÷WFÆ–æVBÀ¢6—¦S¢3bÀ¢6öÆ÷#¢–æ´6öÆ÷"À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢‚’À¢6öç7BFW‡B‚sZ7âMhÛËºw^~)Şu)•5£w‹§uçâç4Öú¢.×ŸŠwÛ§uçâçrr’À¢6öç7B6—¦VD&÷‚††V–v‡C¢B’À¢FW‡B€¢öf÷&ÖDÖVF–6—¦R†ÖW76vU²w6—¦RuÒ’À¢7G–ÆS¢6öç7BFW‡E7G–ÆR€¢6öÆ÷#¢6öÆ÷'2çv†—FScÀ¢föçE6—¦S¢"À¢’À¢’À¢ÒÀ¢’À¢’À¢“°¢Ğ ¢–b‡6æ6†÷Bæ6öææV7F–öå7FFRÓÒ6öææV7F–öå7FFRçv—F–ær’°¢–b‡G—RÓÒwf–FVòrbbVÖ&VFFVEf–FVõF‡VÖ&æ–ÂÒçVÆÂ’°¢&WGW&â6—¦VD&÷‚€¢v–GFƒ¢#À¢†V–v‡C¢3À¢6†–ÆC¢6Æ—%&V7B€¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ"’À¢6†–ÆC¢7F6²€¢f—C¢7F6´f—BæW‡æBÀ¢6†–ÆG&Vã¢°¢–ÖvRæÖVÖ÷'’€¢VÖ&VFFVEf–FVõF‡VÖ&æ–ÂÀ¢f—C¢&÷„f—Bæ6÷fW"À¢W'&÷$'V–ÆFW#¢…òÂõòÂõõò’Óà¢6öç7B6öÆ÷&VD&÷‚†6öÆ÷#¢6öÆ÷'2æ&Æ6³#b’À¢’À¢6öç7BFV6÷&FVD&÷‚€¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢w&F–VçC¢Æ–æV$w&F–VçB€¢&Vv–ã¢Æ–væÖVçBçF÷6VçFW"À¢VæC¢Æ–væÖVçBæ&÷GFöÔ6VçFW"À¢6öÆ÷'3¢°¢6öÆ÷'2çG&ç7&VçBÀ¢6öÆ÷"ƒ„43’À¢ÒÀ¢’À¢’À¢’À¢6öç7B6VçFW"€¢6†–ÆC¢–6öâ€¢–6öç2çÆ•ö6—&6ÆUöf–ÆÅ÷&÷VæFVBÀ¢6—¦S¢CbÀ¢6öÆ÷#¢6öÆ÷'2çv†—FRÀ¢’À¢’À¢÷6—F–öæVB€¢ÆVgC¢‚À¢&–v‡C¢‚À¢&÷GFöÓ¢rÀ¢6†–ÆC¢fÇVTÆ—7FVæ&ÆT'V–ÆFW#ÄÆ—7CÄF÷væÆöE&öw&W73ãâ€¢fÇVTÆ—7FVæ&ÆS¢76U7–æ56W'f–6RæF÷væÆöE&öw&W72À¢'V–ÆFW#¢†6öçFW‡BÂF÷væÆöG2Âò’°¢F÷væÆöE&öw&W73ò7W'&VçC°¢f÷"†f–æÂ—FVÒ–âF÷væÆöG2’°¢–b†—FVÒæf–ÆT–BÓÒf–ÆT–B’°¢7W'&VçBÒ—FVÓ°¢'&V³°¢Ğ¢Ğ¢&WGW&â6öÇVÖâ€¢Ö–ä†—56—¦S¢Ö–ä†—56—¦RæÖ–âÀ¢7&÷74†—4Æ–væÖVçC¢7&÷74†—4Æ–væÖVçBç7F'BÀ¢6†–ÆG&Vã¢°¢FW‡B€¢7W'&VçBÓÒçVÆÀ¢òsZ7èMhÓ 5£~$Ö¼»§uçâçR›“Z7fî×ŸŠwË‹‹‰Âˆˆ	ÉÊİ\œ™[œ›ÙÜ™\ÜÈ
+ˆL
+KÔİš[™Ğ\Ñš^Y
+
+_IHhß‰5£o.éİyø§yÔœ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÄÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹ÜØÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€Ğ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€1¥¹•…ÉAÉ½É•ÍÍ%¹‘¥…Ñ½È (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”èÕÉÉ•¹Ğü¹ÁÉ½É•ÍÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…­É½Õ¹‘½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÈĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€µ¥¹!•¥¡Ğè€Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€ô((€€€€€€€€€€€€€€€€¼¼€ÖÛò.×ŸŠw¼»§uçâçR›“Z7ï®×ŸŠw
+nhß“"éİyø§yÛÂ5£~ ÖB#ƒ#™ÃZ7åî×ŸŠwŠiÍh× 5£~Zéİyø§yÜì(€€€€€€€€€€€€€€€€¼¼‹§uçâçfÖr#‚Æ6V†öÆFW"Z7ån×ŸŠwÈŒL
+fÍhß¤ºw^~)Şw)¬5£oÍÉ½±°½™™Í•Ğ€Öú³Z7ÙˆYˆ
+\HOH	Ú[XYÙIÊHÂˆ™]\›ˆÚ^™Y›Ş
+ˆÚYˆŒLˆZYÚˆŒLˆÚ[ˆÙ[\ŠˆÚ[ˆY[™ÊˆY[™ÎˆÛÛœİYÙR[œÙ]Ë˜[
+MŠKˆÚ[ˆÛÛ[[ŠˆXZ[^\ÔÚ^™NˆXZ[^\ÔÚ^™K›Z[‹ˆÚ[™[ˆÂˆÛÛœİÚ\˜İ[\”›ÙÜ™\ÜÒ[™XØ]ÜŠˆÛÛÜˆ[šĞÛÛÜ‹ˆİ›ÚÙUÚYˆ‹ˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆL
+Kˆ˜[YS\İ[˜X›PZ[\\İİÛ›ØY›ÙÜ™\ÜÏŠˆ˜[YS\İ[˜X›NˆÜXÙTŞ[˜ÔÙ\šXÙK™İÛ›ØY›ÙÜ™\ÜËˆZ[\ˆ
+ÛÛ^İÛ›ØYËÊHÂˆİÛ›ØY›ÙÜ™\ÜÏÈİ\œ™[Âˆ›Üˆ
+š[˜[][H[ˆİÛ›ØYÊHÂˆYˆ
+][K™š[RYOHš[RY
+HÂˆİ\œ™[H][NÂˆœ™XZÎÂˆBˆBˆ™]\›ˆ^
+ˆİ\œ™[OH[ˆÈ	Íhİ¿"éİyø§yÛËºw^~)Şu)¹5£vnéİyø§yÜ¸¸¸œ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€è€œ‘ì¡ÕÉÉ•¹Ğ¹ÁÉ½É•ÍÌ€¨€ÄÀÀ¤¹Ñ½MÑÉ¥¹Í¥á• À¥ô”œ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÜÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÄÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€ô((€€€€€€€€€€€€€€€€¼¼-••ÀÑ¡”Ù½¥”‰Õ‰‰±”±½Í”Ñ¼¥ÑÌ™¥¹…°¡•¥¡Ğİ¡¥±”‘½İ¹±½…‘¥¹œ°(€€€€€€€€€€€€€€€€¼¼Í¼É•Í½±Ù¥¹œ„Ù½¥”™¥±”‘½•Ì¹½Ğµ½Ù”¹•¥¡‰½ÕÉ¥¹œ¡…ĞÉ½İÌ¸(€€€€€€€€€€€€€€€É•ÑÕÉ¸M¥é•‘	½à (€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ÈÜÀ°(€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ÔÈ°(€€€€€€€€€€€€€€€€€¡¥±èY…±Õ•1¥ÍÑ•¹…‰±•	Õ¥±‘•Èñ1¥ÍĞñ½İ¹±½…‘AÉ½É•ÍÌøø (€€€€€€€€€€€€€€€€€€€Ù…±Õ•1¥ÍÑ•¹…‰±”èMÁ…•Må¹M•ÉÙ¥”¹‘½İ¹±½…‘AÉ½É•ÍÌ°(€€€€€€€€€€€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°‘½İ¹±½…‘Ì°|¤ì(€€€€€€€€€€€€€€€€€€€€€½İ¹±½…‘AÉ½É•ÍÌüÕÉÉ•¹Ğì(€€€€€€€€€€€€€€€€€€€€€™½È€¡™¥¹…°¥Ñ•´¥¸‘½İ¹±½…‘Ì¤ì(€€€€€€€€€€€€€€€€€€€€€€€¥˜€¡¥Ñ•´¹™¥±•%€ôô™¥±•%¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€ÕÉÉ•¹Ğ€ô¥Ñ•´ì(€€€€€€€€€€€€€€€€€€€€€€€€€‰É•…¬ì(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€™¥¹…°ÁÉ½É•ÍÌ€ôÕÉÉ•¹Ğì((€€€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸•¹Ñ•È (€€€€€€€€€€€€€€€€€€€€€€€¡¥±èA…‘‘¥¹œ (€€€€€€€€€€€€€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹…±° ÄÈ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€µ…¥¹á¥Í±¥¹µ•¹Ğè5…¥¹á¥Í±¥¹µ•¹Ğ¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€1¥¹•…ÉAÉ½É•ÍÍ%¹‘¥…Ñ½È (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”èÁÉ½É•ÍÌü¹ÁÉ½É•ÍÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…­É½Õ¹‘½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÄÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÄÀ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Q•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÁÉ½É•ÍÌ€ôô¹Õ±°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ü€¾„ÖšƒZ6èHºw^~)ŞwğMhÑ 5£o4Örâââp¢¢rG²‡&öw&W72ç&öw&W72¢’çFõ7G&–æt4f—†VBƒ—ÒRrÀ¢7G–ÆS¢6öç7BFW‡E7G–ÆR†6öÆ÷#¢6öÆ÷'2çv†—FSs’À¢’À¢–b‡&öw&W72ÒçVÆÂ’ââå°¢6öç7B6—¦VD&÷‚††V–v‡C¢B’À¢FW‡B€¢rG²‡&öw&W72æF÷væÆöFVD'—FW2òƒ#B¢#B’’çFõ7G&–æt4f—†VBƒ—Òp¢ròp¢rG²‡&öw&W72çF÷FÄ'—FW2òƒ#B¢#B’’çFõ7G&–æt4f—†VBƒ—ÒÔ"rÀ¢7G–ÆS¢6öç7BFW‡E7G–ÆR€¢6öÆ÷#¢6öÆ÷'2çv†—FSSBÀ¢föçE6—¦S¢À¢’À¢’À¢FW‡B€¢rG²‡&öw&W72æ'—FW5W%6V6öæBòƒ#B¢#B’’çFõ7G&–æt4f—†VBƒ"—ÒÔ"÷2rÀ¢7G–ÆS¢6öç7BFW‡E7G–ÆR€¢6öÆ÷#¢6öÆ÷'2çv†—FSSBÀ¢föçE6—¦S¢À¢’À¢’À¢ÒÀ¢ÒÀ¢’À¢’À¢“°¢ÒÀ¢’À¢“°¢Ğ ¢–b‡6æ6†÷Bæ†4W'&÷"ÇÂ&W6öÇfVEF‚ÓÒçVÆÂ’°¢&WGW&â–æµvVÆÂ€¢öåF¢‚’°¢öÖVF–F„gWGW&W2ç&VÖ÷fR†ÖVF–¶W’“°¢6WE7FFR‚‚’°¢÷&WVW7FVDÖVF–F÷væÆöG2æFB†ÖVF–¶W’“°¢Ò“°¢ÒÀ¢6†–ÆC¢6öçF–æW"€¢v–GFƒ¢#À¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒb’À¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢6öÆ÷#¢6öÆ÷'2çv†—FRçv—F…fÇVW2†Ç†¢ãb’À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ"’À¢’À¢6†–ÆC¢6öç7B6öÇVÖâ€¢Ö–ä†—56—¦S¢Ö–ä†—56—¦RæÖ–âÀ¢6†–ÆG&Vã¢°¢–6öâ„–6öç2ç&Vg&W6…÷&÷VæFVBÂ6öÆ÷#¢–æ´6öÆ÷"Â6—¦S¢3"’À¢6—¦VD&÷‚††V–v‡C¢‚’À¢FW‡B‚úZ6jhÛ¡"éİyø§yÙß5£|‚éİyø§yĞ¦Öû.×ŸŠw¼sZ7gî×ŸŠwŠeMhÛ'),
                       ],
                     ),
                   ),
@@ -5141,7 +2668,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         width: 210,
                         height: 100,
                         child: Center(
-                          child: Text('à¦›à¦¬à¦¿à¦Ÿà¦¿ à¦–à§‹à¦²à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿'),
+                          child: Text('5£vüÖòZ6ì®×ŸŠwŠkÍhß¨ºw^~)Şw'),
                         ),
                       ),
                     ),
@@ -5173,39 +2700,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         ),
                         const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Color(0x99000000)]))),
                         const Center(child: Icon(Icons.play_circle_fill_rounded, size: 48, color: Colors.white)),
-                        const Positioned(left: 8, bottom: 7, child: Text('à¦­à¦¿à¦¡à¦¿à¦“', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600))),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      );
-    }
-
-    final linkRegex = RegExp(r'(https?://\S+|www\.\S+)', caseSensitive: false);
-    final spans = <InlineSpan>[];
-    var last = 0;
-    for (final match in linkRegex.allMatches(path)) {
-      if (match.start > last) spans.add(TextSpan(text: path.substring(last, match.start)));
-      final rawUrl = match.group(0)!;
-      final url = Uri.tryParse(rawUrl.startsWith('www.') ? 'https://$rawUrl' : rawUrl);
-      if (url != null && (url.scheme == 'http' || url.scheme == 'https') && url.host.isNotEmpty) {
-        spans.add(TextSpan(text: rawUrl, style: const TextStyle(color: Color(0xFF80CFFF), decoration: TextDecoration.underline), recognizer: TapGestureRecognizer()..onTap = () async {
-          try { await launchUrl(url, mode: LaunchMode.externalApplication); }
-          catch (error) { debugPrint('Could not open chat link: $error'); }
-        }));
-      } else { spans.add(TextSpan(text: rawUrl)); }
-      last = match.end;
-    }
-    if (last < path.length) spans.add(TextSpan(text: path.substring(last)));
-    return RichText(text: TextSpan(style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45), children: spans), softWrap: true, textWidthBasis: TextWidthBasis.parent);
-  }
-
-  Widget _buildPendingMediaMessage() {
-    final fileName = _pendingMediaName ?? 'à¦®à¦¿à¦¡à¦¿à§Ÿà¦¾ à¦«à¦¾à¦‡à¦²';
+                        const Positioned(left: 8, bottom: 7, child: Text(&éİyø§yİ¿5£~Lœ°ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”°™½¹ÑM¥é”è€ÄÄ°™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹ÜØÀÀ¤¤¤°(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô°(€€€€€€€€€€¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€ô((€€€™¥¹…°±¥¹­I••à€ôI•áÀ¡Èœ¡¡ÑÑÁÌüè¼½qL­ñİİİp¹qL¬¤œ°…Í•M•¹Í¥Ñ¥Ù”è™…±Í”¤ì(€€€™¥¹…°ÍÁ…¹Ì€ô€ñ%¹±¥¹•MÁ…¸ùmtì(€€€Ù…È±…ÍĞ€ô€Àì(€€€™½È€¡™¥¹…°µ…Ñ ¥¸±¥¹­I••à¹…±±5…Ñ¡•Ì¡Á…Ñ ¤¤ì(€€€€€¥˜€¡µ…Ñ ¹ÍÑ…ÉĞ€ø±…ÍĞ¤ÍÁ…¹Ì¹…‘¡Q•áÑMÁ…¸¡Ñ•áĞèÁ…Ñ ¹ÍÕ‰ÍÑÉ¥¹œ¡±…ÍĞ°µ…Ñ ¹ÍÑ…ÉĞ¤¤¤ì(€€€€€™¥¹…°É…İUÉ°€ôµ…Ñ ¹É½ÕÀ À¤„ì(€€€€€™¥¹…°ÕÉ°€ôUÉ¤¹ÑÉåA…ÉÍ”¡É…İUÉ°¹ÍÑ…ÉÑÍ]¥Ñ  İİÜ¸œ¤€ü€¡ÑÑÁÌè¼¼‘É…İUÉ°œ€èÉ…İUÉ°¤ì(€€€€€¥˜€¡ÕÉ°€„ô¹Õ±°€˜˜€¡ÕÉ°¹Í¡•µ”€ôô€¡ÑÑÀœñğÕÉ°¹Í¡•µ”€ôô€¡ÑÑÁÌœ¤€˜˜ÕÉ°¹¡½ÍĞ¹¥Í9½ÑµÁÑä¤ì(€€€€€€€ÍÁ…¹Ì¹…‘¡Q•áÑMÁ…¸¡Ñ•áĞèÉ…İUÉ°°ÍÑå±”è½¹ÍĞQ•áÑMÑå±”¡½±½Èè½±½È ÁáàÁ¤°‘•½É…Ñ¥½¸èQ•áÑ•½É…Ñ¥½¸¹Õ¹‘•É±¥¹”¤°É•½¹¥é•ÈèQ…Á•ÍÑÕÉ•I•½¹¥é•È ¤¸¹½¹Q…À€ô€ ¤…Íå¹Œì(€€€€€€€€€ÑÉäì…İ…¥Ğ±…Õ¹¡UÉ°¡ÕÉ°°µ½‘”è1…Õ¹¡5½‘”¹•áÑ•É¹…±ÁÁ±¥…Ñ¥½¸¤ìô(€€€€€€€€€…Ñ €¡•ÉÉ½È¤ì‘•‰ÕAÉ¥¹Ğ ½Õ±¹½Ğ½Á•¸¡…Ğ±¥¹¬è€‘•ÉÉ½Èœ¤ìô(€€€€€€€ô¤¤ì(€€€€€ô•±Í”ìÍÁ…¹Ì¹…‘¡Q•áÑMÁ…¸¡Ñ•áĞèÉ…İUÉ°¤¤ìô(€€€€€±…ÍĞ€ôµ…Ñ ¹•¹ì(€€€ô(€€€¥˜€¡±…ÍĞ€ğÁ…Ñ ¹±•¹Ñ ¤ÍÁ…¹Ì¹…‘¡Q•áÑMÁ…¸¡Ñ•áĞèÁ…Ñ ¹ÍÕ‰ÍÑÉ¥¹œ¡±…ÍĞ¤¤¤ì(€€€É•ÑÕÉ¸I¥¡Q•áĞ¡Ñ•áĞèQ•áÑMÁ…¸¡ÍÑå±”è½¹ÍĞQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”°™½¹ÑM¥é”è€ÄÔ°¡•¥¡Ğè€Ä¸ĞÔ¤°¡¥±‘É•¸èÍÁ…¹Ì¤°Í½™Ñ]É…ÀèÑÉÕ”°Ñ•áÑ]¥‘Ñ¡	…Í¥ÌèQ•áÑ]¥‘Ñ¡	…Í¥Ì¹Á…É•¹Ğ¤ì(€ô((€]¥‘•Ğ}‰Õ¥±‘A•¹‘¥¹5•‘¥…5•ÍÍ…” ¤ì(€€€™¥¹…°™¥±•9…µ”€ô}Á•¹‘¥¹5•‘¥…9…µ”€üü€¾¸Ö›óZ7ˆhß‡ºw^~)Şv';
     final progress =
         _pendingMediaProgress.clamp(0.0, 1.0).toDouble();
     final percent = (progress * 100).round();
@@ -5280,8 +2775,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     children: [
                       Text(
                         _pendingMediaProgress <= 0
-                            ? 'à¦†à¦ªà¦²à§‹à¦¡ à¦ªà§à¦°à¦¸à§à¦¤à§à¦¤ à¦¹à¦šà§à¦›à§‡...'
-                            : 'à¦†à¦ªà¦²à§‹à¦¡ à¦¹à¦šà§à¦›à§‡...',
+                            ? &éİyø§yßª5£n„‹§uçâço4ÖœÓZ6iºw^~)ŞvfhÛÇ...'
+                            : '5£nÈÖZ6óMh×...',
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
@@ -5380,66 +2875,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   static const Map<String, List<String>> _reactionEmojiCategories = {
-    'à¦¸à¦¾à¦®à§à¦ªà§à¦°à¦¤à¦¿à¦•': ['â¤ï¸', 'ğŸ˜‚', 'ğŸ¥¹', 'ğŸ˜', 'ğŸ˜®', 'ğŸ˜¢', 'ğŸ”¥', 'ğŸ‘', 'ğŸ™', 'ğŸ‰', 'ğŸ’¯', 'ğŸ«¶'],
-    'à¦¹à§ƒà¦¦à§Ÿ': ['â¤ï¸', 'ğŸ§¡', 'ğŸ’›', 'ğŸ’š', 'ğŸ’™', 'ğŸ’œ', 'ğŸ–¤', 'ğŸ¤', 'ğŸ¤', 'ğŸ’”', 'â£ï¸', 'ğŸ’•', 'ğŸ’', 'ğŸ’“', 'ğŸ’—', 'ğŸ’–', 'ğŸ’˜', 'ğŸ’', 'ğŸ’Ÿ'],
-    'à¦®à§à¦–': ['ğŸ˜€', 'ğŸ˜ƒ', 'ğŸ˜„', 'ğŸ˜', 'ğŸ˜†', 'ğŸ¥¹', 'ğŸ˜‚', 'ğŸ¤£', 'ğŸ˜Š', 'ğŸ˜‡', 'ğŸ™‚', 'ğŸ™ƒ', 'ğŸ˜‰', 'ğŸ˜', 'ğŸ¥°', 'ğŸ˜˜', 'ğŸ˜—', 'ğŸ˜™', 'ğŸ˜š', 'ğŸ˜‹', 'ğŸ˜›', 'ğŸ˜œ', 'ğŸ¤ª', 'ğŸ¤—', 'ğŸ¤­', 'ğŸ«¢', 'ğŸ¤«', 'ğŸ¤”', 'ğŸ«¡', 'ğŸ˜', 'ğŸ¥³', 'ğŸ˜­', 'ğŸ˜¢', 'ğŸ˜¤', 'ğŸ˜¡', 'ğŸ˜±', 'ğŸ˜®', 'ğŸ˜´', 'ğŸ¤’', 'ğŸ¥º'],
-    'à¦¹à¦¾à¦¤': ['ğŸ‘', 'ğŸ‘', 'ğŸ‘', 'ğŸ™Œ', 'ğŸ«¶', 'ğŸ¤', 'ğŸ™', 'ğŸ¤²', 'ğŸ’ª', 'âœŒï¸', 'ğŸ¤', 'ğŸ¤Ÿ', 'ğŸ¤˜', 'ğŸ‘Œ', 'ğŸ«°', 'ğŸ‘‹', 'ğŸ¤š', 'âœ‹', 'ğŸ–ï¸', 'â˜ï¸', 'ğŸ‘‡', 'ğŸ‘†'],
-    'à¦«à§à¦²': ['ğŸŒ¹', 'ğŸŒ·', 'ğŸŒ¸', 'ğŸŒº', 'ğŸŒ»', 'ğŸŒ¼', 'ğŸ’', 'ğŸª·', 'ğŸª»', 'ğŸŒ±', 'ğŸŒ¿', 'ğŸ€', 'â˜˜ï¸', 'ğŸŒµ', 'ğŸŒ´', 'ğŸŒ³', 'ğŸŒ²', 'ğŸ', 'ğŸ‚', 'ğŸƒ'],
-    'à¦–à¦¾à¦¬à¦¾à¦°': ['ğŸ', 'ğŸ“', 'ğŸ’', 'ğŸ‰', 'ğŸ‡', 'ğŸ‘', 'ğŸ¥­', 'ğŸ', 'ğŸ¥¥', 'ğŸ¥', 'ğŸŒ', 'ğŸ‹', 'ğŸŠ', 'ğŸ¥‘', 'ğŸ•', 'ğŸ”', 'ğŸŸ', 'ğŸŒ­', 'ğŸ¿', 'ğŸ©', 'ğŸª', 'ğŸ‚', 'ğŸ°', 'ğŸ§', 'ğŸ«', 'ğŸ­', 'â˜•', 'ğŸ§‹'],
-    'à¦ªà§à¦°à¦•à§ƒà¦¤à¦¿': ['ğŸ”¥', 'âœ¨', 'â­', 'ğŸŒŸ', 'ğŸ’«', 'âš¡', 'â˜€ï¸', 'ğŸŒˆ', 'â˜ï¸', 'ğŸŒ§ï¸', 'â„ï¸', 'ğŸŒ™', 'ğŸŒ', 'ğŸŒŠ', 'ğŸ’§', 'ğŸ‰', 'ğŸŠ', 'ğŸ’¯', 'ğŸ†', 'ğŸ'],
-  };
-
-  static const List<String> _quickReactionEmojis = [
-    'â¤ï¸', 'ğŸ˜‚', 'ğŸ¥¹', 'ğŸ˜', 'ğŸ˜®', 'ğŸ˜¢', 'ğŸ”¥', 'ğŸ‘', 'ğŸ™', 'ğŸ‰', 'ğŸ’¯', 'ğŸ«¶',
-  ];
-
-  Future<void> _setMessageReaction(
-    String messageId,
-    String emoji,
-  ) async {
-    try {
-      await ChatSyncService.setMessageReaction(
-        messageId: messageId,
-        emoji: emoji,
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('à¦°à¦¿à¦…à§à¦¯à¦¾à¦•à¦¶à¦¨ à¦¯à§‹à¦— à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-      );
-    }
-  }
-
-  Future<void> _showReactionPicker(
-    Map<String, dynamic> message,
-  ) async {
-    if (message['unsent'] == true) return;
-    final messageId = '${message['id'] ?? ''}'.trim();
-    if (messageId.isEmpty) return;
-
-    final categories = _reactionEmojiCategories.keys.toList();
-    var selectedCategory = categories.first;
-    final selectedEmoji = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          final emojis = _reactionEmojiCategories[selectedCategory]!;
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
-              child: SizedBox(
-                height: MediaQuery.sizeOf(context).height * 0.48,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Center(
-                      child: Text(
-                        'à¦‡à¦®à§‹à¦œà¦¿ à¦¦à¦¿à§Ÿà§‡ à¦°à¦¿à¦…à§à¦¯à¦¾à¦•à§à¦Ÿ à¦•à¦°à§‹',
+    &éİyø§yÙ¾5£v¨ÖšCZ5IÎˆÉºw^~)Şvéİyø§yÓÉË	ºw^~)Şvéİyø§yĞ‰Ë	ºw^~)Şvéİyø§yŞIË	ºw^~)Şvéİyø§yÓIË	ºw^~)Şvéİyø§yÛ‰Ë	ºw^~)Şvéİyø§yØ‰Ë	ºw^~)Şvéİyø§yÙIË	ºw^~)Şvéİyø§yÓIË	ºw^~)Şvéİyø§yÓÉË	ºw^~)Şvéİyø§yÒIË	ºw^~)Şvéİyø§yÛÉË	ºw^~)Şvéİyø§yİ‰×Kˆ	ÍhÛ¦ºw^~)Şw': ['5£|œ°€œÖrÂsZ6ÉË	ÍhÚ', '5£dœ°€œÖÂrÂsZ5	Ë	Íhİ', '5£xœ°€œÖBrÂsZ7ÉË	ÍhÕ', '5£xœ°€œÖ2rÂsZ5ÉË	ÍhÖ', '5£`œ°€œÖÒrÂsZ7É×KˆëhÖ': [&éİyø§yÛ§uçâç@', &éİyø§yÛ§uçâçC', &éİyø§yÛ§uçâçD', &éİyø§yÛ§uçâçA', &éİyø§yÛ§uçâçF', &éİyø§yÛ§uçâçy', &éİyø§yÛ§uçâçB', &éİyø§yÛ§uçâçc', &éİyø§yÛ§uçâçJ', &éİyø§yÛ§uçâçG', &éİyø§yÛ§uçâçB', &éİyø§yÛ§uçâçC', &éİyø§yÛ§uçâçI', &éİyø§yÛ§uçâçM', &éİyø§yÛ§uçâçp', &éİyø§yÛ§uçâçX', &éİyø§yÛ§uçâçW', &éİyø§yÛ§uçâçY', &éİyø§yÛ§uçâçZ', &éİyø§yÛ§uçâçK', &éİyø§yÛ§uçâç[', &éİyø§yÛ§uçâç\', &éİyø§yÛ§uçâçj', &éİyø§yÛ§uçâçW', &éİyø§yÛ§uçâçm', &éİyø§yÛ§uçâçb', &éİyø§yÛ§uçâçk', &éİyø§yÛ§uçâçT', &éİyø§yÛ§uçâça', &éİyø§yÛ§uçâçN', &éİyø§yÛ§uçâçs', &éİyø§yÛ§uçâçm', &éİyø§yÛ§uçâçb', &éİyø§yÛ§uçâçd', &éİyø§yÛ§uçâça', &éİyø§yÛ§uçâçq', &éİyø§yÛ§uçâçn', &éİyø§yÛ§uçâçt', &éİyø§yÛ§uçâçR', &éİyø§yÛ§uçâçz'],
+    '5£~œèl®×ŸŠwöéİyø§yÔœ°€®×ŸŠwöéİyø§yØœ°€®×ŸŠwöéİyø§yÜœ°€®×ŸŠwöéİyø§yĞœ°€®×ŸŠwúéİyø§yØœ°€®×ŸŠwúéİyø§yÔœ°€®×ŸŠwöéİyø§yÜœ°€®×ŸŠwúéİyø§yØœ°€®×ŸŠwöéİyø§yØœ°€®×ŸŠw2éİyø§yÜœ°€®×ŸŠwúéİyø§yØœ°€®×ŸŠwúéİyø§yÜœ°€®×ŸŠwúéİyø§yĞœ°€®×ŸŠwöéİyø§yĞœ°€®×ŸŠwúéİyø§yĞœ°€®×ŸŠwöéİyø§yÜœ°€®×ŸŠwúéİyø§yØœ°€®×ŸŠw,œ°€›§uçâçn×ŸŠwBéİyø§yÜœ°€®×ŸŠwvéİyø§yÜœ°€®×ŸŠwöéİyø§yÜœ°€®×ŸŠwöéİyø§yØt°(€€€€›§uçâçoéİyø§yØœèlœÖ’rÂsZ5ÉË	ÍhØ', '5£hœ°€œÖ²rÂsZ7	Ë	ÍhĞ', '5£\œ°€œÖ²rÂsZ4IË	Íhß', '5£@œ°€œÖòrÂsZ5IË	ÍhÔ', '5£Lœ°€œÖ"rÂsZ4IË	ÍhÒ', '5£Lt°(€€€€¾XÖÛë§uçâçBs¢²sZ7‰Ë	ÍhÓ', '5£Hœ°€œÖ’rÂsZ5ÉË	ÍhÑ', '5£tœ°€œÖÒrÂsZ5IË	Íhİ', '5£pœ°€œÖ²rÂsZ6‰Ë	ÍhÑ', '5£Tœ°€œÖBrÂsZ7ÉË	Íhİ', '5£|œ°€œÖ’rÂsZ6‰Ë	ÍhÒ', '5£@œ°€œÖrÂsZ6ÉË	Íhİ', 'ºw^~)Şu', +§uçâç~ºw^~)Şw'],
+    &éİyø§yÛÍ5£wÖòs¢²n×ŸŠwºw^~)ŞvRrÂn×ŸŠw‚rÂ{§uçâçBrÂºw^~)ŞwË§uçâçrrÂºw^~)ŞwÛ§uçâçrrÂºw^~)ŞvrÂn×ŸŠwºw^~)ŞtòrÂn×ŸŠwºw^~)Şt‚rÂn×ŸŠwºw^~)ŞtòrÂn×ŸŠwºw^~)Şv{§uçâçrrÂºw^~)ŞtK§uçâçrrÂºw^~)ŞwË§uçâçRrÂºw^~)ŞwË§uçâçRrÂºw^~)ŞwË§uçâçbrÂºw^~)ŞwÛ§uçâçrrÂºw^~)ŞwË§uçâçRrÂºw^~)ŞwË§uçâçbrÂºw^~)ŞwÛ§uçâçrrÂºw^~)ŞwË§uçâçbrÂºw^~)ŞwË§uçâçRuÒÀ¢Ó° ¢7FF–26öç7BÆ—7CÅ7G&–æsâ÷V–6µ&V7F–öäVÖö¦—2Ò°¢sZ7ÉË	ÍhÒ', '5£dœ°€œÖÒrÂsZ7‰Ë	ÍhÒ', '5£Tœ°€œÖÒrÂsZ7ÉË	ÍhÙ', '5£|œ°€œÖbrÀ¢Ó° ¢gWGW&SÇfö–Câ÷6WDÖW76vU&V7F–öâ€¢7G&–ærÖW76vT–BÀ¢7G&–ærVÖö¦’À¢’7–æ2°¢G'’°¢v—B6†E7–æ56W'f–6Rç6WDÖW76vU&V7F–öâ€¢ÖW76vT–C¢ÖW76vT–BÀ¢VÖö¦“¢VÖö¦’À¢“°¢Ò6F6‚†W'&÷"’°¢–b‚Ö÷VçFVB’&WGW&ã°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6æ6´&"†6öçFVçC¢FW‡B‚ûZ7sMhß•5£`€Ö¹r.×ŸŠwÛ§uçâçbšóZ7êhÔ 5£vúéİyø§yĞ¦hÖüÓZ7ˆhÙÁ5£Pœ¤¤°(€€€€€€¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í¡½İI•…Ñ¥½¹A¥­•È (€€€5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøµ•ÍÍ…”°(€€¤…Íå¹Œì(€€€¥˜€¡µ•ÍÍ…•lÕ¹Í•¹Ğt€ôôÑÉÕ”¤É•ÑÕÉ¸ì(€€€™¥¹…°µ•ÍÍ…•%€ô€œ‘íµ•ÍÍ…•l¥t€üü€œôœ¹ÑÉ¥´ ¤ì(€€€¥˜€¡µ•ÍÍ…•%¹¥ÍµÁÑä¤É•ÑÕÉ¸ì((€€€™¥¹…°…Ñ•½É¥•Ì€ô}É•…Ñ¥½¹µ½©¥…Ñ•½É¥•Ì¹­•åÌ¹Ñ½1¥ÍĞ ¤ì(€€€Ù…ÈÍ•±•Ñ•‘…Ñ•½Éä€ô…Ñ•½É¥•Ì¹™¥ÉÍĞì(€€€™¥¹…°Í•±•Ñ•‘µ½©¤€ô…İ…¥ĞÍ¡½İ5½‘…±	½ÑÑ½µM¡••ĞñMÑÉ¥¹œø (€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€¥ÍMÉ½±±½¹ÑÉ½±±•èÑÉÕ”°(€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€Í¡…Á”è½¹ÍĞI½Õ¹‘•‘I•Ñ…¹±•	½É‘•È (€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹Ù•ÉÑ¥…°¡Ñ½ÀèI…‘¥ÕÌ¹¥ÉÕ±…È ÈĞ¤¤°(€€€€€€¤°(€€€€€‰Õ¥±‘•Èè€¡Í¡••Ñ½¹Ñ•áĞ¤€ôøMÑ…Ñ•™Õ±	Õ¥±‘•È (€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°Í•ÑM¡••ÑMÑ…Ñ”¤ì(€€€€€€€€€™¥¹…°•µ½©¥Ì€ô}É•…Ñ¥½¹µ½©¥…Ñ•½É¥•ÍmÍ•±•Ñ•‘…Ñ•½Éåt„ì(€€€€€€€€€É•ÑÕÉ¸M…™•É•„ (€€€€€€€€€€€¡¥±èA…‘‘¥¹œ (€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹™É½µ1QI ÄĞ°€ÄØ°€ÄĞ°€ÄÈ¤°(€€€€€€€€€€€€€¡¥±èM¥é•‘	½à (€€€€€€€€€€€€€€€¡•¥¡Ğè5•‘¥…EÕ•Éä¹Í¥é•=˜¡½¹Ñ•áĞ¤¹¡•¥¡Ğ€¨€À¸Ğà°(€€€€€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€€€€€É½ÍÍá¥Í±¥¹µ•¹ĞèÉ½ÍÍá¥Í±¥¹µ•¹Ğ¹ÍÑ…ÉĞ°(€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€½¹ÍĞ•¹Ñ•È (€€€€€€€€€€€€€€€€€€€€€¡¥±èQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€œÖü³Z7Èhßßºw^~)Şw)°5£w4ÖùSZ7ÈhÙË',
                         style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -5763,476 +3201,226 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (mine || message['unsent'] != true) _showMessageOptions(message);
           },
           onDoubleTap: () => unawaited(
-            _setMessageReaction(messageId, 'â¤ï¸'),
+            _setMessageReaction(messageId, &éİyø§yÛ§uçâçO'),
           ),
           onHorizontalDragUpdate: (details) {
             final currentOffset = _replyDragOffsets[messageId] ?? 0;
-            // Messenger-à¦à¦° à¦®à¦¤à§‹ reply à¦•à¦°à¦¤à§‡ à¦¸à§à¦ªà¦·à§à¦Ÿà¦­à¦¾à¦¬à§‡ à¦¡à¦¾à¦¨à¦¦à¦¿à¦•à§‡ à¦Ÿà¦¾à¦¨à¦¤à§‡ à¦¹à¦¬à§‡;
-            // à¦…à¦²à§à¦ª/à¦¤à¦¿à¦°à§à¦¯à¦• swipe-à¦ à¦®à§‡à¦¸à§‡à¦œ à¦¸à¦°à¦¬à§‡ à¦¨à¦¾à¥¤
-            if (details.delta.dx <= 0 && currentOffset <= 0) return;
-            if (details.delta.dx.abs() < details.delta.dy.abs() * 1.15 &&
-                currentOffset < 18) {
-              return;
-            }
-            setState(() {
-              _replyDragOffsets[messageId] =
-                  (currentOffset + details.delta.dx).clamp(0.0, 104.0).toDouble();
-            });
-          },
-          onHorizontalDragEnd: (_) {
-            final offset = _replyDragOffsets[messageId] ?? 0;
-            if (offset >= 78 && message['unsent'] != true) {
-              unawaited(InteractionFeedbackSettings.vibrate());
-              _setReplyTo(message);
-            }
-            setState(() => _replyDragOffsets[messageId] = 0);
-          },
-          child: Container(
-            transform: Matrix4.identity()..scale(_highlightedMessageId == messageId ? 1.025 : 1.0),
-            transformAlignment: Alignment.center,
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: _highlightedMessageId == messageId ? pinkColor.withValues(alpha: 0.13) : Colors.transparent,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Padding(
-              padding: EdgeInsets.only(top: index > 0 && '${messages[index - 1]['senderUid'] ?? ''}' == senderUid ? 0 : 3, bottom: index + 1 < messages.length && '${messages[index + 1]['senderUid'] ?? ''}' == senderUid ? 0 : 3),
-              child: Stack(
-              alignment: Alignment.centerLeft,
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  left: 2,
-                  child: AnimatedOpacity(
-                    opacity: dragOffset >= 22 ? 1 : 0,
-                    duration: const Duration(milliseconds: 100),
-                    child: const Icon(Icons.reply_rounded, color: pinkColor, size: 22),
-                  ),
-                ),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 90),
-                  curve: Curves.easeOut,
-                  transform: Matrix4.translationValues(dragOffset, 0, 0),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      row,
-                    ],
-                  ),
-                ),
-              ],
-              ),
-            ),
-          ),
-        ),
-          ],
-        ),
-      ),
-    );
-  }
+            // Messenger.éİyø§yß°"éİyø§yß¤ºw^~)Şw reply)•5£w‹§uçâçg4ÖüÓZ7oh× 5£~ Öù[§uçâçr™óZ6i.×ŸŠwÊnMh×;
+            //"éİyø§yİ²5£h¼ÖûZ7åHİÚ\Kºw^~)ŞwÈhß¸5£p€ÖšË§uçâçršƒZ5ˆYˆ
+]Z[Ë™[K™H	‰ˆİ\œ™[Ù™œÙ]H
+H™]\›ÂˆYˆ
+]Z[Ë™[K™˜XœÊ
+H]Z[Ë™[K™K˜XœÊ
+H
+ˆKŒMH	‰‚ˆİ\œ™[Ù™œÙ]N
+HÂˆ™]\›ÂˆBˆÙ]İ]J
 
-  Widget _buildChatHeader() {
-    return StreamBuilder<Map<String, dynamic>?>(
-      stream: _spaceStream,
-      builder: (context, spaceSnapshot) {
-        final space = spaceSnapshot.data ?? <String, dynamic>{};
-        final rawMembers = space['memberUids'];
-        final members = rawMembers is List
-            ? rawMembers.whereType<String>().toList()
-            : <String>[];
-        String partnerUid = '';
-        for (final uid in members) {
-          if (uid != _currentUid) {
-            partnerUid = uid;
-            break;
-          }
-        }
-        if (partnerUid.isEmpty) {
-          return _chatHeaderContent(
-            name: 'Partner',
-            photoBase64: '',
-            isOnline: false,
-            isTyping: false,
-            lastSeen: null,
-          );
-        }
-        return StreamBuilder<Map<String, dynamic>?>(
-          stream: ChatSyncService.watchPresence(partnerUid),
-          builder: (context, presenceSnapshot) {
-            final presence = presenceSnapshot.data;
-            final isOnline = presence?['isOnline'] == true;
-            return StreamBuilder<Map<String, dynamic>?>(
-              stream: ChatSyncService.watchMemberTyping(partnerUid),
-              builder: (context, typingSnapshot) {
-                final isTyping = typingSnapshot.data?['isTyping'] == true;
-                return _chatHeaderContent(
-                  name: _profileNameForUid(partnerUid, 'Partner'),
-                  photoBase64: _photoBase64ForUid(partnerUid),
-                  isOnline: isOnline,
-                  isTyping: isTyping,
-                  lastSeen: presence?['lastSeen'],
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
+HÂˆÜ™\Q˜YÓÙ™œÙ]ÖÛY\ÜØYÙRYHBˆ
+İ\œ™[Ù™œÙ]
+È]Z[Ë™[K™
+K˜Û[\
+ŒLŒ
+KÑİX›J
+NÂˆJNÂˆKˆÛ’Üš^›Û[˜YÑ[™ˆ
+ÊHÂˆš[˜[Ù™œÙ]HÜ™\Q˜YÓÙ™œÙ]ÖÛY\ÜØYÙRYHÏÈÂˆYˆ
+Ù™œÙ]HÎ	‰ˆY\ÜØYÙVÉİ[œÙ[	×HOHYJHÂˆ[˜]ØZ]Y
+[\˜Xİ[Û‘™YY˜XÚÔÙ][™ÜËšXœ˜]J
+JNÂˆÜÙ]™\UÊY\ÜØYÙJNÂˆBˆÙ]İ]J
 
-  Widget _chatHeaderContent({
-    required String name,
-    required String photoBase64,
-    required bool isOnline,
-    required bool isTyping,
-    dynamic lastSeen,
-  }) {
-    final avatar = ProfileAvatar(
-      name: name,
-      photoBase64: photoBase64,
-      radius: 23,
-      color: purpleColor,
-    );
+HOˆÜ™\Q˜YÓÙ™œÙ]ÖÛY\ÜØYÙRYHH
+NÂˆKˆÚ[ˆÛÛZ[™\Šˆ˜[œÙ›Ü›NˆX]š^šY[]J
+K‹œØØ[JÚYÚYÚYY\ÜØYÙRYOHY\ÜØYÙRYÈKŒHˆKŒ
+Kˆ˜[œÙ›Ü›P[YÛ›Y[ˆ[YÛ›Y[˜Ù[\‹ˆY[™ÎˆÛÛœİYÙR[œÙ]Ë˜[
+ÊKˆXÛÜ˜][Ûˆ›ŞXÛÜ˜][ÛŠˆÛÛÜˆÚYÚYÚYY\ÜØYÙRYOHY\ÜØYÙRYÈ[šĞÛÛÜ‹Ú]˜[Y\Ê[NˆŒLÊHˆÛÛÜœË˜[œÜ\™[ˆ›Ü™\”˜Y]\Îˆ›Ü™\”˜Y]\Ë˜Ú\˜İ[\ŠN
+Kˆ
+KˆÚ[ˆY[™ÊˆY[™ÎˆYÙR[œÙ]Ë›Û›JÜˆ[™^ˆ	‰ˆ	ÉÛY\ÜØYÙ\ÖÚ[™^HWVÉÜÙ[™\•ZY	×HÏÈ	ÉßIÈOHÙ[™\•ZYÈˆË›İÛNˆ[™^
+ÈHY\ÜØYÙ\Ë›[™İ	‰ˆ	ÉÛY\ÜØYÙ\ÖÚ[™^
+ÈWVÉÜÙ[™\•ZY	×HÏÈ	ÉßIÈOHÙ[™\•ZYÈˆÊKˆÚ[ˆİXÚÊˆ[YÛ›Y[ˆ[YÛ›Y[˜Ù[\“YˆÛ\™Z]š[ÜˆÛ\››Û™KˆÚ[™[ˆÂˆÜÚ][Û™Y
+ˆYˆ‹ˆÚ[ˆ[š[X]YÜXÚ]JˆÜXÚ]Nˆ˜YÓÙ™œÙ]HŒˆÈHˆˆ\˜][ÛˆÛÛœİ\˜][ÛŠZ[\ÙXÛÛ™ÎˆL
+KˆÚ[ˆÛÛœİXÛÛŠXÛÛœËœ™\WÜ›İ[™YÛÛÜˆ[šĞÛÛÜ‹Ú^™NˆŒŠKˆ
+Kˆ
+Kˆ[š[X]YÛÛZ[™\Šˆ\˜][ÛˆÛÛœİ\˜][ÛŠZ[\ÙXÛÛ™ÎˆL
+Kˆİ\™Nˆİ\™\Ë™X\ÙSİ]ˆ˜[œÙ›Ü›NˆX]š^˜[œÛ][Û•˜[Y\Ê˜YÓÙ™œÙ]
+KˆÚ[ˆİXÚÊˆÛ\™Z]š[ÜˆÛ\››Û™KˆÚ[™[ˆÂˆ›İËˆKˆ
+Kˆ
+KˆKˆ
+Kˆ
+Kˆ
+Kˆ
+KˆKˆ
+Kˆ
+Kˆ
+NÂˆB‚ˆÚYÙ]ØZ[Ú]XY\Š
+HÂˆ™]\›ˆİ™X[PZ[\X\İš[™Ë[˜[ZXÏÏŠˆİ™X[NˆÜÜXÙTİ™X[KˆZ[\ˆ
+ÛÛ^ÜXÙTÛ˜\Úİ
+HÂˆš[˜[ÜXÙHHÜXÙTÛ˜\Úİ™]HÏÈİš[™Ë[˜[ZXÏßNÂˆš[˜[˜]ÓY[X™\œÈHÜXÙVÉÛY[X™\•ZYÉ×NÂˆš[˜[Y[X™\œÈH˜]ÓY[X™\œÈ\È\İˆÈ˜]ÓY[X™\œËÚ\™U\Oİš[™ÏŠ
+KÓ\İ
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-      child: Row(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              avatar,
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: isOnline
-                        ? Colors.greenAccent
-                        : Colors.grey,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: backgroundColor,
-                      width: 2,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                PresenceStatusLabel(
-                  isTyping: isTyping,
-                  isOnline: isOnline,
-                  lastSeen: lastSeen,
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Pinned messages',
-            onPressed: _showPinnedMessages,
-            icon: const Icon(Icons.push_pin_rounded, color: pinkColor, size: 21),
-          ),
-        ],
-      ),
-    );
-  }
+Bˆˆİš[™Ï–×NÂˆİš[™È\™\•ZYH	ÉÎÂˆ›Üˆ
+š[˜[ZY[ˆY[X™\œÊHÂˆYˆ
+ZYOHØİ\œ™[ZY
+HÂˆ\™\•ZYHZYÂˆœ™XZÎÂˆBˆBˆYˆ
+\™\•ZYš\Ñ[\JHÂˆ™]\›ˆØÚ]XY\ÛÛ[
+ˆ˜[YNˆ	Ô\™\‰ËˆİĞ˜\ÙMˆ	ÉËˆ\ÓÛ›[™Nˆ˜[ÙKˆ\Õ\[™Îˆ˜[ÙKˆ\İÙY[ˆ[ˆ
+NÂˆBˆ™]\›ˆİ™X[PZ[\X\İš[™Ë[˜[ZXÏÏŠˆİ™X[NˆÚ]Ş[˜ÔÙ\šXÙKØ]Ú™\Ù[˜ÙJ\™\•ZY
+KˆZ[\ˆ
+ÛÛ^™\Ù[˜ÙTÛ˜\Úİ
+HÂˆš[˜[™\Ù[˜ÙHH™\Ù[˜ÙTÛ˜\Úİ™]NÂˆš[˜[\ÓÛ›[™HH™\Ù[˜ÙOÖÉÚ\ÓÛ›[™I×HOHYNÂˆ™]\›ˆİ™X[PZ[\X\İš[™Ë[˜[ZXÏÏŠˆİ™X[NˆÚ]Ş[˜ÔÙ\šXÙKØ]ÚY[X™\•\[™Ê\™\•ZY
+KˆZ[\ˆ
+ÛÛ^\[™ÔÛ˜\Úİ
+HÂˆš[˜[\Õ\[™ÈH\[™ÔÛ˜\Úİ™]OÖÉÚ\Õ\[™É×HOHYNÂˆ™]\›ˆØÚ]XY\ÛÛ[
+ˆ˜[YNˆÜ›Ùš[S˜[YQ›Ü•ZY
+\™\•ZY	Ô\™\‰ÊKˆİĞ˜\ÙMˆÜİĞ˜\ÙM›Ü•ZY
+\™\•ZY
+Kˆ\ÓÛ›[™Nˆ\ÓÛ›[™Kˆ\Õ\[™Îˆ\Õ\[™Ëˆ\İÙY[ˆ™\Ù[˜ÙOÖÉÛ\İÙY[‰×Kˆ
+NÂˆKˆ
+NÂˆKˆ
+NÂˆKˆ
+NÂˆB‚ˆÚYÙ]ØÚ]XY\ÛÛ[
+Âˆ™\]Z\™Yİš[™È˜[YKˆ™\]Z\™Yİš[™ÈİĞ˜\ÙMˆ™\]Z\™Y›ÛÛ\ÓÛ›[™Kˆ™\]Z\™Y›ÛÛ\Õ\[™Ëˆ[˜[ZXÈ\İÙY[‹ˆJHÂˆš[˜[]˜]\ˆH›Ùš[P]˜]\Šˆ˜[YNˆ˜[YKˆİĞ˜\ÙMˆİĞ˜\ÙMˆ˜Y]\ÎˆŒËˆÛÛÜˆ\œPÛÛÜ‹ˆ
+NÂ‚ˆ™]\›ˆY[™ÊˆY[™ÎˆÛÛœİYÙR[œÙ]Ë™œ›ÛSŠNMNM
+KˆÚ[ˆ›İÊˆÚ[™[ˆÂˆİXÚÊˆÛ\™Z]š[ÜˆÛ\››Û™KˆÚ[™[ˆÂˆ]˜]\‹ˆÜÚ][Û™Y
+ˆšYÚˆˆ›İÛNˆˆÚ[ˆÛÛZ[™\ŠˆÚYˆL‹ˆZYÚˆL‹ˆXÛÜ˜][Ûˆ›ŞXÛÜ˜][ÛŠˆÛÛÜˆ\ÓÛ›[™BˆÈÛÛÜœË™Ü™Y[XØÙ[ˆˆÛÛÜœË™Ü™^KˆÚ\Nˆ›ŞÚ\K˜Ú\˜ÛKˆ›Ü™\ˆ›Ü™\‹˜[
+ˆÛÛÜˆ˜XÚÙÜ›İ[™ÛÛÜ‹ˆÚYˆ‹ˆ
+Kˆ
+Kˆ
+Kˆ
+KˆKˆ
+KˆÛÛœİÚ^™Y›Ş
+ÚYˆLŠKˆ^[™Y
+ˆÚ[ˆÛÛ[[ŠˆÜ›ÜÜĞ^\Ğ[YÛ›Y[ˆÜ›ÜÜĞ^\Ğ[YÛ›Y[œİ\ˆÚ[™[ˆÂˆ^
+ˆ˜[YKˆX^[™\ÎˆKˆİ™\™›İÎˆ^İ™\™›İË™[\Ú\Ëˆİ[NˆÛÛœİ^İ[Jˆ›ÛÚ^™NˆNKˆ›ÛÙZYÚˆ›ÛÙZYÚ˜›Ûˆ
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆÊKˆ™\Ù[˜ÙTİ]\ÓX™[
+ˆ\Õ\[™Îˆ\Õ\[™Ëˆ\ÓÛ›[™Nˆ\ÓÛ›[™Kˆ\İÙY[ˆ\İÙY[‹ˆ
+KˆKˆ
+Kˆ
+KˆXÛÛ]ÛŠˆÛÛ\ˆ	Ô[›™YY\ÜØYÙ\ÉËˆÛ”™\ÜÙYˆÜÚİÔ[›™YY\ÜØYÙ\ËˆXÛÛˆÛÛœİXÛÛŠXÛÛœËœ\ÚÜ[—Ü›İ[™YÛÛÜˆ[šĞÛÛÜ‹Ú^™NˆŒJKˆ
+KˆKˆ
+Kˆ
+NÂˆB‚ˆ]\™O›ÚYˆÜÚİÔ[›™YY\ÜØYÙ\Ê
+H\Ş[˜ÈÂˆš[˜[[›™YHY\ÜØYÙ\ËÚ\™J
+Y\ÜØYÙJHOˆY\ÜØYÙVÉÜ[›™Y	×HOHYH	‰ˆY\ÜØYÙVÉİ[œÙ[	×HOHYJKÓ\İ
 
-  Future<void> _showPinnedMessages() async {
-    final pinned = messages.where((message) => message['pinned'] == true && message['unsent'] != true).toList();
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: surfaceColor,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (sheetContext) => SafeArea(
-        child: pinned.isEmpty
-            ? const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('à¦à¦–à¦¨à§‹ à¦•à§‹à¦¨à§‹ à¦®à§‡à¦¸à§‡à¦œ Pin à¦•à¦°à¦¾ à¦¹à§Ÿà¦¨à¦¿à¥¤')))
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: pinned.length,
-                itemBuilder: (context, index) {
-                  final item = pinned[index];
-                  final id = '${item['id'] ?? ''}';
-                  final body = '${item['text'] ?? (item['type'] == 'voice' ? 'Voice message' : 'Media message')}';
-                  return ListTile(
-                    leading: const Icon(Icons.push_pin_rounded, color: pinkColor),
-                    title: Text(body, maxLines: 2, overflow: TextOverflow.ellipsis),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      unawaited(_jumpToMessage(id));
-                    },
-                  );
-                },
-              ),
-      ),
-    );
-  }
+NÂˆYˆ
+[[İ[Y
+H™]\›Âˆ]ØZ]ÚİÓ[Ù[›İÛTÚY]›ÚYŠˆÛÛ^ˆÛÛ^ˆ˜XÚÙÜ›İ[™ÛÛÜˆİ\™˜XÙPÛÛÜ‹ˆÚ\NˆÛÛœİ›İ[™Y™Xİ[™ÛP›Ü™\Š›Ü™\”˜Y]\Îˆ›Ü™\”˜Y]\Ë™\XØ[
+Üˆ˜Y]\Ë˜Ú\˜İ[\ŠŒŠJJKˆZ[\ˆ
+ÚY]ÛÛ^
+HOˆØY™P\™XJˆÚ[ˆ[›™Yš\Ñ[\BˆÈÛÛœİY[™ÊY[™ÎˆYÙR[œÙ]Ë˜[
+
+KÚ[ˆÙ[\ŠÚ[ˆ^
+	Íhß¨ºw^~)Şw)•5£g,‹§uçâçÖùÂ–â™SZ7ˆhß¨5£Pœ¤¤¤(€€€€€€€€€€€€è1¥ÍÑY¥•Ü¹‰Õ¥±‘•È (€€€€€€€€€€€€€€€Í¡É¥¹­]É…ÀèÑÉÕ”°(€€€€€€€€€€€€€€€¥Ñ•µ½Õ¹ĞèÁ¥¹¹•¹±•¹Ñ °(€€€€€€€€€€€€€€€¥Ñ•µ	Õ¥±‘•Èè€¡½¹Ñ•áĞ°¥¹‘•à¤ì(€€€€€€€€€€€€€€€€€™¥¹…°¥Ñ•´€ôÁ¥¹¹•‘m¥¹‘•átì(€€€€€€€€€€€€€€€€€™¥¹…°¥€ô€œ‘í¥Ñ•µl¥t€üü€œôœì(€€€€€€€€€€€€€€€€€™¥¹…°‰½‘ä€ô€œ‘í¥Ñ•µlÑ•áĞt€üü€¡¥Ñ•µlÑåÁ”t€ôô€Ù½¥”œ€ü€Y½¥”µ•ÍÍ…”œ€è€5•‘¥„µ•ÍÍ…”œ¥ôœì(€€€€€€€€€€€€€€€€€É•ÑÕÉ¸1¥ÍÑQ¥±” (€€€€€€€€€€€€€€€€€€€±•…‘¥¹œè½¹ÍĞ%½¸¡%½¹Ì¹ÁÕÍ¡}Á¥¹}É½Õ¹‘•°½±½ÈèÁ¥¹­½±½È¤°(€€€€€€€€€€€€€€€€€€€Ñ¥Ñ±”èQ•áĞ¡‰½‘ä°µ…á1¥¹•Ìè€È°½Ù•É™±½ÜèQ•áÑ=Ù•É™±½Ü¹•±±¥ÁÍ¥Ì¤°(€€€€€€€€€€€€€€€€€€€½¹Q…Àè€ ¤ì(€€€€€€€€€€€€€€€€€€€€€9…Ù¥…Ñ½È¹Á½À¡Í¡••Ñ½¹Ñ•áĞ¤ì(€€€€€€€€€€€€€€€€€€€€€Õ¹…İ…¥Ñ•¡}©ÕµÁQ½5•ÍÍ…”¡¥¤¤ì(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€¤°(€€€€€€¤°(€€€€¤ì(€ô((€]¥‘•Ğ}‰Õ¥±‘QåÁ¥¹%¹‘¥…Ñ½È ¤ì(€€€É•ÑÕÉ¸MÑÉ•…µ	Õ¥±‘•Èñ5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøüø (€€€€€ÍÑÉ•…´è}ÍÁ…•MÑÉ•…´°(€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°ÍÁ…•M¹…ÁÍ¡½Ğ¤ì(€€€€€€€™¥¹…°É…İ5•µ‰•ÉÌ€ôÍÁ…•M¹…ÁÍ¡½Ğ¹‘…Ñ„ılµ•µ‰•ÉU¥‘Ìtì(€€€€€€€™¥¹…°µ•µ‰•ÉÌ€ôÉ…İ5•µ‰•ÉÌ¥Ì1¥ÍĞ€üÉ…İ5•µ‰•ÉÌ¹İ¡•É•QåÁ”ñMÑÉ¥¹œø ¤¹Ñ½1¥ÍĞ ¤€è€ñMÑÉ¥¹œùmtì(€€€€€€€MÑÉ¥¹œÁ…ÉÑ¹•ÉU¥€ô€œœì(€€€€€€€™½È€¡™¥¹…°Õ¥¥¸µ•µ‰•ÉÌ¤ì(€€€€€€€€€¥˜€¡Õ¥€„ô}ÕÉÉ•¹ÑU¥¤ì(€€€€€€€€€€€Á…ÉÑ¹•ÉU¥€ôÕ¥ì(€€€€€€€€€€€‰É•…¬ì(€€€€€€€€€ô(€€€€€€€ô(€€€€€€€¥˜€¡Á…ÉÑ¹•ÉU¥¹¥ÍµÁÑä¤ì(€€€€€€€€€É•ÑÕÉ¸½¹ÍĞM¥é•‘	½à¹Í¡É¥¹¬ ¤ì(€€€€€€€ô(€€€€€€€É•ÑÕÉ¸MÑÉ•…µ	Õ¥±‘•Èñ5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøüø (€€€€€€€€€ÍÑÉ•…´è¡…ÑMå¹M•ÉÙ¥”¹İ…Ñ¡5•µ‰•ÉQåÁ¥¹œ¡Á…ÉÑ¹•ÉU¥¤°(€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°Í¹…ÁÍ¡½Ğ¤ì(€€€€€€€€€€€¥˜€¡Í¹…ÁÍ¡½Ğ¹‘…Ñ„ıl¥ÍQåÁ¥¹œt€„ôÑÉÕ”¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸½¹ÍĞM¥é•‘	½à¹Í¡É¥¹¬ ¤ì(€€€€€€€€€€€ô(€€€€€€€€€€€É•ÑÕÉ¸½¹ÍĞA…‘‘¥¹œ (€€€€€€€€€€€€€Á…‘‘¥¹œè‘•%¹Í•ÑÌ¹½¹±ä (€€€€€€€€€€€€€€€±•™Ğè€Äà°(€€€€€€€€€€€€€€€É¥¡Ğè€Äà°(€€€€€€€€€€€€€€€Ñ½Àè€È°(€€€€€€€€€€€€€€€‰½ÑÑ½´è€à°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€¡¥±èI½Ü (€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€QåÁ¥¹½ÑÍ%¹‘¥…Ñ½È ¤°(€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô°(€€€€€€€€¤ì(€€€€€ô°(€€€€¤ì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸½±Õµ¸ (€€€€€¡¥±‘É•¸èl(€€€€€€€}‰Õ¥±‘¡…Ñ!•…‘•È ¤°(€€€€€€€½¹ÍĞ¥Ù¥‘•È¡¡•¥¡Ğè€Ä°½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÄÀ¤°(€€€€€€€áÁ…¹‘• (€€€€€€€€€¡¥±èµ•ÍÍ…•Ì¹¥ÍµÁÑä€˜˜}Á•¹‘¥¹5•‘¥…9…µ”€ôô¹Õ±°(€€€€€€€€€€€€€€ü½¹ÍĞ•¹Ñ•È (€€€€€€€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€%½¸ (€€€€€€€€€€€€€€€€€€€€€€€%½¹Ì¹™½ÉÕµ}½ÕÑ±¥¹•°(€€€€€€€€€€€€€€€€€€€€€€€Í¥é”è€Ğà°(€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÌÀ°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€M¥é•‘	½à¡¡•¥¡Ğè€ÄÈ¤°(€€€€€€€€€€€€€€€€€€€€€Q•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€œÖÙû§uçâçr›ƒZ6sMhĞ 5£w,ÖÚ[§uçâçB›cZ6pHºw^~)Şwl.×ŸŠwÊéİyø§yÙ.×ŸŠwÉËˆİ[Nˆ^İ[JÛÛÜˆÛÛÜœËÚ]MM
+Kˆ
+KˆKˆ
+Kˆ
+Bˆˆ›İYšXØ][Û“\İ[™\ØÜ›Û›İYšXØ][ÛŠˆÛ“›İYšXØ][Ûˆ
+›İYšXØ][ÛŠHÂˆYˆ
+›İYšXØ][Ûˆ\ÈØÜ›Ûİ\›İYšXØ][Ûˆ	‰‚ˆ›İYšXØ][Û‹™˜YÑ]Z[ÈOH[
+HÂˆİ\Ù\’\ÔØÜ›Û[™ÈHYNÂˆÜØÜ›Û™\]Y\İÚÙ[ŠÊÎÂˆYˆ
+ØÜ›ÛÛÛ›Û\‹š\ĞÛY[ÊHÂˆš[˜[\İ[˜ÙQœ›ÛP›İÛHBˆØÜ›ÛÛÛ›Û\‹œÜÚ][Û‹›X^ØÜ›Û^[BˆØÜ›ÛÛÛ›Û\‹œÜÚ][Û‹œ^[ÎÂˆYˆ
+\İ[˜ÙQœ›ÛP›İÛHˆ
+HÂˆİ\Ù\’\ÔØÜ›ÛY]Ø^Qœ›ÛP›İÛHHYNÂˆBˆBˆH[ÙHYˆ
+›İYšXØ][Ûˆ\ÈØÜ›Û[™›İYšXØ][ÛŠHÂˆİ\Ù\’\ÔØÜ›Û[™ÈH˜[ÙNÂˆBˆYˆ
+›İYšXØ][Ûˆ\ÈØÜ›Û\]S›İYšXØ][Ûˆˆ›İYšXØ][Ûˆ\ÈØÜ›Û[™›İYšXØ][ÛŠHÂˆİ\]PÚ]ØÜ›ÛÜÚ][ÛŠ
+NÂˆYˆ
+ØÜ›ÛÛÛ›Û\‹š\ĞÛY[ÊHÂˆš[˜[\İ[˜ÙQœ›ÛP›İÛHBˆØÜ›ÛÛÛ›Û\‹œÜÚ][Û‹›X^ØÜ›Û^[BˆØÜ›ÛÛÛ›Û\‹œÜÚ][Û‹œ^[ÎÂˆËÈÛX\ˆ]]ËY›ÛİÈØÚÈÛ›HÚ[ˆÙ[Z[™[H˜XÚÈ]ˆËÈH›İÛK›İY\™[HÚ][ˆHLŒRH™\ÚÛ‚ˆYˆ
+\İ[˜ÙQœ›ÛP›İÛHH
+HÂˆİ\Ù\’\ÔØÜ›ÛY]Ø^Qœ›ÛP›İÛHH˜[ÙNÂˆH[ÙHYˆ
+›İYšXØ][Ûˆ\ÈØÜ›Û\]S›İYšXØ][Ûˆ	‰‚ˆ›İYšXØ][Û‹™˜YÑ]Z[ÈOH[
+HÂˆËÈ[HX[X[˜YÈ]Ø^Hœ›ÛHH›İÛH]\Ù\ÂˆËÈ]]ÛX]XÈ›ÛİÚ[™ÈÚ[HH\Ù\ˆ™XYÈ\İÜK‚ˆİ\Ù\’\ÔØÜ›ÛY]Ø^Qœ›ÛP›İÛHHYNÂˆBˆBˆš[˜[Úİ[ÚİÈHWÚ\Ó™X\Ú]›İÛNÂˆYˆ
+Úİ[ÚİÈOHÜÚİÒ[\Ğ›İÛH	‰ˆ[İ[Y
+HÂˆÙ]İ]J
 
-  Widget _buildTypingIndicator() {
-    return StreamBuilder<Map<String, dynamic>?>(
-      stream: _spaceStream,
-      builder: (context, spaceSnapshot) {
-        final rawMembers = spaceSnapshot.data?['memberUids'];
-        final members = rawMembers is List ? rawMembers.whereType<String>().toList() : <String>[];
-        String partnerUid = '';
-        for (final uid in members) {
-          if (uid != _currentUid) {
-            partnerUid = uid;
-            break;
-          }
-        }
-        if (partnerUid.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        return StreamBuilder<Map<String, dynamic>?>(
-          stream: ChatSyncService.watchMemberTyping(partnerUid),
-          builder: (context, snapshot) {
-            if (snapshot.data?['isTyping'] != true) {
-              return const SizedBox.shrink();
-            }
-            return const Padding(
-              padding: EdgeInsets.only(
-                left: 18,
-                right: 18,
-                top: 2,
-                bottom: 8,
-              ),
-              child: Row(
-                children: [
-                  TypingDotsIndicator(),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
+HOˆÜÚİÒ[\Ğ›İÛHHÚİ[ÚİÊNÂˆBˆBˆ™]\›ˆ˜[ÙNÂˆKˆÚ[ˆİXÚÊˆÚ[™[ˆÂˆÜÚ][Û™Y™š[
+ˆÚ[ˆ\İšY]Ë˜Z[\ŠˆÙ^NˆÛÛœİYÙTİÜ˜YÙRÙ^Oİš[™ÏŠ	ØÛİ\K^›Û™KXÚ][\İ	ÊKˆÛÛ›Û\ˆØÜ›ÛÛÛ›Û\‹ˆ\ÚXÜÎˆÛÛœİÛ[\[™ÔØÜ›Û\ÚXÜÊˆ\™[ˆ[Ø^\ÔØÜ›ÛX›TØÜ›Û\ÚXÜÊ
+Kˆ
+KˆËÊen×ŸŠwˆÙ™‹\ØÜ™Y[ˆ›İÊihÙ¿"éİyø§yÙ¾5£|°‹§uçâç~øÖrZ7oËºw^~)ŞwoÍhß“.éİyø§yİß5£géİyø§yĞ(€€€€€€€€€€€€€€€€€€€€¼¼‘•½‘”¦L‘½İ¹±½…‹§uçâç~TÖœÓZ5ÈhÙ°ºw^~)Şu)¹5£\ÍÉ½±°™É…µ”‘É½À€ÖâZ6qî×ŸŠwˆØXÚQ^[ˆˆY]]ÛX]XÒÙY\[]™\Îˆ˜[ÙKˆY™\Z[›İ[™\šY\ÎˆYKˆÙ^X›Ø\™\ÛZ\ÜĞ™Z]š[Ü‚ˆØÜ›ÛšY]ÒÙ^X›Ø\™\ÛZ\ÜĞ™Z]š[Ü‹›Û‘˜YËˆY[™ÎˆÛÛœİYÙR[œÙ]Ë™œ›ÛSŠML‹MLŠKˆ][PÛİ[‚ˆY\ÜØYÙ\Ë›[™İ
+È
+Ü[™[™ÓYYXS˜[YHOH[ÈHˆ
+Kˆ][PZ[\ˆ
+ÛÛ^[™^
+HÂˆYˆ
+[™^HY\ÜØYÙ\Ë›[™İ
+HÂˆ™]\›ˆØZ[[™[™ÓYYXSY\ÜØYÙJ
+NÂˆB‚ˆš[˜[Y\ÜØYÙHHY\ÜØYÙ\ÖÚ[™^NÂˆš[˜[Y\ÜØYÙRYH	ÉÛY\ÜØYÙVÉÚY	×HÏÈ[™^IÎÂˆ™]\›ˆÙ^YYİX™YJˆÙ^Nˆ˜[YRÙ^Oİš[™ÏŠ	ØÚ][Y\ÜØYÙKIY\ÜØYÙRY	ÊKˆÚ[ˆØZ[Y\ÜØYÙJY\ÜØYÙK[™^
+Kˆ
+NÂˆKˆ
+Kˆ
+KˆYˆ
+ÜÚİÒ[\Ğ›İÛJBˆÜÚ][Û™Y
+ˆšYÚˆM‹ˆ›İÛNˆMˆÚ[ˆX]\šX[
+ˆÛÛÜˆ[šĞÛÛÜ‹ˆ[]˜][ÛˆËˆÚ\NˆÛÛœİÚ\˜ÛP›Ü™\Š
+KˆÚ[ˆ[šÕÙ[
+ˆİ\İÛP›Ü™\ˆÛÛœİÚ\˜ÛP›Ü™\Š
+KˆÛ•\ˆ
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _buildChatHeader(),
-        const Divider(height: 1, color: Colors.white10),
-        Expanded(
-          child: messages.isEmpty && _pendingMediaName == null
-              ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.forum_outlined,
-                        size: 48,
-                        color: Colors.white30,
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        'à¦à¦•à¦Ÿà¦¿ à¦¸à§à¦¨à§à¦¦à¦° à¦•à¦¥à§‹à¦ªà¦•à¦¥à¦¨ à¦¶à§à¦°à§ à¦•à¦°à§‹ â¤ï¸',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    ],
-                  ),
-                )
-              : NotificationListener<ScrollNotification>(
-                  onNotification: (notification) {
-                    if (notification is ScrollStartNotification &&
-                        notification.dragDetails != null) {
-                      _userIsScrolling = true;
-                      _scrollRequestToken++;
-                      if (scrollController.hasClients) {
-                        final distanceFromBottom =
-                            scrollController.position.maxScrollExtent -
-                                scrollController.position.pixels;
-                        if (distanceFromBottom > 24) {
-                          _userHasScrolledAwayFromBottom = true;
-                        }
-                      }
-                    } else if (notification is ScrollEndNotification) {
-                      _userIsScrolling = false;
-                    }
-                    if (notification is ScrollUpdateNotification ||
-                        notification is ScrollEndNotification) {
-                      _updateChatScrollPosition();
-                      if (scrollController.hasClients) {
-                        final distanceFromBottom =
-                            scrollController.position.maxScrollExtent -
-                                scrollController.position.pixels;
-                        // Clear auto-follow lock only when genuinely back at
-                        // the bottom, not merely within the 120px UI threshold.
-                        if (distanceFromBottom <= 24) {
-                          _userHasScrolledAwayFromBottom = false;
-                        } else if (notification is ScrollUpdateNotification &&
-                            notification.dragDetails != null) {
-                          // Any manual drag away from the bottom pauses
-                          // automatic following while the user reads history.
-                          _userHasScrolledAwayFromBottom = true;
-                        }
-                      }
-                      final shouldShow = !_isNearChatBottom;
-                      if (shouldShow != _showJumpToBottom && mounted) {
-                        setState(() => _showJumpToBottom = shouldShow);
-                      }
-                    }
-                    return false;
-                  },
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: ListView.builder(
-                    key: const PageStorageKey<String>('couple-zone-chat-list'),
-                    controller: scrollController,
-                    physics: const ClampingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics(),
-                    ),
-                    // à¦•à¦® off-screen row à¦¤à§ˆà¦°à¦¿ à¦°à¦¾à¦–à¦¿, à¦¯à¦¾à¦¤à§‡ à¦›à¦¬à¦¿/à¦­à¦¿à¦¡à¦¿à¦“/à¦­à§Ÿà§‡à¦¸à§‡à¦°
-                    // decode à¦“ download à¦à¦•à¦¸à¦™à§à¦—à§‡ à¦¶à§à¦°à§ à¦¹à§Ÿà§‡ scroll frame drop à¦¨à¦¾ à¦•à¦°à§‡à¥¤
-                    cacheExtent: 80,
-                    addAutomaticKeepAlives: false,
-                    addRepaintBoundaries: true,
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                    itemCount:
-                        messages.length + (_pendingMediaName != null ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= messages.length) {
-                        return _buildPendingMediaMessage();
-                      }
+HÂˆİ\Ù\’\ÔØÜ›ÛY]Ø^Qœ›ÛP›İÛHH˜[ÙNÂˆÜØÜ›ÛĞ›İÛJ
+NÂˆKˆÚ[ˆÛÛœİÚ^™Y›Ş
+ˆÚYˆˆZYÚˆˆÚ[ˆXÛÛŠˆXÛÛœËšÙ^X›Ø\™ÙİX›WØ\œ›İ×ÙİÛ—Ü›İ[™YˆÛÛÜˆÛÛÜœËÚ]KˆÚ^™NˆËˆ
+Kˆ
+Kˆ
+Kˆ
+Kˆ
+KˆKˆ
+Kˆ
+Kˆ
+KˆØZ[\[™Ò[™XØ]ÜŠ
+KˆØY™P\™XJˆÜˆ˜[ÙKˆÚ[ˆÛÛZ[™\ŠˆY[™ÎˆÛÛœİYÙR[œÙ]Ë™œ›ÛSŠËË
+KˆXÛÜ˜][Ûˆ›ŞXÛÜ˜][ÛŠˆÛÛÜˆ˜XÚÙÜ›İ[™ÛÛÜ‹ˆ›Ü™\ˆ›Ü™\ŠˆÜˆ›Ü™\”ÚYJˆÛÛÜˆÛÛÜœËÚ]KÚ]˜[Y\Ê[NˆŒ
+Kˆ
+Kˆ
+Kˆ
+KˆÚ[ˆÛÛ[[ŠˆXZ[^\ÔÚ^™NˆXZ[^\ÔÚ^™K›Z[‹ˆÚ[™[ˆÂˆYˆ
+Ü™\UÓY\ÜØYÙHOH[
+BˆY[™ÊˆY[™ÎˆÛÛœİYÙR[œÙ]Ë›Û›JYˆšYÚˆ›İÛNˆ
+KˆÚ[ˆ›İÊˆÚ[™[ˆÂˆÛÛœİXÛÛŠXÛÛœËœ™\WÜ›İ[™YÛÛÜˆ[šĞÛÛÜ‹Ú^™NˆN
+KˆÛÛœİÚ^™Y›Ş
+ÚYˆŠKˆ^[™Y
+ˆÚ[ˆ^
+ˆ	Ô™\Nˆ	×Ü™\UÓY\ÜØYÙHVÉİ\I×HOH	İ^	ÈÈ
+Ü™\UÓY\ÜØYÙHVÉİ^	×HÏÈ	ÉÊHˆ
+Ü™\UÓY\ÜØYÙHVÉİ\I×HOH	İšY[ÉÈÈ	ºw^~)ŞwoÍhß“' : /›5£|œ¥ôœ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1¥¹•Ìè€Ä°(€€€€€€€€€€€€€€€€€€€€€€€€€€€½Ù•É™±½ÜèQ•áÑ=Ù•É™±½Ü¹•±±¥ÁÍ¥Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÜÀ°™½¹ÑM¥é”è€ÄÈ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€%½¹	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€Ñ½½±Ñ¥Àè€I•Á±ä€ÖúCZ4‰ËˆÛ”™\ÜÙYˆ
 
-                      final message = messages[index];
-                      final messageId = '${message['id'] ?? index}';
-                      return KeyedSubtree(
-                        key: ValueKey<String>('chat-message-$messageId'),
-                        child: _buildMessage(message, index),
-                      );
-                    },
-                        ),
-                      ),
-                      if (_showJumpToBottom)
-                        Positioned(
-                          right: 16,
-                          bottom: 14,
-                          child: Material(
-                            color: pinkColor,
-                            elevation: 7,
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () {
-                                  _userHasScrolledAwayFromBottom = false;
-                                  _scrollToBottom();
-                                },
-                              child: const SizedBox(
-                                width: 48,
-                                height: 48,
-                                child: Icon(
-                                  Icons.keyboard_double_arrow_down_rounded,
-                                  color: Colors.white,
-                                  size: 27,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-        ),
-        _buildTypingIndicator(),
-        SafeArea(
-          top: false,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(7, 8, 7, 8),
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              border: Border(
-                top: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_replyToMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.reply_rounded, color: pinkColor, size: 18),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Reply: ${_replyToMessage!['type'] == 'text' ? (_replyToMessage!['text'] ?? '') : (_replyToMessage!['type'] == 'video' ? 'à¦­à¦¿à¦¡à¦¿à¦“' : 'à¦›à¦¬à¦¿')}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Reply à¦¬à¦¾à¦¤à¦¿à¦²',
-                          onPressed: () => setState(() => _replyToMessage = null),
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                        ),
-                      ],
-                    ),
-                  ),
-                _buildVoiceRecordingPanel(),
-                Row(
-                  children: [
-                    PopupMenuButton<String>(
-                      tooltip: 'à¦›à¦¬à¦¿, à¦­à¦¿à¦¡à¦¿à¦“ à¦¬à¦¾ à¦•à§à¦¯à¦¾à¦®à§‡à¦°à¦¾',
-                      onOpened: () {
-                        if (mounted) setState(() => _attachmentMenuOpen = true);
-                      },
-                      onCanceled: () {
-                        if (mounted) setState(() => _attachmentMenuOpen = false);
-                      },
-                      onSelected: (choice) {
-                        setState(() => _attachmentMenuOpen = false);
-                        if (choice == 'image') {
-                          _sendMedia(false);
-                        } else if (choice == 'video') {
-                          _sendMedia(true);
-                        } else if (choice == 'camera') {
-                          _sendMedia(false, source: ImageSource.camera);
-                        } else if (choice == 'voice') {
-                          _startVoiceRecording();
-                        }
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
-                          value: 'image',
-                          child: ListTile(
-                            leading: Icon(Icons.image_outlined),
-                            title: Text('à¦›à¦¬à¦¿'),
-                            dense: true,
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'video',
-                          child: ListTile(
-                            leading: Icon(Icons.video_library_outlined),
-                            title: Text('à¦­à¦¿à¦¡à¦¿à¦“'),
+HOˆÙ]İ]J
+
+HOˆÜ™\UÓY\ÜØYÙHH[
+KˆXÛÛˆÛÛœİXÛÛŠXÛÛœË˜ÛÜÙWÜ›İ[™YÚ^™NˆN
+Kˆ
+KˆKˆ
+Kˆ
+KˆØZ[›ÚXÙT™XÛÜ™[™Ô[™[
+
+Kˆ›İÊˆÚ[™[ˆÂˆÜ\Y[P]Ûİš[™ÏŠˆÛÛ\ˆ	Íhİ¿,)­5£fşéİyø§yÜ¦²éİyø§yØ¦TÖûãZ7ì.×ŸŠw‰ËˆÛ“Ü[™Yˆ
+
+HÂˆYˆ
+[İ[Y
+HÙ]İ]J
+
+HOˆØ]XÚY[Y[SÜ[ˆHYJNÂˆKˆÛØ[˜Ù[Yˆ
+
+HÂˆYˆ
+[İ[Y
+HÙ]İ]J
+
+HOˆØ]XÚY[Y[SÜ[ˆH˜[ÙJNÂˆKˆÛ”Ù[XİYˆ
+ÚÚXÙJHÂˆÙ]İ]J
+
+HOˆØ]XÚY[Y[SÜ[ˆH˜[ÙJNÂˆYˆ
+ÚÚXÙHOH	Ú[XYÙIÊHÂˆÜÙ[™YYXJ˜[ÙJNÂˆH[ÙHYˆ
+ÚÚXÙHOH	İšY[ÉÊHÂˆÜÙ[™YYXJYJNÂˆH[ÙHYˆ
+ÚÚXÙHOH	ØØ[Y\˜IÊHÂˆÜÙ[™YYXJ˜[ÙKÛİ\˜ÙNˆ[XYÙTÛİ\˜ÙK˜Ø[Y\˜JNÂˆH[ÙHYˆ
+ÚÚXÙHOH	İ›ÚXÙIÊHÂˆÜİ\›ÚXÙT™XÛÜ™[™Ê
+NÂˆBˆKˆ][PZ[\ˆ
+ÛÛ^
+HOˆÛÛœİÂˆÜ\Y[R][Jˆ˜[YNˆ	Ú[XYÙIËˆÚ[ˆ\İ[JˆXY[™ÎˆXÛÛŠXÛÛœËš[XYÙWÛİ][™Y
+Kˆ]Nˆ^
+	ºw^~)Şvë.×ŸŠwÉÊKˆ[œÙNˆYKˆ
+Kˆ
+KˆÜ\Y[R][Jˆ˜[YNˆ	İšY[ÉËˆÚ[ˆ\İ[JˆXY[™ÎˆXÛÛŠXÛÛœËšY[×ÛXœ˜\WÛİ][™Y
+Kˆ]Nˆ^
+	ºw^~)ŞwoÍhß“'),
                             dense: true,
                           ),
                         ),
@@ -6240,542 +3428,120 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           value: 'camera',
                           child: ListTile(
                             leading: Icon(Icons.camera_alt_outlined),
-                            title: Text('à¦•à§à¦¯à¦¾à¦®à§‡à¦°à¦¾'),
-                            dense: true,
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'voice',
-                          child: ListTile(
-                            leading: Icon(Icons.mic_none_rounded),
-                            title: Text('à¦­à§Ÿà§‡à¦¸ à¦°à§‡à¦•à¦°à§à¦¡'),
-                            dense: true,
-                          ),
-                        ),
-                      ],
-                      icon: AnimatedRotation(
-                        turns: _attachmentMenuOpen ? 0.125 : 0,
-                        duration: const Duration(milliseconds: 160),
-                        child: const Icon(Icons.add_rounded, color: pinkColor),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: _isRecordingVoice ? 'à¦°à§‡à¦•à¦°à§à¦¡ à¦¬à¦¨à§à¦§' : 'à¦­à§Ÿà§‡à¦¸ à¦°à§‡à¦•à¦°à§à¦¡',
-                      onPressed: _toggleVoiceRecording,
-                      icon: Icon(
-                        _isRecordingVoice ? Icons.stop_circle_rounded : Icons.mic_none_rounded,
-                        color: _isRecordingVoice ? Colors.redAccent : pinkColor,
-                      ),
-                    ),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    minLines: 1,
-                    maxLines: 4,
-                    textCapitalization: TextCapitalization.sentences,
-                    onChanged: _handleTypingChanged,
-                    onSubmitted: (_) => _sendText(),
-                    decoration: InputDecoration(
-                      hintText: 'à¦®à§‡à¦¸à§‡à¦œ à¦²à§‡à¦–à§‹...',
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 15,
-                        vertical: 11,
-                      ),
-                      filled: true,
-                      fillColor: surfaceColor,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 5),
-                IconButton.filled(
-                  tooltip: 'à¦ªà¦¾à¦ à¦¾à¦“',
-                  onPressed: _sendText,
-                  style: IconButton.styleFrom(
-                    backgroundColor: pinkColor,
-                  ),
-                  icon: const Icon(Icons.send_rounded),
-                ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
+                            title: Text(&éİyø§yİÍ5£~¸Ö›âr’À¢FVç6S¢G'VRÀ¢’À¢’À¢÷WÖVçT—FVÒ€¢fÇVS¢wfö–6RrÀ¢6†–ÆC¢Æ—7EF–ÆR€¢ÆVF–æs¢–6öâ„–6öç2æÖ–5öæöæU÷&÷VæFVB’À¢F—FÆS¢FW‡B‚sZ7ñî×ŸŠw
+lhİ°5£Dœ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€‘•¹Í”èÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€¥½¸è¹¥µ…Ñ•‘I½Ñ…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€ÑÕÉ¹Ìè}…ÑÑ…¡µ•¹Ñ5•¹Õ=Á•¸€ü€À¸ÄÈÔ€è€À°(€€€€€€€€€€€€€€€€€€€€€€€‘ÕÉ…Ñ¥½¸è½¹ÍĞÕÉ…Ñ¥½¸¡µ¥±±¥Í•½¹‘Ìè€ÄØÀ¤°(€€€€€€€€€€€€€€€€€€€€€€€¡¥±è½¹ÍĞ%½¸¡%½¹Ì¹…‘‘}É½Õ¹‘•°½±½ÈèÁ¥¹­½±½È¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€%½¹	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€€€€€Ñ½½±Ñ¥Àè}¥ÍI•½É‘¥¹Y½¥”€ü€œÖùSZ7hHºw^~)Şwjh×' : &éİyø§yİß5£`€ÖùSZ7hIËˆÛ”™\ÜÙYˆİÙÙÛU›ÚXÙT™XÛÜ™[™ËˆXÛÛˆXÛÛŠˆÚ\Ô™XÛÜ™[™Õ›ÚXÙHÈXÛÛœËœİÜØÚ\˜ÛWÜ›İ[™YˆXÛÛœË›ZX×Û›Û™WÜ›İ[™YˆÛÛÜˆÚ\Ô™XÛÜ™[™Õ›ÚXÙHÈÛÛÜœËœ™YXØÙ[ˆ[šĞÛÛÜ‹ˆ
+Kˆ
+Kˆ^[™Y
+ˆÚ[ˆ^šY[
+ˆÛÛ›Û\ˆÛÛ›Û\‹ˆZ[“[™\ÎˆKˆX^[™\Îˆˆ^Ø\][^˜][Ûˆ^Ø\][^˜][Û‹œÙ[[˜Ù\ËˆÛÚ[™ÙYˆÚ[™U\[™ĞÚ[™ÙYˆÛ”İX›Z]Yˆ
+ÊHOˆÜÙ[™^
 
-// ============================================================
-// GALLERY
-// ============================================================
+KˆXÛÜ˜][Ûˆ[œ]XÛÜ˜][ÛŠˆ[^ˆ	ºw^~)ŞwñÍhßœ"éİyø§yÛÇ5£l¸¸¸œ°(€€€€€€€€€€€€€€€€€€€€€½¹Ñ•¹ÑA…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ (€€€€€€€€€€€€€€€€€€€€€€€¡½É¥é½¹Ñ…°è€ÄÔ°(€€€€€€€€€€€€€€€€€€€€€€€Ù•ÉÑ¥…°è€ÄÄ°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€™¥±±•èÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€™¥±±½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€€€€€€€€€€€€€‰½É‘•Èè=ÕÑ±¥¹•%¹ÁÕÑ	½É‘•È (€€€€€€€€€€€€€€€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È ÈĞ¤°(€€€€€€€€€€€€€€€€€€€€€€€‰½É‘•ÉM¥‘”è	½É‘•ÉM¥‘”¹¹½¹”°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡İ¥‘Ñ è€Ô¤°(€€€€€€€€€€€€€€€%½¹	ÕÑÑ½¸¹™¥±±• (€€€€€€€€€€€€€€€€€Ñ½½±Ñ¥Àè€œÖúZ4ÉËˆÛ”™\ÜÙYˆÜÙ[™^ˆİ[NˆXÛÛ]Û‹œİ[Qœ›ÛJˆ˜XÚÙÜ›İ[™ÛÛÜˆ[šĞÛÛÜ‹ˆ
+KˆXÛÛˆÛÛœİXÛÛŠXÛÛœËœÙ[™Ü›İ[™Y
+Kˆ
+KˆKˆ
+KˆKˆ
+Kˆ
+Kˆ
+KˆKˆ
+NÂˆBŸB‚‹ËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOB‹ËÈĞST–B‹ËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOB‚˜Û\ÜÈØ[\TYÙH^[™Èİ]Y[ÚYÙ]ÂˆÛÛœİØ[\TYÙJÜİ\\‹šÙ^_JNÂ‚ˆİ™\œšYBˆİ]OØ[\TYÙOˆÜ™X]Tİ]J
+HOˆÑØ[\TYÙTİ]J
+NÂŸB‚˜Û\ÜÈÑØ[\TYÙTİ]H^[™Èİ]OØ[\TYÙOˆÂˆ\İX\İš[™Ë[˜[ZXÏˆ›Û\œÈH×NÂˆ\İX\İš[™Ë[˜[ZXÏˆYYXHH×NÂˆ›ÛÛØ]]ÑİÛ›ØY[›š[™ÈH˜[ÙNÂ‚ˆİ™\œšYBˆ›ÚY[š]İ]J
+HÂˆİ\\‹š[š]İ]J
+NÂˆÜXÙTİÜ™KœŞ[˜Õ™\œÚ[Û‹˜Y\İ[™\ŠÚ[™QØ[\TŞ[˜ĞÚ[™ÙY
+NÂ‚ˆ›Û\œÈHÜXÙTİÜ™Kœ™XY\İ
+	ÙØ[\Q›Û\œÉÊNÂˆYYXHHÜXÙTİÜ™Kœ™XY\İ
+	ÙØ[\SYYXIÊNÂ‚ˆYˆ
+›Û\œËš\Ñ[\JHÂˆ›Û\œÈHÂˆÉÚY	Îˆ	Ø[	Ë	Û˜[YIÎˆ	Ğ[Y[[ÜšY\ÉßKˆÉÚY	Îˆ	Ù˜]›Üš]\ÉË	Û˜[YIÎˆ	Ñ˜]›Üš]\ÉßKˆÉÚY	Îˆ	İšY[ÜÉË	Û˜[YIÎˆ	ÕšY[ÜÉßKˆNÂˆ[˜]ØZ]Y
+ÜXÙTİÜ™KœØ]™S\İ
+	ÙØ[\Q›Û\œÉË›Û\œÊJNÂˆH[ÙHYˆ
+Y›Û\œË˜[J
+›Û\ŠHOˆ	ÉÙ›Û\–ÉÚY	×_IÈOH	İšY[ÜÉÊJHÂˆ›Û\œË˜Y
+ÉÚY	Îˆ	İšY[ÜÉË	Û˜[YIÎˆ	ÕšY[ÜÉßJNÂˆ[˜]ØZ]Y
+ÜXÙTİÜ™KœØ]™S\İ
+	ÙØ[\Q›Û\œÉË›Û\œÊJNÂˆBˆ[˜]ØZ]Y
+Ø]]ÑİÛ›ØYZ\ÜÚ[™ÓYYXJ
+JNÂˆB‚ˆ]\™O›ÚYˆØ]]ÑİÛ›ØYZ\ÜÚ[™ÓYYXJ
+H\Ş[˜ÈÂˆYˆ
+Ø]]ÑİÛ›ØY[›š[™È[[İ[Y
+H™]\›ÂˆØ]]ÑİÛ›ØY[›š[™ÈHYNÂˆHÂˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆš[˜[Ø]™Y˜]ÈH™YœË™Ù]İš[™Ê	ÙØ[\SØØ[]ÉÊNÂˆš[˜[Ø]™Y]ÈHİš[™Ë[˜[ZXÏßNÂˆYˆ
+Ø]™Y˜]ÈOH[	‰ˆØ]™Y˜]Ëš\Ó›İ[\JHÂˆHÂˆš[˜[XÛÙYHœÛÛ‘XÛÙJØ]™Y˜]ÊNÂˆYˆ
+XÛÙY\ÈX\
+HØ]™Y]Ë˜Y[
+X\İš[™Ë[˜[ZXÏ‹™œ›ÛJXÛÙY
+JNÂˆHØ]Ú
+ÊHßBˆB‚ˆ˜\ˆÚ[™ÙYH˜[ÙNÂˆš[˜[Ø[™Y]\ÈHYYXK›X\
 
-class GalleryPage extends StatefulWidget {
-  const GalleryPage({super.key});
+][JHOˆX\İš[™Ë[˜[ZXÏ‹™œ›ÛJ][JJKÓ\İ
 
-  @override
-  State<GalleryPage> createState() => _GalleryPageState();
-}
+NÂˆ›Üˆ
+š[˜[][H[ˆØ[™Y]\ÊHÂˆYˆ
+[[İ[Y
+Hœ™XZÎÂˆš[˜[š[RYH	ÉÚ][VÉÙš[RY	×HÏÈ][VÉÙš]™Qš[RY	×HÏÈ	ÉßIËš[J
+NÂˆYˆ
+š[RYš\Ñ[\JHÛÛ[YNÂˆš[˜[\Ô\œÛÛ˜[H][VÉÜİÜ˜YÙI×HOH	Ü\œÛÛ˜[	ÎÂˆš[˜[ØØ[]H	ÉÚ][VÉÜ]	×HÏÈ	ÉßIËš[J
+NÂˆYˆ
+ØØ[]š\Ó›İ[\JHÂˆHÂˆš[˜[ØØ[š[HHš[JØØ[]
+NÂˆYˆ
+]ØZ]ØØ[š[K™^\İÊ
+H	‰ˆ]ØZ]ØØ[š[K›[™İ
 
-class _GalleryPageState extends State<GalleryPage> {
-  List<Map<String, dynamic>> folders = [];
-  List<Map<String, dynamic>> media = [];
-  bool _autoDownloadRunning = false;
+Hˆ
+HÛÛ[YNÂˆHØ]Ú
+ÊHßBˆB‚ˆHÂˆİš[™È™\ÛÛ™Y]Bˆ
+]ØZ]ÜXÙTŞ[˜ÔÙ\šXÙK™Ù]ØXÚYYYXT]
+ˆš[RYˆÚ\™YˆZ\Ô\œÛÛ˜[ˆ
+JHÏÂˆ	ÉÎÂˆYˆ
+™\ÛÛ™Y]š\Ñ[\HX]ØZ]š[J™\ÛÛ™Y]
+K™^\İÊ
+JHÂˆš[˜[ÜšYÚ[˜[˜[YHH	ÉÚ][VÉÙš]™Qš[S˜[YI×HÏÈ][VÉÛ˜[YI×HÏÈ	ÛY[[ÜIßIÎÂˆš[˜[ØY™S˜[YHH	ÉÚ][VÉÚY	×HÏÈš[RYWÉÜšYÚ[˜[˜[YIÎÂˆ™\ÛÛ™Y]H\Ô\œÛÛ˜[ˆÈ]ØZ]ÜXÙTŞ[˜ÔÙ\šXÙK™İÛ›ØY\œÛÛ˜[YYXJš[RYØ]™P\ÎˆØY™S˜[YJBˆˆ]ØZ]ÜXÙTŞ[˜ÔÙ\šXÙK™İÛ›ØYYYXJš[RYØ]™P\ÎˆØY™S˜[YJNÂˆBˆš[˜[İÛ›ØYYHš[J™\ÛÛ™Y]
+NÂˆYˆ
+X]ØZ]İÛ›ØYY™^\İÊ
+H]ØZ]İÛ›ØYY›[™İ
 
-  @override
-  void initState() {
-    super.initState();
-    SpaceStore.syncVersion.addListener(_handleGallerySyncChanged);
+HH
+HÛÛ[YNÂˆØ]™Y]ÖÙš[RYHH™\ÛÛ™Y]Âˆš[˜[[™^HYYXKš[™^Ú\™J
+[JHO‚ˆ	ÉÙ[VÉÙš[RY	×HÏÈ[VÉÙš]™Qš[RY	×HÏÈ	ÉßIÈOHš[RY
+NÂˆYˆ
+[™^H	‰ˆYYXVÚ[™^VÉÜ]	×HOH™\ÛÛ™Y]
+HÂˆYYXVÚ[™^VÉÜ]	×HH™\ÛÛ™Y]ÂˆÚ[™ÙYHYNÂˆBˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÑØ[\H˜XÚÙÜ›İ[™İÛ›ØYÚÚ\Y
+	š[RY
+Nˆ	\œ›Ü‰ÊNÂˆBˆB‚ˆYˆ
+Ø]™Y]Ëš\Ó›İ[\JHÂˆ]ØZ]™YœËœÙ]İš[™Ê	ÙØ[\SØØ[]ÉËœÛÛ‘[˜ÛÙJØ]™Y]ÊJNÂˆBˆYˆ
+Ú[™ÙY
+HÂˆ]ØZ]ÜØ]™J
+NÂˆYˆ
+[İ[Y
+HÙ]İ]J
 
-    folders = SpaceStore.readList('galleryFolders');
-    media = SpaceStore.readList('galleryMedia');
+HßJNÂˆBˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÑØ[\H˜XÚÙÜ›İ[™İÛ›ØY\œ›Üˆ	\œ›Ü‰ÊNÂˆHš[˜[HÂˆØ]]ÑİÛ›ØY[›š[™ÈH˜[ÙNÂˆBˆB‚ˆ›ÚYÚ[™QØ[\TŞ[˜ĞÚ[™ÙY
 
-    if (folders.isEmpty) {
-      folders = [
-        {'id': 'all', 'name': 'All Memories'},
-        {'id': 'favorites', 'name': 'Favorites'},
-        {'id': 'videos', 'name': 'Videos'},
-      ];
-      unawaited(SpaceStore.saveList('galleryFolders', folders));
-    } else if (!folders.any((folder) => '${folder['id']}' == 'videos')) {
-      folders.add({'id': 'videos', 'name': 'Videos'});
-      unawaited(SpaceStore.saveList('galleryFolders', folders));
-    }
-    unawaited(_autoDownloadMissingMedia());
-  }
+HÂˆYˆ
+[[İ[Y
+H™]\›Â‚ˆš[˜[]\İ›Û\œÈHÜXÙTİÜ™Kœ™XY\İ
+	ÙØ[\Q›Û\œÉÊNÂˆš[˜[]\İYYXHHÜXÙTİÜ™Kœ™XY\İ
+	ÙØ[\SYYXIÊNÂ‚ˆÙ]İ]J
 
-  Future<void> _autoDownloadMissingMedia() async {
-    if (_autoDownloadRunning || !mounted) return;
-    _autoDownloadRunning = true;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final savedRaw = prefs.getString('galleryLocalPaths');
-      final savedPaths = <String, dynamic>{};
-      if (savedRaw != null && savedRaw.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(savedRaw);
-          if (decoded is Map) savedPaths.addAll(Map<String, dynamic>.from(decoded));
-        } catch (_) {}
-      }
-
-      var changed = false;
-      final candidates = media.map((item) => Map<String, dynamic>.from(item)).toList();
-      for (final item in candidates) {
-        if (!mounted) break;
-        final fileId = '${item['fileId'] ?? item['driveFileId'] ?? ''}'.trim();
-        if (fileId.isEmpty) continue;
-        final isPersonal = item['storage'] == 'personal';
-        final localPath = '${item['path'] ?? ''}'.trim();
-        if (localPath.isNotEmpty) {
-          try {
-            final localFile = File(localPath);
-            if (await localFile.exists() && await localFile.length() > 0) continue;
-          } catch (_) {}
-        }
-
-        try {
-          String resolvedPath =
-              (await SpaceSyncService.getCachedMediaPath(
-                fileId,
-                shared: !isPersonal,
-              )) ??
-              '';
-          if (resolvedPath.isEmpty || !await File(resolvedPath).exists()) {
-            final originalName = '${item['driveFileName'] ?? item['name'] ?? 'memory'}';
-            final safeName = '${item['id'] ?? fileId}_$originalName';
-            resolvedPath = isPersonal
-                ? await SpaceSyncService.downloadPersonalMedia(fileId, saveAs: safeName)
-                : await SpaceSyncService.downloadMedia(fileId, saveAs: safeName);
-          }
-          final downloaded = File(resolvedPath);
-          if (!await downloaded.exists() || await downloaded.length() <= 0) continue;
-          savedPaths[fileId] = resolvedPath;
-          final index = media.indexWhere((entry) =>
-              '${entry['fileId'] ?? entry['driveFileId'] ?? ''}' == fileId);
-          if (index >= 0 && media[index]['path'] != resolvedPath) {
-            media[index]['path'] = resolvedPath;
-            changed = true;
-          }
-        } catch (error) {
-          debugPrint('Gallery background download skipped ($fileId): $error');
-        }
-      }
-
-      if (savedPaths.isNotEmpty) {
-        await prefs.setString('galleryLocalPaths', jsonEncode(savedPaths));
-      }
-      if (changed) {
-        await _save();
-        if (mounted) setState(() {});
-      }
-    } catch (error) {
-      debugPrint('Gallery background download error: $error');
-    } finally {
-      _autoDownloadRunning = false;
-    }
-  }
-
-  void _handleGallerySyncChanged() {
-    if (!mounted) return;
-
-    final latestFolders = SpaceStore.readList('galleryFolders');
-    final latestMedia = SpaceStore.readList('galleryMedia');
-
-    setState(() {
-      folders = latestFolders;
-      media = latestMedia;
-    });
-    unawaited(_autoDownloadMissingMedia());
-  }
-
-  @override
-  void dispose() {
-    SpaceStore.syncVersion.removeListener(_handleGallerySyncChanged);
-    super.dispose();
-  }
-
-  String _currentCreatorName() {
-    final user = FirebaseAuth.instance.currentUser;
-    final savedName = SpaceStore.readString('myDisplayName').trim();
-    final displayName = user?.displayName?.trim() ?? '';
-    final emailName = user?.email?.split('@').first.trim() ?? '';
-
-    if (savedName.isNotEmpty) return savedName;
-    if (displayName.isNotEmpty) return displayName;
-    if (emailName.isNotEmpty) return emailName;
-
-    return 'à¦…à¦œà¦¾à¦¨à¦¾';
-  }
-
-  Future<void> _save() async {
-    final foldersToSave = folders
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-
-    final mediaToSave = media
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-
-    await SpaceStore.saveList('galleryMedia', mediaToSave);
-    await SpaceStore.saveList('galleryFolders', foldersToSave);
-  }
-
-  Future<void> _createFolder() async {
-    final controller = TextEditingController();
-
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('New folder'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Folder name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext, controller.text.trim());
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-
-    controller.dispose();
-
-    if (name == null || name.isEmpty) return;
-
-    setState(() {
-      folders.add({
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        'name': name,
-        'createdByUid': FirebaseAuth.instance.currentUser?.uid ?? '',
-        'createdByName': _currentCreatorName(),
-        'createdAt': DateTime.now().toIso8601String(),
-      });
-    });
-
-    await _save();
-  }
-
-  Future<void> _showFolderMenu(Map<String, dynamic> folder) async {
-    final id = '${folder['id']}';
-    final isDefault = id == 'all' || id == 'favorites' || id == 'videos';
-
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Details'),
-              onTap: () => Navigator.pop(sheetContext, 'details'),
-            ),
-            if (!isDefault)
-              ListTile(
-                leading: const Icon(Icons.drive_file_rename_outline),
-                title: const Text('Rename'),
-                onTap: () => Navigator.pop(sheetContext, 'rename'),
-              ),
-            if (!isDefault)
-              ListTile(
-                leading: const Icon(
-                  Icons.delete_outline,
-                  color: Colors.redAccent,
-                ),
-                title: const Text('Delete'),
-                onTap: () => Navigator.pop(sheetContext, 'delete'),
-              ),
-          ],
-        ),
-      ),
-    );
-
-    if (!mounted || action == null) return;
-
-    if (action == 'details') {
-      final count = _itemsForFolder(id).length;
-
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          backgroundColor: surfaceColor,
-          title: const Text('Folder details'),
-          content: Text(
-            'Name: ${folder['name']}\n'
-            'Items: $count\n'
-            'Created by: ${folder['createdByName'] ?? 'à¦…à¦œà¦¾à¦¨à¦¾ (à¦ªà§à¦°à§‹à¦¨à§‹ à¦«à§‹à¦²à§à¦¡à¦¾à¦°)'}\n'
-            'Created: ${folder['createdAt'] ?? 'Unknown'}\n'
-            'Folder ID: $id',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
-    } else if (action == 'rename') {
-      await _renameFolder(folder);
-    } else if (action == 'delete') {
-      await _deleteFolder(folder);
-    }
-  }
-
-  Future<void> _renameFolder(Map<String, dynamic> folder) async {
-    final id = '${folder['id']}';
-
-    if (id == 'all' || id == 'favorites' || id == 'videos') return;
-
-    final controller = TextEditingController(
-      text: '${folder['name'] ?? ''}',
-    );
-
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Rename folder'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 40,
-          decoration: const InputDecoration(
-            labelText: 'Folder name',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext, controller.text.trim());
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    controller.dispose();
-
-    if (name == null || name.isEmpty || !mounted) return;
-
-    setState(() {
-      final index = folders.indexWhere((item) => '${item['id']}' == id);
-
-      if (index != -1) {
-        folders[index]['name'] = name;
-      }
-    });
-
-    await _save();
-  }
-
-  Future<void> _deleteFolder(Map<String, dynamic> folder) async {
-    final id = '${folder['id']}';
-
-    if (id == 'all' || id == 'favorites' || id == 'videos') return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Delete folder?'),
-        content: Text(
-          'â€œ${folder['name']}â€ à¦«à§‹à¦²à§à¦¡à¦¾à¦°à¦Ÿà¦¿ à¦®à§à¦›à§‡ à¦¯à¦¾à¦¬à§‡à¥¤ '
-          'à¦à¦° à¦›à¦¬à¦¿ à¦“ à¦­à¦¿à¦¡à¦¿à¦“ All Memories-à¦ à¦¥à¦¾à¦•à¦¬à§‡à¥¤',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    setState(() {
-      for (final item in media) {
-        if ('${item['folderId']}' == id) {
-          item['folderId'] = 'all';
-        }
-      }
-
-      folders.removeWhere((item) => '${item['id']}' == id);
-    });
-
-    await _save();
-  }
-
-  Future<Map<String, dynamic>?> _addMedia(
-    String folderId,
-    bool video,
-  ) async {
-    final picker = ImagePicker();
-
-    final picked = video
-        ? await picker.pickVideo(source: ImageSource.gallery)
-        : await picker.pickImage(source: ImageSource.gallery, imageQuality: 88, maxWidth: 2560, maxHeight: 2560);
-
-    if (picked == null) return null;
-    if (!mounted) return null;
-
-    File uploadFile = File(picked.path);
-    if (video) {
-      try {
-        uploadFile = await _makeCompatibleVideo(uploadFile);
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('à¦­à¦¿à¦¡à¦¿à¦“ à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿; à¦…à¦¨à§à¦¯ à¦­à¦¿à¦¡à¦¿à¦“ à¦¦à¦¿à§Ÿà§‡ à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-          );
-        }
-        return null;
-      }
-    }
-
-    final itemId = DateTime.now().microsecondsSinceEpoch.toString();
-    final uploadCreatedAt = DateTime.now().toIso8601String();
-    final creatorUid =
-        FirebaseAuth.instance.currentUser?.uid ?? '';
-    final creatorName = _currentCreatorName();
-
-    Map<String, String> uploaded;
-
-    try {
-      uploaded = await SpaceSyncService.uploadSharedMedia(
-        uploadFile,
-        metadata: {
-          'purpose': 'gallery',
-          'itemId': itemId,
-          'type': video ? 'video' : 'image',
-          'folderId': folderId,
-          'createdByUid': creatorUid,
-          'createdByName': creatorName,
-          'createdAt': uploadCreatedAt,
-          'fileName': uploadFile.uri.pathSegments.last,
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('à¦«à¦¾à¦‡à¦² à¦†à¦ªà¦²à§‹à¦¡ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦¸à¦‚à¦¯à§‹à¦— à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-        );
-      }
-      return null;
-    }
-
-    // Upload à¦¸à¦«à¦² à¦¹à¦²à§‡ picker-à¦à¦° à¦…à¦¸à§à¦¥à¦¾à§Ÿà§€ path-à¦à¦° à¦“à¦ªà¦° à¦¨à¦¿à¦°à§à¦­à¦° à¦¨à¦¾ à¦•à¦°à§‡
-    // à¦à¦•à¦‡ à¦«à¦¾à¦‡à¦²à¦•à§‡ à¦¸à§à¦¥à¦¾à§Ÿà§€ media cache-à¦ à¦°à¦¾à¦–à§‹à¥¤
-    var galleryLocalPath = uploadFile.path;
-    try {
-      final fileId = (
-        uploaded['fileId'] ??
-        uploaded['driveFileId'] ??
-        ''
-      ).toString().trim();
-
-      final sourceFile = uploadFile;
-
-      if (fileId.isNotEmpty &&
-          await sourceFile.exists() &&
-          await sourceFile.length() > 0) {
-        final size = await sourceFile.length();
-        final support = await getApplicationSupportDirectory();
-        final cacheDirectory = Directory(
-          '${support.path}/eternal_space_media',
-        );
-        await cacheDirectory.create(recursive: true);
-
-        final safeId = fileId.replaceAll(
-          RegExp(r'[^A-Za-z0-9_-]'),
-          '_',
-        );
-        final uploadName = uploadFile.uri.pathSegments.last;
-        final dot = uploadName.lastIndexOf('.');
-        final extension = dot > 0 && uploadName.length - dot <= 10
-            ? uploadName.substring(dot).toLowerCase()
-            : '';
-
-        final cachedFile = File(
-          '${cacheDirectory.path}/media_shared_${safeId}__${extension}',
-        );
-        final tempFile = File('${cachedFile.path}.part');
-        final marker = File('${cachedFile.path}.complete');
-
-        if (await marker.exists()) await marker.delete();
-        if (await tempFile.exists()) await tempFile.delete();
-
-        await sourceFile.copy(tempFile.path);
-
-        if (await tempFile.length() != size) {
-          throw Exception('à¦²à§‹à¦•à¦¾à¦² à¦•à§à¦¯à¦¾à¦¶ à¦¯à¦¾à¦šà¦¾à¦‡ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
+HÂˆ›Û\œÈH]\İ›Û\œÎÂˆYYXHH]\İYYXNÂˆJNÂˆ[˜]ØZ]Y
+Ø]]ÑİÛ›ØYZ\ÜÚ[™ÓYYXJ
+JNÂˆB‚ˆİ™\œšYBˆ›ÚY\ÜÜÙJ
+HÂˆÜXÙTİÜ™KœŞ[˜Õ™\œÚ[Û‹œ™[[İ™S\İ[™\ŠÚ[™QØ[\TŞ[˜ĞÚ[™ÙY
+NÂˆİ\\‹™\ÜÜÙJ
+NÂˆB‚ˆİš[™ÈØİ\œ™[Ü™X]Ü“˜[YJ
+HÂˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\Âˆš[˜[Ø]™Y˜[YHHÜXÙTİÜ™Kœ™XYİš[™Ê	Û^Q\Ü^S˜[YIÊKš[J
+NÂˆš[˜[\Ü^S˜[YHH\Ù\Ë™\Ü^S˜[YOËš[J
+HÏÈ	ÉÎÂˆš[˜[[XZ[˜[YHH\Ù\Ë™[XZ[ËœÜ]
+	Ğ	ÊK™š\œİš[J
+HÏÈ	ÉÎÂ‚ˆYˆ
+Ø]™Y˜[YKš\Ó›İ[\JH™]\›ˆØ]™Y˜[YNÂˆYˆ
+\Ü^S˜[YKš\Ó›İ[\JH™]\›ˆ\Ü^S˜[YNÂˆYˆ
+[XZ[˜[YKš\Ó›İ[\JH™]\›ˆ[XZ[˜[YNÂ‚ˆ™]\›ˆ	Íhİ¾5£xœì(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í…Ù” ¤…Íå¹Œì(€€€™¥¹…°™½±‘•ÉÍQ½M…Ù”€ô™½±‘•ÉÌ(€€€€€€€€¹µ…À ¡¥Ñ•´¤€ôø5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œø¹™É½´¡¥Ñ•´¤¤(€€€€€€€€¹Ñ½1¥ÍĞ ¤ì((€€€™¥¹…°µ•‘¥…Q½M…Ù”€ôµ•‘¥„(€€€€€€€€¹µ…À ¡¥Ñ•´¤€ôø5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œø¹™É½´¡¥Ñ•´¤¤(€€€€€€€€¹Ñ½1¥ÍĞ ¤ì((€€€…İ…¥ĞMÁ…•MÑ½É”¹Í…Ù•1¥ÍĞ …±±•Éå5•‘¥„œ°µ•‘¥…Q½M…Ù”¤ì(€€€…İ…¥ĞMÁ…•MÑ½É”¹Í…Ù•1¥ÍĞ …±±•Éå½±‘•ÉÌœ°™½±‘•ÉÍQ½M…Ù”¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}É•…Ñ•½±‘•È ¤…Íå¹Œì(€€€™¥¹…°½¹ÑÉ½±±•È€ôQ•áÑ‘¥Ñ¥¹½¹ÑÉ½±±•È ¤ì((€€€™¥¹…°¹…µ”€ô…İ…¥ĞÍ¡½İ¥…±½œñMÑÉ¥¹œø (€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€‰Õ¥±‘•Èè€¡‘¥…±½½¹Ñ•áĞ¤€ôø±•ÉÑ¥…±½œ (€€€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ 9•Ü™½±‘•Èœ¤°(€€€€€€€½¹Ñ•¹ĞèQ•áÑ¥•± (€€€€€€€€€½¹ÑÉ½±±•Èè½¹ÑÉ½±±•È°(€€€€€€€€€…ÕÑ½™½ÕÌèÑÉÕ”°(€€€€€€€€€‘•½É…Ñ¥½¸è½¹ÍĞ%¹ÁÕÑ•½É…Ñ¥½¸¡¡¥¹ÑQ•áĞè€½±‘•È¹…µ”œ¤°(€€€€€€€€¤°(€€€€€€€…Ñ¥½¹Ìèl(€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ …¹•°œ¤°(€€€€€€€€€€¤°(€€€€€€€€€¥±±•‘	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤ì(€€€€€€€€€€€€€9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ°½¹ÑÉ½±±•È¹Ñ•áĞ¹ÑÉ¥´ ¤¤ì(€€€€€€€€€€€ô°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ É•…Ñ”œ¤°(€€€€€€€€€€¤°(€€€€€€€t°(€€€€€€¤°(€€€€¤ì((€€€½¹ÑÉ½±±•È¹‘¥ÍÁ½Í” ¤ì((€€€¥˜€¡¹…µ”€ôô¹Õ±°ñğ¹…µ”¹¥ÍµÁÑä¤É•ÑÕÉ¸ì((€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€™½±‘•ÉÌ¹…‘¡ì(€€€€€€€€¥œè…Ñ•Q¥µ”¹¹½Ü ¤¹µ¥É½Í•½¹‘ÍM¥¹•Á½ ¹Ñ½MÑÉ¥¹œ ¤°(€€€€€€€€¹…µ”œè¹…µ”°(€€€€€€€€É•…Ñ•‘	åU¥œè¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•Èü¹Õ¥€üü€œœ°(€€€€€€€€É•…Ñ•‘	å9…µ”œè}ÕÉÉ•¹ÑÉ•…Ñ½É9…µ” ¤°(€€€€€€€€É•…Ñ•‘Ğœè…Ñ•Q¥µ”¹¹½Ü ¤¹Ñ½%Í¼àØÀÅMÑÉ¥¹œ ¤°(€€€€€ô¤ì(€€€ô¤ì((€€€…İ…¥Ğ}Í…Ù” ¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í¡½İ½±‘•É5•¹Ô¡5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œø™½±‘•È¤…Íå¹Œì(€€€™¥¹…°¥€ô€œ‘í™½±‘•Él¥uôœì(€€€™¥¹…°¥Í•™…Õ±Ğ€ô¥€ôô€…±°œñğ¥€ôô€™…Ù½É¥Ñ•Ìœñğ¥€ôô€Ù¥‘•½Ìœì((€€€™¥¹…°…Ñ¥½¸€ô…İ…¥ĞÍ¡½İ5½‘…±	½ÑÑ½µM¡••ĞñMÑÉ¥¹œø (€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€Í¡…Á”è½¹ÍĞI½Õ¹‘•‘I•Ñ…¹±•	½É‘•È (€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹Ù•ÉÑ¥…°¡Ñ½ÀèI…‘¥ÕÌ¹¥ÉÕ±…È ÈÀ¤¤°(€€€€€€¤°(€€€€€‰Õ¥±‘•Èè€¡Í¡••Ñ½¹Ñ•áĞ¤€ôøM…™•É•„ (€€€€€€€¡¥±è]É…À (€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€1¥ÍÑQ¥±” (€€€€€€€€€€€€€±•…‘¥¹œè½¹ÍĞ%½¸¡%½¹Ì¹¥¹™½}½ÕÑ±¥¹”¤°(€€€€€€€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ •Ñ…¥±Ìœ¤°(€€€€€€€€€€€€€½¹Q…Àè€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡Í¡••Ñ½¹Ñ•áĞ°€‘•Ñ…¥±Ìœ¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€€¥˜€ …¥Í•™…Õ±Ğ¤(€€€€€€€€€€€€€1¥ÍÑQ¥±” (€€€€€€€€€€€€€€€±•…‘¥¹œè½¹ÍĞ%½¸¡%½¹Ì¹‘É¥Ù•}™¥±•}É•¹…µ•}½ÕÑ±¥¹”¤°(€€€€€€€€€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ I•¹…µ”œ¤°(€€€€€€€€€€€€€€€½¹Q…Àè€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡Í¡••Ñ½¹Ñ•áĞ°€É•¹…µ”œ¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€¥˜€ …¥Í•™…Õ±Ğ¤(€€€€€€€€€€€€€1¥ÍÑQ¥±” (€€€€€€€€€€€€€€€±•…‘¥¹œè½¹ÍĞ%½¸ (€€€€€€€€€€€€€€€€€%½¹Ì¹‘•±•Ñ•}½ÕÑ±¥¹”°(€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹É•‘•¹Ğ°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ •±•Ñ”œ¤°(€€€€€€€€€€€€€€€½¹Q…Àè€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡Í¡••Ñ½¹Ñ•áĞ°€‘•±•Ñ”œ¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€t°(€€€€€€€€¤°(€€€€€€¤°(€€€€¤ì((€€€¥˜€ …µ½Õ¹Ñ•ñğ…Ñ¥½¸€ôô¹Õ±°¤É•ÑÕÉ¸ì((€€€¥˜€¡…Ñ¥½¸€ôô€‘•Ñ…¥±Ìœ¤ì(€€€€€™¥¹…°½Õ¹Ğ€ô}¥Ñ•µÍ½É½±‘•È¡¥¤¹±•¹Ñ ì((€€€€€…İ…¥ĞÍ¡½İ¥…±½œñÙ½¥ø (€€€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€€€‰Õ¥±‘•Èè€¡‘¥…±½½¹Ñ•áĞ¤€ôø±•ÉÑ¥…±½œ (€€€€€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ ½±‘•È‘•Ñ…¥±Ìœ¤°(€€€€€€€€€½¹Ñ•¹ĞèQ•áĞ (€€€€€€€€€€€€9…µ”è€‘í™½±‘•Él¹…µ”uõq¸œ(€€€€€€€€€€€€%Ñ•µÌè€‘½Õ¹Ñq¸œ(€€€€€€€€€€€€É•…Ñ•‰äè€‘í™½±‘•ÉlÉ•…Ñ•‘	å9…µ”t€üü€¾Öú‹§uçâçbƒZ6lhÙË"éİyø§yÛË5£v„Ö’wÕÆâp¢t7&VFVC¢G¶föÆFW%²v7&VFVDBuÒóòuVæ¶æ÷vâwÕÆâp¢tföÆFW"”C¢F–BrÀ¢’À¢7F–öç3¢°¢FW‡D'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡B’À¢6†–ÆC¢6öç7BFW‡B‚t6Æ÷6Rr’À¢’À¢ÒÀ¢’À¢“°¢ÒVÇ6R–b†7F–öâÓÒw&VæÖRr’°¢v—B÷&VæÖTföÆFW"†föÆFW"“°¢ÒVÇ6R–b†7F–öâÓÒvFVÆWFRr’°¢v—BöFVÆWFTföÆFW"†föÆFW"“°¢Ğ¢Ğ ¢gWGW&SÇfö–Câ÷&VæÖTföÆFW"„ÖÅ7G&–ærÂG–æÖ–3âföÆFW"’7–æ2°¢f–æÂ–BÒrG¶föÆFW%²v–Bu×Òs° ¢–b†–BÓÒvÆÂrÇÂ–BÓÒvff÷&—FW2rÇÂ–BÓÒwf–FV÷2r’&WGW&ã° ¢f–æÂ6öçG&öÆÆW"ÒFW‡DVF—F–æt6öçG&öÆÆW"€¢FW‡C¢rG¶föÆFW%²væÖRuÒóòrwÒrÀ¢“° ¢f–æÂæÖRÒv—B6†÷tF–ÆösÅ7G&–æsâ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†F–Æöt6öçFW‡B’ÓâÆW'DF–Æör€¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚u&VæÖRföÆFW"r’À¢6öçFVçC¢FW‡Df–VÆB€¢6öçG&öÆÆW#¢6öçG&öÆÆW"À¢WFöfö7W3¢G'VRÀ¢Ö„ÆVæwFƒ¢CÀ¢FV6÷&F–öã¢6öç7B–çWDFV6÷&F–öâ€¢Æ&VÅFW‡C¢tföÆFW"æÖRrÀ¢’À¢’À¢7F–öç3¢°¢FW‡D'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡B’À¢6†–ÆC¢6öç7BFW‡B‚t6æ6VÂr’À¢’À¢f–ÆÆVD'WGFöâ€¢öå&W76VC¢‚’°¢æf–vF÷"ç÷†F–Æöt6öçFW‡BÂ6öçG&öÆÆW"çFW‡BçG&–Ò‚’“°¢ÒÀ¢6†–ÆC¢6öç7BFW‡B‚u6fRr’À¢’À¢ÒÀ¢’À¢“° ¢6öçG&öÆÆW"æF—7÷6R‚“° ¢–b†æÖRÓÒçVÆÂÇÂæÖRæ—4V×G’ÇÂÖ÷VçFVB’&WGW&ã° ¢6WE7FFR‚‚’°¢f–æÂ–æFW‚ÒföÆFW'2æ–æFW…v†W&R‚†—FVÒ’ÓârG¶—FVÕ²v–Bu×ÒrÓÒ–B“° ¢–b†–æFW‚ÒÓ’°¢föÆFW'5¶–æFW…Õ²væÖRuÒÒæÖS°¢Ğ¢Ò“° ¢v—B÷6fR‚“°¢Ğ ¢gWGW&SÇfö–CâöFVÆWFTföÆFW"„ÖÅ7G&–ærÂG–æÖ–3âföÆFW"’7–æ2°¢f–æÂ–BÒrG¶föÆFW%²v–Bu×Òs° ¢–b†–BÓÒvÆÂrÇÂ–BÓÒvff÷&—FW2rÇÂ–BÓÒwf–FV÷2r’&WGW&ã° ¢f–æÂ6öæf—&ÖVBÒv—B6†÷tF–ÆösÆ&ööÃâ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†F–Æöt6öçFW‡B’ÓâÆW'DF–Æör€¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚tFVÆWFRföÆFW#òr’À¢6öçFVçC¢FW‡B€¢{§uçâçBG¶föÆFW%²væÖRu×Û§uçâçRš³Z6óMhß°5£|€Ö™»§uçâçršóZ7qî×ŸŠw	Âˆ	ÍhĞ 5£vü‹§uçâçL€ÖúZ4È[Y[[ÜšY\Ëºw^~)ŞwÈhß•5£}œ°(€€€€€€€€¤°(€€€€€€€…Ñ¥½¹Ìèl(€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ°™…±Í”¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ …¹•°œ¤°(€€€€€€€€€€¤°(€€€€€€€€€¥±±•‘	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ°ÑÉÕ”¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ •±•Ñ”œ¤°(€€€€€€€€€€¤°(€€€€€€€t°(€€€€€€¤°(€€€€¤ì((€€€¥˜€¡½¹™¥Éµ•€„ôÑÉÕ”ñğ€…µ½Õ¹Ñ•¤É•ÑÕÉ¸ì((€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€™½È€¡™¥¹…°¥Ñ•´¥¸µ•‘¥„¤ì(€€€€€€€¥˜€ œ‘í¥Ñ•µl™½±‘•É%uôœ€ôô¥¤ì(€€€€€€€€€¥Ñ•µl™½±‘•É%t€ô€…±°œì(€€€€€€€ô(€€€€€ô((€€€€€™½±‘•ÉÌ¹É•µ½Ù•]¡•É” ¡¥Ñ•´¤€ôø€œ‘í¥Ñ•µl¥uôœ€ôô¥¤ì(€€€ô¤ì((€€€…İ…¥Ğ}Í…Ù” ¤ì(€ô((€ÕÑÕÉ”ñ5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøüø}…‘‘5•‘¥„ (€€€MÑÉ¥¹œ™½±‘•É%°(€€€‰½½°Ù¥‘•¼°(€€¤…Íå¹Œì(€€€™¥¹…°Á¥­•È€ô%µ…•A¥­•È ¤ì((€€€™¥¹…°Á¥­•€ôÙ¥‘•¼(€€€€€€€€ü…İ…¥ĞÁ¥­•È¹Á¥­Y¥‘•¼¡Í½ÕÉ”è%µ…•M½ÕÉ”¹…±±•Éä¤(€€€€€€€€è…İ…¥ĞÁ¥­•È¹Á¥­%µ…”¡Í½ÕÉ”è%µ…•M½ÕÉ”¹…±±•Éä°¥µ…•EÕ…±¥Ñäè€àà°µ…á]¥‘Ñ è€ÈÔØÀ°µ…á!•¥¡Ğè€ÈÔØÀ¤ì((€€€¥˜€¡Á¥­•€ôô¹Õ±°¤É•ÑÕÉ¸¹Õ±°ì(€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸¹Õ±°ì((€€€¥±”ÕÁ±½…‘¥±”€ô¥±”¡Á¥­•¹Á…Ñ ¤ì(€€€¥˜€¡Ù¥‘•¼¤ì(€€€€€ÑÉäì(€€€€€€€ÕÁ±½…‘¥±”€ô…İ…¥Ğ}µ…­•½µÁ…Ñ¥‰±•Y¥‘•¼¡ÕÁ±½…‘¥±”¤ì(€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€€€€€½¹ÍĞM¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ ›§uçâçvüÖù2.×ŸŠwÚ£Z7ëhßœ"éİyø§yİ°ºw^~)Şv)¯5£~¢éİyø§yÜì€ÖœÛ§uçâçršÓZ6oî×ŸŠwÊihßÇ"éİyø§yÛÇ5£v~éİyø§yØ¦TÖš‹§uçâçBr’’À¢“°¢Ğ¢&WGW&âçVÆÃ°¢Ğ¢Ğ ¢f–æÂ—FVÔ–BÒFFUF–ÖRææ÷r‚’æÖ–7&÷6V6öæG56–æ6TWö6‚çFõ7G&–ær‚“°¢f–æÂWÆöD7&VFVDBÒFFUF–ÖRææ÷r‚’çFô—6óƒc7G&–ær‚“°¢f–æÂ7&VF÷%V–BĞ¢f—&V&6TWF‚æ–ç7Fæ6Ræ7W'&VçEW6W#òçV–Bóòrs°¢f–æÂ7&VF÷$æÖRÒö7W'&VçD7&VF÷$æÖR‚“° ¢ÖÅ7G&–ærÂ7G&–æsâWÆöFVC° ¢G'’°¢WÆöFVBÒv—B76U7–æ56W'f–6RçWÆöE6†&VDÖVF–€¢WÆöDf–ÆRÀ¢ÖWFFF¢°¢wW'÷6Rs¢vvÆÆW'’rÀ¢v—FVÔ–Bs¢—FVÔ–BÀ¢wG—Rs¢f–FVòòwf–FVòr¢v–ÖvRrÀ¢vföÆFW$–Bs¢föÆFW$–BÀ¢v7&VFVD'•V–Bs¢7&VF÷%V–BÀ¢v7&VFVD'”æÖRs¢7&VF÷$æÖRÀ¢v7&VFVDBs¢WÆöD7&VFVDBÀ¢vf–ÆTæÖRs¢WÆöDf–ÆRçW&’çF…6VvÖVçG2æÆ7BÀ¢ÒÀ¢“°¢Ò6F6‚†R’°¢–b†Ö÷VçFVB’°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6æ6´&"†6öçFVçC¢FW‡B‚sZ7áî×ŸŠwŠahÛËºw^~)Şu)•5£x€ÖıóZ7Ùºw^~)Şv`hÛ—"éİyø§yÛ°5£w4ÖâZ6qÈºw^~)ŞwëhĞ 5£~ÜÖûâ.×ŸŠwÛZ6Y	ÊJKˆ
+NÂˆBˆ™]\›ˆ[ÂˆB‚ˆËÈ\ØYºw^~)Şvjî×ŸŠwŠnMh× picker.éİyø§yß°"éİyø§yİ¸5£vøÖF‚Øû§uçâçB™3Z4hß°5£vÀ‹§uçâçfø‹§uçâçvÂéİyø§yÜ(€€€€¼¼€ÖØr.×ŸŠw»ãZ6ån×ŸŠwÊnhİ¾5£@µ•‘¥„…¡”¶éİyø§yÜ¦ÀÖü»§uçâç@¢f"vÆÆW'”Æö6ÅF‚ÒWÆöDf–ÆRçFƒ°¢G'’°¢f–æÂf–ÆT–BÒ€¢WÆöFVE²vf–ÆT–BuÒóğ¢WÆöFVE²vG&—fTf–ÆT–BuÒóğ¢rp¢’çFõ7G&–ær‚’çG&–Ò‚“° ¢f–æÂ6÷W&6Tf–ÆRÒWÆöDf–ÆS° ¢–b†f–ÆT–Bæ—4æ÷DV×G’b`¢v—B6÷W&6Tf–ÆRæW†—7G2‚’b`¢v—B6÷W&6Tf–ÆRæÆVæwF‚‚’â’°¢f–æÂ6—¦RÒv—B6÷W&6Tf–ÆRæÆVæwF‚‚“°¢f–æÂ7W÷'BÒv—BvWDÆ–6F–öå7W÷'DF—&V7F÷'’‚“°¢f–æÂ66†TF—&V7F÷'’ÒF—&V7F÷'’€¢rG·7W÷'BçF‡ÒöWFW&æÅ÷76UöÖVF–rÀ¢“°¢v—B66†TF—&V7F÷'’æ7&VFR‡&V7W'6—fS¢G'VR“° ¢f–æÂ6fT–BÒf–ÆT–Bç&WÆ6TÆÂ€¢&VtW‡‡"uµäÕ¦×£Ó•òÕÒr’À¢uòrÀ¢“°¢f–æÂWÆöDæÖRÒWÆöDf–ÆRçW&’çF…6VvÖVçG2æÆ7C°¢f–æÂF÷BÒWÆöDæÖRæÆ7D–æFW„öb‚râr“°¢f–æÂW‡FVç6–öâÒF÷BâbbWÆöDæÖRæÆVæwF‚ÒF÷BÃÒ ¢òWÆöDæÖRç7V'7G&–ær†F÷B’çFôÆ÷vW$66R‚¢¢rs° ¢f–æÂ66†VDf–ÆRÒf–ÆR€¢rG¶66†TF—&V7F÷'’çF‡ÒöÖVF–÷6†&VEòG·6fT–GÕõòG¶W‡FVç6–öçÒrÀ¢“°¢f–æÂFV×f–ÆRÒf–ÆR‚rG¶66†VDf–ÆRçF‡Òç'Br“°¢f–æÂÖ&¶W"Òf–ÆR‚rG¶66†VDf–ÆRçF‡Òæ6ö×ÆWFRr“° ¢–b†v—BÖ&¶W"æW†—7G2‚’’v—BÖ&¶W"æFVÆWFR‚“°¢–b†v—BFV×f–ÆRæW†—7G2‚’’v—BFV×f–ÆRæFVÆWFR‚“° ¢v—B6÷W&6Tf–ÆRæ6÷’‡FV×f–ÆRçF‚“° ¢–b†v—BFV×f–ÆRæÆVæwF‚‚’Ò6—¦R’°¢F‡&÷rW†6WF–öâ‚û#Z7o®×ŸŠwŠeMhß¾ºw^~)Şv)¯5£núéİyø§yÜ¦TÖâZ7÷Íhßd');
         }
 
         if (await cachedFile.exists()) await cachedFile.delete();
@@ -6785,80 +3551,7 @@ class _GalleryPageState extends State<GalleryPage> {
         galleryLocalPath = cachedFile.path;
       }
     } catch (error) {
-      // à¦²à§‹à¦•à¦¾à¦² à¦•à§à¦¯à¦¾à¦¶à§‡ à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦²à§‡à¦“ à¦¸à¦«à¦² Drive upload à¦¨à¦·à§à¦Ÿ à¦•à¦°à¦¬à§‡ à¦¨à¦¾à¥¤
-      debugPrint('Gallery local cache copy failed: $error');
-    }
-
-    final item = <String, dynamic>{
-      'id': itemId,
-      'path': galleryLocalPath,
-      'type': video ? 'video' : 'image',
-      'folderId': folderId,
-      'createdAt': uploadCreatedAt,
-      'createdByUid': creatorUid,
-      'createdByName': creatorName,
-      ...uploaded,
-    };
-
-    setState(() {
-      media.add(item);
-    });
-
-    await _save();
-    
-    final taskId = uploaded['_uploadTaskId'] ?? '';
-    if (taskId.isNotEmpty) {
-      await SpaceSyncService.acknowledgeUpload(taskId);
-    }
-
-    return item;
-  }
-
-  Future<void> _deleteMediaItem(
-    Map<String, dynamic> item, {
-    bool fromFavorites = false,
-  }) async {
-    final driveId = (
-      item['fileId'] ??
-      item['driveFileId'] ??
-      ''
-    ).toString().trim();
-
-    final itemId = '${item['id'] ?? ''}';
-    final originalIndex = media.indexWhere(
-      (m) => '${m['id'] ?? ''}' == itemId,
-    );
-
-    if (originalIndex == -1) return;
-
-    final removedItem = Map<String, dynamic>.from(
-      media[originalIndex],
-    );
-
-    // à¦ªà¦›à¦¨à§à¦¦à§‡à¦° à¦›à¦¬à¦¿ à¦…à¦¨à§à¦¯ à¦«à§‹à¦²à§à¦¡à¦¾à¦° à¦¥à§‡à¦•à§‡ à¦¸à¦°à¦¾à¦²à§‡ Drive à¦«à¦¾à¦‡à¦² à¦®à§à¦›à¦¬à§‡ à¦¨à¦¾;
-    // à¦¸à§‡à¦Ÿà¦¿ Favorites-à¦ à¦°à§‡à¦–à§‡ à¦¦à§‡à¦¬à§‡à¥¤
-    if (removedItem['favorite'] == true && !fromFavorites) {
-      setState(() {
-        media[originalIndex]['folderId'] = 'favorites';
-      });
-      await _save();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('à¦›à¦¬à¦¿à¦Ÿà¦¿ Favorites-à¦ à¦°à¦¾à¦–à¦¾ à¦¹à§Ÿà§‡à¦›à§‡à¥¤')),
-        );
-      }
-      return;
-    }
-
-    // à¦†à¦—à§‡ à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿ à¦¥à§‡à¦•à§‡ à¦¸à¦°à¦¿à§Ÿà§‡ à¦¦à¦¾à¦“à¥¤
-    setState(() {
-      media.removeAt(originalIndex);
-    });
-
-    try {
-      await _save();
-
-      // Drive-à¦ à¦¥à¦¾à¦•à¦¾ à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿ à¦ªà§‡à¦›à¦¨à§‡ à¦®à§à¦›à§‡ à¦«à§‡à¦²à§‹à¥¤
+      //"éİyø§yÛË5£~È‹§uçâçw4Öûk§uçâçršÃZ7ìhÕ 5£oéİyø§yÜ¦àÖ"G&—fRWÆöB.×ŸŠw›sZ7ÈhÙ¬ºw^~)Şw)¨5£P(€€€€€‘•‰ÕAÉ¥¹Ğ …±±•Éä±½…°…¡”½Áä™…¥±•è€‘•ÉÉ½Èœ¤ì(€€€ô((€€€™¥¹…°¥Ñ•´€ô€ñMÑÉ¥¹œ°‘å¹…µ¥Œùì(€€€€€€¥œè¥Ñ•µ%°(€€€€€€Á…Ñ œè…±±•Éå1½…±A…Ñ °(€€€€€€ÑåÁ”œèÙ¥‘•¼€ü€Ù¥‘•¼œ€è€¥µ…”œ°(€€€€€€™½±‘•É%œè™½±‘•É%°(€€€€€€É•…Ñ•‘ĞœèÕÁ±½…‘É•…Ñ•‘Ğ°(€€€€€€É•…Ñ•‘	åU¥œèÉ•…Ñ½ÉU¥°(€€€€€€É•…Ñ•‘	å9…µ”œèÉ•…Ñ½É9…µ”°(€€€€€€¸¸¹ÕÁ±½…‘•°(€€€ôì((€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€µ•‘¥„¹…‘¡¥Ñ•´¤ì(€€€ô¤ì((€€€…İ…¥Ğ}Í…Ù” ¤ì(€€€€(€€€™¥¹…°Ñ…Í­%€ôÕÁ±½…‘•‘l}ÕÁ±½…‘Q…Í­%t€üü€œœì(€€€¥˜€¡Ñ…Í­%¹¥Í9½ÑµÁÑä¤ì(€€€€€…İ…¥ĞMÁ…•Må¹M•ÉÙ¥”¹…­¹½İ±•‘•UÁ±½…¡Ñ…Í­%¤ì(€€€ô((€€€É•ÑÕÉ¸¥Ñ•´ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}‘•±•Ñ•5•‘¥…%Ñ•´ (€€€5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œø¥Ñ•´°ì(€€€‰½½°™É½µ…Ù½É¥Ñ•Ì€ô™…±Í”°(€ô¤…Íå¹Œì(€€€™¥¹…°‘É¥Ù•%€ô€ (€€€€€¥Ñ•µl™¥±•%t€üü(€€€€€¥Ñ•µl‘É¥Ù•¥±•%t€üü(€€€€€€œœ(€€€€¤¹Ñ½MÑÉ¥¹œ ¤¹ÑÉ¥´ ¤ì((€€€™¥¹…°¥Ñ•µ%€ô€œ‘í¥Ñ•µl¥t€üü€œôœì(€€€™¥¹…°½É¥¥¹…±%¹‘•à€ôµ•‘¥„¹¥¹‘•á]¡•É” (€€€€€€¡´¤€ôø€œ‘íµl¥t€üü€œôœ€ôô¥Ñ•µ%°(€€€€¤ì((€€€¥˜€¡½É¥¥¹…±%¹‘•à€ôô€´Ä¤É•ÑÕÉ¸ì((€€€™¥¹…°É•µ½Ù•‘%Ñ•´€ô5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œø¹™É½´ (€€€€€µ•‘¥…m½É¥¥¹…±%¹‘•át°(€€€€¤ì((€€€€¼¼¦¨ÖœÓZ7ìºw^~)Şvë.×ŸŠwÊaMhİ¯"éİyø§yÛË5£v„ÖZ7ån×ŸŠwÊnhß²ºw^~)Şw Drive)«5£~È‹§uçâçÖÜr.×ŸŠw›ã°¢òòZ7çî×ŸŠwÈ˜]›Üš]\Ën×ŸŠwÊlhßÇ"éİyø§yßÇ5£}(€€€¥˜€¡É•µ½Ù•‘%Ñ•µl™…Ù½É¥Ñ”t€ôôÑÉÕ”€˜˜€…™É½µ…Ù½É¥Ñ•Ì¤ì(€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€µ•‘¥…m½É¥¥¹…±%¹‘•ául™½±‘•É%t€ô€™…Ù½É¥Ñ•Ìœì(€€€€€ô¤ì(€€€€€…İ…¥Ğ}Í…Ù” ¤ì(€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€€€½¹ÍĞM¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ œÖÛóZ7È˜]›Üš]\Ëºw^~)ŞwÈhß–ºw^~)Şv)¹5£~lÖBr’’À¢“°¢Ğ¢&WGW&ã°¢Ğ ¢òòZ7ñÈºw^~)ŞwóMhß²5£fü‹§uçâçwÖrZ6oÍh× 5£~Néİyø§yĞ(€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€µ•‘¥„¹É•µ½Ù•Ğ¡½É¥¥¹…±%¹‘•à¤ì(€€€ô¤ì((€€€ÑÉäì(€€€€€…İ…¥Ğ}Í…Ù” ¤ì((€€€€€€¼¼É¥Ù”¶<‹§uçâçvøÖâZ7áÍhß¿"éİyø§yÛÇ5£g‹§uçâçÖrZ7ìhÔ
       if (driveId.isNotEmpty) {
         await SpaceSyncService.deleteSharedMedia(driveId);
       }
@@ -6867,461 +3560,12 @@ class _GalleryPageState extends State<GalleryPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿ à¦¥à§‡à¦•à§‡ à¦¸à¦°à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡à¥¤'),
-        ),
-      );
-    } catch (error) {
-      debugPrint('Gallery delete failed: $error');
-
-      // à¦¸à¦¾à¦°à§à¦­à¦¾à¦°à§‡ à¦®à§à¦›à¦¤à§‡ à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦²à§‡ à¦†à¦‡à¦Ÿà§‡à¦®à¦Ÿà¦¿ à¦«à¦¿à¦°à¦¿à§Ÿà§‡ à¦¦à¦¾à¦“à¥¤
-      if (!mounted) return;
-
-      setState(() {
-        if (!media.any((m) => '${m['id'] ?? ''}' == itemId)) {
-          final insertIndex = originalIndex.clamp(0, media.length);
-          media.insert(insertIndex, removedItem);
-        }
-      });
-
-      try {
-        await _save();
-      } catch (saveError) {
-        debugPrint('Gallery restore failed: $saveError');
-      }
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿ à¦®à§à¦›à¦¤à§‡ à¦¸à¦®à¦¸à§à¦¯à¦¾ à¦¹à§Ÿà§‡à¦›à§‡à¥¤ à¦‡à¦¨à§à¦Ÿà¦¾à¦°à¦¨à§‡à¦Ÿ à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤',
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _toggleFavorite(Map<String, dynamic> item) async {
-    final id = '${item['id'] ?? ''}';
-    final index = media.indexWhere((entry) => '${entry['id'] ?? ''}' == id);
-    if (index < 0) return;
-
-    final wasFavorite = media[index]['favorite'] == true;
-    setState(() {
-      media[index]['favorite'] = !wasFavorite;
-      if (wasFavorite && media[index]['folderId'] == 'favorites') {
-        media[index]['folderId'] = 'all';
-      }
-    });
-    await _save();
-  }
-
-  Future<void> _showMediaMenu(
-    Map<String, dynamic> item, {
-    bool fromFavorites = false,
-  }) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: surfaceColor,
-      builder: (sheetContext) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: Icon(
-                item['favorite'] == true ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                color: Colors.redAccent,
-              ),
-              title: Text(item['favorite'] == true ? 'Remove from Favorites' : 'Add to Favorites'),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                await _toggleFavorite(item);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Details'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _showMediaDetails(item);
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.delete_outline,
-                color: Colors.redAccent,
-              ),
-              title: const Text('Delete'),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (dialogContext) => AlertDialog(
-                    backgroundColor: surfaceColor,
-                    title: const Text('Delete memory?'),
-                    content: const Text(
-                      'This item will be removed from this gallery.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(dialogContext, false);
-                        },
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton(
-                        onPressed: () {
-                          Navigator.pop(dialogContext, true);
-                        },
-                        child: const Text('Delete'),
-                      ),
-                    ],
-                  ),
-                );
-
-                if (confirmed == true) {
-                  await _deleteMediaItem(item, fromFavorites: fromFavorites);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showMediaDetails(Map<String, dynamic> item) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Memory details'),
-        content: Text(
-          'Type: ${item['type']}\n'
-          'Added: ${item['createdAt'] ?? 'Unknown'}\n'
-          'Added by: ${item['createdByName'] ?? 'à¦…à¦œà¦¾à¦¨à¦¾ (à¦ªà§à¦°à§‹à¦¨à§‹ à¦«à¦¾à¦‡à¦²)'}\n'
-          'Folder: ${_folderName('${item['folderId']}')}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _folderName(String id) {
-    return folders.firstWhere(
-      (folder) => folder['id'] == id,
-      orElse: () => {'name': 'Unknown'},
-    )['name'] as String;
-  }
-
-  Future<void> _openFolder(Map<String, dynamic> folder) async {
-    final id = '${folder['id']}';
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GalleryFolderPage(
-          title: '${folder['name']}',
-          folderId: id,
-          initialItems: _itemsForFolder(id),
-          onAdd: (video) => _addMedia(id, video),
-          onDelete: (item) async {
-            await _deleteMediaItem(item, fromFavorites: id == 'favorites');
-          },
-          onDetails: _showMediaDetails,
-          onFavorite: _toggleFavorite,
-          onLongPress: (item) => _showMediaMenu(
-            item,
-            fromFavorites: id == 'favorites',
-          ),
-        ),
-      ),
-    );
-
-    if (mounted) setState(() {});
-  }
-
-  List<Map<String, dynamic>> _itemsForFolder(String id) {
-    if (id == 'all') {
-      return media
-          .where((item) => item['folderId'] != 'favorites')
-          .toList();
-    }
-
-    if (id == 'favorites') {
-      return media
-          .where((item) =>
-              item['favorite'] == true || item['folderId'] == 'favorites')
-          .toList();
-    }
-
-    if (id == 'videos') {
-      // Videos from every folder appear here; images are excluded.
-      return media
-          .where((item) => '${item['type']}'.toLowerCase() == 'video')
-          .toList();
-    }
-
-    return media.where((item) => item['folderId'] == id).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Our Memories',
-                style: TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            IconButton.filled(
-              onPressed: _createFolder,
-              icon: const Icon(Icons.create_new_folder_outlined),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Keep the little moments that mean everything.',
-          style: TextStyle(color: Colors.white54),
-        ),
-        const SizedBox(height: 22),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: folders.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.15,
-          ),
-          itemBuilder: (context, index) {
-            final folder = folders[index];
-            final count = _itemsForFolder('${folder['id']}').length;
-
-            return Material(
-              color: surfaceColor,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () => _openFolder(folder),
-                onLongPress: () => _showFolderMenu(folder),
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.folder_rounded,
-                            size: 42,
-                            color: purpleColor,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '${folder['name']}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            '$count items',
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      top: 2,
-                      right: 2,
-                      child: IconButton(
-                        tooltip: 'Folder options',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _showFolderMenu(folder),
-                        icon: const Icon(
-                          Icons.more_vert_rounded,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class GalleryFolderPage extends StatefulWidget {
-  final String title;
-  final String folderId;
-  final List<Map<String, dynamic>> initialItems;
-  final Future<Map<String, dynamic>?> Function(bool video) onAdd;
-  final Future<void> Function(Map<String, dynamic>) onDelete;
-  final void Function(Map<String, dynamic>) onDetails;
-  final Future<void> Function(Map<String, dynamic>) onFavorite;
-  final Future<void> Function(Map<String, dynamic>) onLongPress;
-
-  const GalleryFolderPage({
-    super.key,
-    required this.title,
-    required this.folderId,
-    required this.initialItems,
-    required this.onAdd,
-    required this.onDelete,
-    required this.onDetails,
-    required this.onFavorite,
-    required this.onLongPress,
-  });
-
-  @override
-  State<GalleryFolderPage> createState() => _GalleryFolderPageState();
-}
-
-class _GalleryFolderPageState extends State<GalleryFolderPage> {
-  late List<Map<String, dynamic>> items;
-  final Map<String, Future<String?>> _pathFutures = {};
-  final Set<String> _selectedIds = <String>{};
-  bool _selectionMode = false;
-
-  final Map<String, Future<String?>> _videoThumbnailFutures = {};
-
-  Future<String?> _resolveCachedVideoPath(
-    Map<String, dynamic> item,
-  ) async {
-    try {
-      final localPath = '${item['path'] ?? ''}'.trim();
-
-      if (localPath.isNotEmpty &&
-          await _isUsableGalleryPath(localPath)) {
-        return localPath;
-      }
-
-      final fileId = (
-        item['fileId'] ??
-        item['driveFileId'] ??
-        ''
-      ).toString().trim();
-
-      if (fileId.isEmpty) return null;
-
-      final prefs = await SharedPreferences.getInstance();
-      final savedPaths = prefs.getString('galleryLocalPaths');
-
-      if (savedPaths != null && savedPaths.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(savedPaths);
-
-          if (decoded is Map) {
-            final savedPath = '${decoded[fileId] ?? ''}'.trim();
-
-            if (savedPath.isNotEmpty &&
-                await _isUsableGalleryPath(savedPath)) {
-              return savedPath;
-            }
-          }
-        } catch (_) {}
-      }
-
-      final safeId = fileId.replaceAll(
-        RegExp(r'[^A-Za-z0-9_-]'),
-        '_',
-      );
-
-      final isPersonal = item['storage'] == 'personal';
-      final prefix =
-          'media_${isPersonal ? 'personal' : 'shared'}_${safeId}__';
-
-      final support = await getApplicationSupportDirectory();
-      final directory = Directory(
-        '${support.path}/eternal_space_media',
-      );
-
-      if (!await directory.exists()) return null;
-
-      await for (final entity in directory.list()) {
-        if (entity is! File) continue;
-
-        final name = entity.uri.pathSegments.last;
-
-        if (!name.startsWith(prefix) ||
-            name.endsWith('.part') ||
-            name.endsWith('.complete')) {
-          continue;
-        }
-
-        final marker = File('${entity.path}.complete');
-
-        try {
-          if (!await marker.exists()) continue;
-
-          final length = await entity.length();
-          final recordedLength = int.tryParse(
-            (await marker.readAsString()).trim(),
-          );
-
-          if (length > 0 && recordedLength == length) {
-            return entity.path;
-          }
-        } catch (_) {}
-      }
-    } catch (error) {
-      debugPrint('Cached video lookup error: $error');
-    }
-
-    // à¦•à§à¦¯à¦¾à¦¶à§‡ à¦¨à¦¾ à¦¥à¦¾à¦•à¦²à§‡ à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦¶à§à¦°à§ à¦•à¦°à¦¬à§‡ à¦¨à¦¾à¥¤
-    return null;
-  }
-
-  Future<String?> _resolveVideoThumbnailPath(
-    Map<String, dynamic> item,
-  ) {
-    final fileId = (
-      item['fileId'] ??
-      item['driveFileId'] ??
-      item['id'] ??
-      ''
-    ).toString().trim();
-
-    final existing = _videoThumbnailFutures[fileId];
-    if (existing != null) return existing;
-
-    late final Future<String?> future;
-
-    future = Future<String?>.microtask(() async {
-      try {
-        final videoPath = await _resolveCachedVideoPath(item);
-        if (videoPath == null) return null;
-
-        final videoFile = File(videoPath);
-        if (!await videoFile.exists()) return null;
-
-        // Temporary directory à¦ªà¦°à¦¿à¦·à§à¦•à¦¾à¦° à¦¹à§Ÿà§‡ à¦¯à§‡à¦¤à§‡ à¦ªà¦¾à¦°à§‡, à¦¤à¦¾à¦‡
-        // thumbnail à¦¸à§à¦¥à¦¾à§Ÿà§€ app-support directory-à¦¤à§‡ à¦°à¦¾à¦–à§‹à¥¤
+          content: Text('5£v¼Ö»ãZ7Èhß•ºw^~)Şw)¸5£~¢éİyø§yÜ¦äÖù³Z5	ÊKˆ
+Kˆ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÑØ[\H[]H˜Z[Yˆ	\œ›Ü‰ÊNÂ‚ˆËÈºw^~)Şvohİ­5£g‹§uçâçÖÜr.×ŸŠwÜÓZ6sn×ŸŠwJnMh× 5£~|Öùû§uçâçrš³Z6oÍh× 5£~Néİyø§yĞ(€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì((€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€¥˜€ …µ•‘¥„¹…¹ä ¡´¤€ôø€œ‘íµl¥t€üü€œôœ€ôô¥Ñ•µ%¤¤ì(€€€€€€€€€™¥¹…°¥¹Í•ÉÑ%¹‘•à€ô½É¥¥¹…±%¹‘•à¹±…µÀ À°µ•‘¥„¹±•¹Ñ ¤ì(€€€€€€€€€µ•‘¥„¹¥¹Í•ÉĞ¡¥¹Í•ÉÑ%¹‘•à°É•µ½Ù•‘%Ñ•´¤ì(€€€€€€€ô(€€€€€ô¤ì((€€€€€ÑÉäì(€€€€€€€…İ…¥Ğ}Í…Ù” ¤ì(€€€€€ô…Ñ €¡Í…Ù•ÉÉ½È¤ì(€€€€€€€‘•‰ÕAÉ¥¹Ğ …±±•ÉäÉ•ÍÑ½É”™…¥±•è€‘Í…Ù•ÉÉ½Èœ¤ì(€€€€€ô((€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì((€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€½¹ÍĞM¹…­	…È (€€€€€€€€€½¹Ñ•¹ĞèQ•áĞ (€€€€€€€€€€€€¾¬Öû#Z7ÈhÙ›5£\€ÖûƒZ7ïˆºw^~)ŞvwÍhÛÇºw^~)Şt)‡5£v|ÖšƒZ7ÈhÙÀ5£vŞéİyø§yØ¦TÖrZ7o®×ŸŠw
+fhßÍ5£x€Öœ»§uçâçBrÀ¢’À¢’À¢“°¢Ğ¢Ğ ¢gWGW&SÇfö–Câ÷FövvÆTff÷&—FR„ÖÅ7G&–ærÂG–æÖ–3â—FVÒ’7–æ2°¢f–æÂ–BÒrG¶—FVÕ²v–BuÒóòrwÒs°¢f–æÂ–æFW‚ÒÖVF–æ–æFW…v†W&R‚†VçG'’’ÓârG¶VçG'•²v–BuÒóòrwÒrÓÒ–B“°¢–b†–æFW‚Â’&WGW&ã° ¢f–æÂv4ff÷&—FRÒÖVF–¶–æFW…Õ²vff÷&—FRuÒÓÒG'VS°¢6WE7FFR‚‚’°¢ÖVF–¶–æFW…Õ²vff÷&—FRuÒÒv4ff÷&—FS°¢–b‡v4ff÷&—FRbbÖVF–¶–æFW…Õ²vföÆFW$–BuÒÓÒvff÷&—FW2r’°¢ÖVF–¶–æFW…Õ²vföÆFW$–BuÒÒvÆÂs°¢Ğ¢Ò“°¢v—B÷6fR‚“°¢Ğ ¢gWGW&SÇfö–Câ÷6†÷tÖVF–ÖVçR€¢ÖÅ7G&–ærÂG–æÖ–3â—FVÒÂ°¢&ööÂg&öÔff÷&—FW2ÒfÇ6RÀ¢Ò’7–æ2°¢v—B6†÷tÖöFÄ&÷GFöÕ6†VWCÇfö–Câ€¢6öçFW‡C¢6öçFW‡BÀ¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢'V–ÆFW#¢‡6†VWD6öçFW‡B’Óâ6fT&V€¢6†–ÆC¢w&€¢6†–ÆG&Vã¢°¢Æ—7EF–ÆR€¢ÆVF–æs¢–6öâ€¢—FVÕ²vff÷&—FRuÒÓÒG'VRò–6öç2æff÷&—FU÷&÷VæFVB¢–6öç2æff÷&—FUö&÷&FW%÷&÷VæFVBÀ¢6öÆ÷#¢6öÆ÷'2ç&VD66VçBÀ¢’À¢F—FÆS¢FW‡B†—FVÕ²vff÷&—FRuÒÓÒG'VRòu&VÖ÷fRg&öÒff÷&—FW2r¢tFBFòff÷&—FW2r’À¢öåF¢‚’7–æ2°¢æf–vF÷"ç÷‡6†VWD6öçFW‡B“°¢v—B÷FövvÆTff÷&—FR†—FVÒ“°¢ÒÀ¢’À¢Æ—7EF–ÆR€¢ÆVF–æs¢6öç7B–6öâ„–6öç2æ–æfõö÷WFÆ–æR’À¢F—FÆS¢6öç7BFW‡B‚tFWF–Ç2r’À¢öåF¢‚’°¢æf–vF÷"ç÷‡6†VWD6öçFW‡B“°¢÷6†÷tÖVF–FWF–Ç2†—FVÒ“°¢ÒÀ¢’À¢Æ—7EF–ÆR€¢ÆVF–æs¢6öç7B–6öâ€¢–6öç2æFVÆWFUö÷WFÆ–æRÀ¢6öÆ÷#¢6öÆ÷'2ç&VD66VçBÀ¢’À¢F—FÆS¢6öç7BFW‡B‚tFVÆWFRr’À¢öåF¢‚’7–æ2°¢æf–vF÷"ç÷‡6†VWD6öçFW‡B“° ¢f–æÂ6öæf—&ÖVBÒv—B6†÷tF–ÆösÆ&ööÃâ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†F–Æöt6öçFW‡B’ÓâÆW'DF–Æör€¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚tFVÆWFRÖVÖ÷'“òr’À¢6öçFVçC¢6öç7BFW‡B€¢uF†—2—FVÒv–ÆÂ&R&VÖ÷fVBg&öÒF†—2vÆÆW'’ârÀ¢’À¢7F–öç3¢°¢FW‡D'WGFöâ€¢öå&W76VC¢‚’°¢æf–vF÷"ç÷†F–Æöt6öçFW‡BÂfÇ6R“°¢ÒÀ¢6†–ÆC¢6öç7BFW‡B‚t6æ6VÂr’À¢’À¢f–ÆÆVD'WGFöâ€¢öå&W76VC¢‚’°¢æf–vF÷"ç÷†F–Æöt6öçFW‡BÂG'VR“°¢ÒÀ¢6†–ÆC¢6öç7BFW‡B‚tFVÆWFRr’À¢’À¢ÒÀ¢’À¢“° ¢–b†6öæf—&ÖVBÓÒG'VR’°¢v—BöFVÆWFTÖVF–—FVÒ†—FVÒÂg&öÔff÷&—FW3¢g&öÔff÷&—FW2“°¢Ğ¢ÒÀ¢’À¢ÒÀ¢’À¢’À¢“°¢Ğ ¢fö–B÷6†÷tÖVF–FWF–Ç2„ÖÅ7G&–ærÂG–æÖ–3â—FVÒ’°¢6†÷tF–ÆösÇfö–Câ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†F–Æöt6öçFW‡B’ÓâÆW'DF–Æör€¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚tÖVÖ÷'’FWF–Ç2r’À¢6öçFVçC¢FW‡B€¢uG—S¢G¶—FVÕ²wG—Ru×ÕÆâp¢tFFVC¢G¶—FVÕ²v7&VFVDBuÒóòuVæ¶æ÷vâwÕÆâp¢tFFVB'“¢G¶—FVÕ²v7&VFVD'”æÖRuÒóòsZ7ohŞ *éİyø§yÛÁ5£n¢éİyø§yÜ¦¬Öû"’wÕÆâp¢tföÆFW#¢GµöföÆFW$æÖR‚rG¶—FVÕ²vföÆFW$–Bu×Òr—ÒrÀ¢’À¢7F–öç3¢°¢FW‡D'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡B’À¢6†–ÆC¢6öç7BFW‡B‚t6Æ÷6Rr’À¢’À¢ÒÀ¢’À¢“°¢Ğ ¢7G&–æröföÆFW$æÖR…7G&–ær–B’°¢&WGW&âföÆFW'2æf—'7Ev†W&R€¢†föÆFW"’ÓâföÆFW%²v–BuÒÓÒ–BÀ¢÷$VÇ6S¢‚’Óâ²væÖRs¢uVæ¶æ÷vâwÒÀ¢•²væÖRuÒ27G&–æs°¢Ğ ¢gWGW&SÇfö–Câö÷VäföÆFW"„ÖÅ7G&–ærÂG–æÖ–3âföÆFW"’7–æ2°¢f–æÂ–BÒrG¶föÆFW%²v–Bu×Òs° ¢v—Bæf–vF÷"çW6‚€¢6öçFW‡BÀ¢ÖFW&–ÅvU&÷WFR€¢'V–ÆFW#¢…ò’ÓâvÆÆW'”föÆFW%vR€¢F—FÆS¢rG¶föÆFW%²væÖRu×ÒrÀ¢föÆFW$–C¢–BÀ¢–æ—F–Ä—FV×3¢ö—FV×4f÷$föÆFW"†–B’À¢öäFC¢‡f–FVò’ÓâöFDÖVF–†–BÂf–FVò’À¢öäFVÆWFS¢†—FVÒ’7–æ2°¢v—BöFVÆWFTÖVF–—FVÒ†—FVÒÂg&öÔff÷&—FW3¢–BÓÒvff÷&—FW2r“°¢ÒÀ¢öäFWF–Ç3¢÷6†÷tÖVF–FWF–Ç2À¢öäff÷&—FS¢÷FövvÆTff÷&—FRÀ¢öäÆöæu&W73¢†—FVÒ’Óâ÷6†÷tÖVF–ÖVçR€¢—FVÒÀ¢g&öÔff÷&—FW3¢–BÓÒvff÷&—FW2rÀ¢’À¢’À¢’À¢“° ¢–b†Ö÷VçFVB’6WE7FFR‚‚’·Ò“°¢Ğ ¢Æ—7CÄÖÅ7G&–ærÂG–æÖ–3ãâö—FV×4f÷$föÆFW"…7G&–ær–B’°¢–b†–BÓÒvÆÂr’°¢&WGW&âÖVF–¢çv†W&R‚†—FVÒ’Óâ—FVÕ²vföÆFW$–BuÒÒvff÷&—FW2r¢çFôÆ—7B‚“°¢Ğ ¢–b†–BÓÒvff÷&—FW2r’°¢&WGW&âÖVF–¢çv†W&R‚†—FVÒ’Óà¢—FVÕ²vff÷&—FRuÒÓÒG'VRÇÂ—FVÕ²vföÆFW$–BuÒÓÒvff÷&—FW2r¢çFôÆ—7B‚“°¢Ğ ¢–b†–BÓÒwf–FV÷2r’°¢òòf–FV÷2g&öÒWfW'’föÆFW"V"†W&S²–ÖvW2&RW†6ÇVFVBà¢&WGW&âÖVF–¢çv†W&R‚†—FVÒ’ÓârG¶—FVÕ²wG—Ru×ÒrçFôÆ÷vW$66R‚’ÓÒwf–FVòr¢çFôÆ—7B‚“°¢Ğ ¢&WGW&âÖVF–çv†W&R‚†—FVÒ’Óâ—FVÕ²vföÆFW$–BuÒÓÒ–B’çFôÆ—7B‚“°¢Ğ ¢÷fW'&–FP¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°¢&WGW&âÆ—7Ef–Wr€¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒ#’À¢6†–ÆG&Vã¢°¢&÷r€¢6†–ÆG&Vã¢°¢6öç7BW‡æFVB€¢6†–ÆC¢FW‡B€¢t÷W"ÖVÖ÷&–W2rÀ¢7G–ÆS¢FW‡E7G–ÆR€¢föçE6—¦S¢#RÀ¢föçEvV–v‡C¢föçEvV–v‡Bæ&öÆBÀ¢’À¢’À¢’À¢–6öä'WGFöâæf–ÆÆVB€¢öå&W76VC¢ö7&VFTföÆFW"À¢–6öã¢6öç7B–6öâ„–6öç2æ7&VFUöæWuöföÆFW%ö÷WFÆ–æVB’À¢’À¢ÒÀ¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢‚’À¢6öç7BFW‡B€¢t¶VWF†RÆ—GFÆRÖöÖVçG2F†BÖVâWfW'—F†–ærârÀ¢7G–ÆS¢FW‡E7G–ÆR†6öÆ÷#¢6öÆ÷'2çv†—FSSB’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢#"’À¢w&–Ef–Wræ'V–ÆFW"€¢6‡&–æµw&¢G'VRÀ¢‡—6–73¢6öç7BæWfW%67&öÆÆ&ÆU67&öÆÅ‡—6–72‚’À¢—FVÔ6÷VçC¢föÆFW'2æÆVæwF‚À¢w&–DFVÆVvFS¢6öç7B6Æ—fW$w&–DFVÆVvFUv—F„f—†VD7&÷74†—46÷VçB€¢7&÷74†—46÷VçC¢"À¢7&÷74†—576–æs¢"À¢Ö–ä†—576–æs¢"À¢6†–ÆD7V7E&F–ó¢ãRÀ¢’À¢—FVÔ'V–ÆFW#¢†6öçFW‡BÂ–æFW‚’°¢f–æÂföÆFW"ÒföÆFW'5¶–æFW…Ó°¢f–æÂ6÷VçBÒö—FV×4f÷$föÆFW"‚rG¶föÆFW%²v–Bu×Òr’æÆVæwFƒ° ¢&WGW&âÖFW&–Â€¢6öÆ÷#¢7W&f6T6öÆ÷"À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ#’À¢6†–ÆC¢–æµvVÆÂ€¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ#’À¢öåF¢‚’Óâö÷VäföÆFW"†föÆFW"’À¢öäÆöæu&W73¢‚’Óâ÷6†÷tföÆFW$ÖVçR†föÆFW"’À¢6†–ÆC¢7F6²€¢6†–ÆG&Vã¢°¢FF–ær€¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒb’À¢6†–ÆC¢6öÇVÖâ€¢7&÷74†—4Æ–væÖVçC¢7&÷74†—4Æ–væÖVçBç7F'BÀ¢Ö–ä†—4Æ–væÖVçC¢Ö–ä†—4Æ–væÖVçBæ6VçFW"À¢6†–ÆG&Vã¢°¢6öç7B–6öâ€¢–6öç2æföÆFW%÷&÷VæFVBÀ¢6—¦S¢C"À¢6öÆ÷#¢W'ÆT6öÆ÷"À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢"’À¢FW‡B€¢rG¶föÆFW%²væÖRu×ÒrÀ¢Ö„Æ–æW3¢À¢÷fW&fÆ÷s¢FW‡D÷fW&fÆ÷ræVÆÆ—6—2À¢7G–ÆS¢6öç7BFW‡E7G–ÆR€¢föçEvV–v‡C¢föçEvV–v‡Bæ&öÆBÀ¢’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢R’À¢FW‡B€¢rF6÷VçB—FV×2rÀ¢7G–ÆS¢6öç7BFW‡E7G–ÆR€¢6öÆ÷#¢6öÆ÷'2çv†—FSSBÀ¢föçE6—¦S¢À¢’À¢’À¢ÒÀ¢’À¢’À¢÷6—F–öæVB€¢F÷¢"À¢&–v‡C¢"À¢6†–ÆC¢–6öä'WGFöâ€¢FööÇF—¢tföÆFW"÷F–öç2rÀ¢f—7VÄFVç6—G“¢f—7VÄFVç6—G’æ6ö×7BÀ¢öå&W76VC¢‚’Óâ÷6†÷tföÆFW$ÖVçR†föÆFW"’À¢–6öã¢6öç7B–6öâ€¢–6öç2æÖ÷&U÷fW'E÷&÷VæFVBÀ¢6öÆ÷#¢6öÆ÷'2çv†—FSsÀ¢’À¢’À¢’À¢ÒÀ¢’À¢’À¢“°¢ÒÀ¢’À¢ÒÀ¢“°¢Ğ§Ğ ¦6Æ72vÆÆW'”föÆFW%vRW‡FVæG27FFVgVÅv–FvWB°¢f–æÂ7G&–ærF—FÆS°¢f–æÂ7G&–ærföÆFW$–C°¢f–æÂÆ—7CÄÖÅ7G&–ærÂG–æÖ–3ãâ–æ—F–Ä—FV×3°¢f–æÂgWGW&SÄÖÅ7G&–ærÂG–æÖ–3ãóâgVæ7F–öâ†&ööÂf–FVò’öäFC°¢f–æÂgWGW&SÇfö–CâgVæ7F–öâ„ÖÅ7G&–ærÂG–æÖ–3â’öäFVÆWFS°¢f–æÂfö–BgVæ7F–öâ„ÖÅ7G&–ærÂG–æÖ–3â’öäFWF–Ç3°¢f–æÂgWGW&SÇfö–CâgVæ7F–öâ„ÖÅ7G&–ærÂG–æÖ–3â’öäff÷&—FS°¢f–æÂgWGW&SÇfö–CâgVæ7F–öâ„ÖÅ7G&–ærÂG–æÖ–3â’öäÆöæu&W73° ¢6öç7BvÆÆW'”föÆFW%vR‡°¢7WW"æ¶W’À¢&WV—&VBF†—2çF—FÆRÀ¢&WV—&VBF†—2æföÆFW$–BÀ¢&WV—&VBF†—2æ–æ—F–Ä—FV×2À¢&WV—&VBF†—2æöäFBÀ¢&WV—&VBF†—2æöäFVÆWFRÀ¢&WV—&VBF†—2æöäFWF–Ç2À¢&WV—&VBF†—2æöäff÷&—FRÀ¢&WV—&VBF†—2æöäÆöæu&W72À¢Ò“° ¢÷fW'&–FP¢7FFSÄvÆÆW'”föÆFW%vSâ7&VFU7FFR‚’ÓâôvÆÆW'”föÆFW%vU7FFR‚“°§Ğ ¦6Æ72ôvÆÆW'”föÆFW%vU7FFRW‡FVæG27FFSÄvÆÆW'”föÆFW%vSâ°¢ÆFRÆ—7CÄÖÅ7G&–ærÂG–æÖ–3ãâ—FV×3°¢f–æÂÖÅ7G&–ærÂgWGW&SÅ7G&–æsóãâ÷F„gWGW&W2Ò·Ó°¢f–æÂ6WCÅ7G&–æsâ÷6VÆV7FVD–G2ÒÅ7G&–æsç·Ó°¢&ööÂ÷6VÆV7F–öäÖöFRÒfÇ6S° ¢f–æÂÖÅ7G&–ærÂgWGW&SÅ7G&–æsóãâ÷f–FVõF‡VÖ&æ–ÄgWGW&W2Ò·Ó° ¢gWGW&SÅ7G&–æsóâ÷&W6öÇfT66†VEf–FVõF‚€¢ÖÅ7G&–ærÂG–æÖ–3â—FVÒÀ¢’7–æ2°¢G'’°¢f–æÂÆö6ÅF‚ÒrG¶—FVÕ²wF‚uÒóòrwÒrçG&–Ò‚“° ¢–b†Æö6ÅF‚æ—4æ÷DV×G’b`¢v—Bö—5W6&ÆTvÆÆW'•F‚†Æö6ÅF‚’’°¢&WGW&âÆö6ÅFƒ°¢Ğ ¢f–æÂf–ÆT–BÒ€¢—FVÕ²vf–ÆT–BuÒóğ¢—FVÕ²vG&—fTf–ÆT–BuÒóğ¢rp¢’çFõ7G&–ær‚’çG&–Ò‚“° ¢–b†f–ÆT–Bæ—4V×G’’&WGW&âçVÆÃ° ¢f–æÂ&Vg2Òv—B6†&VE&VfW&Væ6W2ævWD–ç7Fæ6R‚“°¢f–æÂ6fVEF‡2Ò&Vg2ævWE7G&–ær‚vvÆÆW'”Æö6ÅF‡2r“° ¢–b‡6fVEF‡2ÒçVÆÂbb6fVEF‡2æ—4æ÷DV×G’’°¢G'’°¢f–æÂFV6öFVBÒ§6öäFV6öFR‡6fVEF‡2“° ¢–b†FV6öFVB—2Ö’°¢f–æÂ6fVEF‚ÒrG¶FV6öFVE¶f–ÆT–EÒóòrwÒrçG&–Ò‚“° ¢–b‡6fVEF‚æ—4æ÷DV×G’b`¢v—Bö—5W6&ÆTvÆÆW'•F‚‡6fVEF‚’’°¢&WGW&â6fVEFƒ°¢Ğ¢Ğ¢Ò6F6‚…ò’·Ğ¢Ğ ¢f–æÂ6fT–BÒf–ÆT–Bç&WÆ6TÆÂ€¢&VtW‡‡"uµäÕ¦×£Ó•òÕÒr’À¢uòrÀ¢“° ¢f–æÂ—5W'6öæÂÒ—FVÕ²w7F÷&vRuÒÓÒwW'6öæÂs°¢f–æÂ&Vf—‚Ğ¢vÖVF–òG¶—5W'6öæÂòwW'6öæÂr¢w6†&VBwÕòG·6fT–GÕõòs° ¢f–æÂ7W÷'BÒv—BvWDÆ–6F–öå7W÷'DF—&V7F÷'’‚“°¢f–æÂF—&V7F÷'’ÒF—&V7F÷'’€¢rG·7W÷'BçF‡ÒöWFW&æÅ÷76UöÖVF–rÀ¢“° ¢–b‚v—BF—&V7F÷'’æW†—7G2‚’’&WGW&âçVÆÃ° ¢v—Bf÷"†f–æÂVçF—G’–âF—&V7F÷'’æÆ—7B‚’’°¢–b†VçF—G’—2f–ÆR’6öçF–çVS° ¢f–æÂæÖRÒVçF—G’çW&’çF…6VvÖVçG2æÆ7C° ¢–b‚æÖRç7F'G5v—F‚‡&Vf—‚’ÇÀ¢æÖRæVæG5v—F‚‚rç'Br’ÇÀ¢æÖRæVæG5v—F‚‚ræ6ö×ÆWFRr’’°¢6öçF–çVS°¢Ğ ¢f–æÂÖ&¶W"Òf–ÆR‚rG¶VçF—G’çF‡Òæ6ö×ÆWFRr“° ¢G'’°¢–b‚v—BÖ&¶W"æW†—7G2‚’’6öçF–çVS° ¢f–æÂÆVæwF‚Òv—BVçF—G’æÆVæwF‚‚“°¢f–æÂ&V6÷&FVDÆVæwF‚Ò–çBçG'•'6R€¢†v—BÖ&¶W"ç&VD57G&–ær‚’’çG&–Ò‚’À¢“° ¢–b†ÆVæwF‚âbb&V6÷&FVDÆVæwF‚ÓÒÆVæwF‚’°¢&WGW&âVçF—G’çFƒ°¢Ğ¢Ò6F6‚…ò’·Ğ¢Ğ¢Ò6F6‚†W'&÷"’°¢FV'Vu&–çB‚t66†VBf–FVòÆöö·WW'&÷#¢FW'&÷"r“°¢Ğ ¢òòZ7kÍhßÇ"éİyø§yÙ¾"éİyø§yİ¾5£o‹§uçâçføÖ›#Z4HhÙ°ºw^~)Şu)•5£w‹§uçâçfúéİyø§yĞ(€€€É•ÑÕÉ¸¹Õ±°ì(€ô((€ÕÑÕÉ”ñMÑÉ¥¹œüø}É•Í½±Ù•Y¥‘•½Q¡Õµ‰¹…¥±A…Ñ  (€€€5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œø¥Ñ•´°(€€¤ì(€€€™¥¹…°™¥±•%€ô€ (€€€€€¥Ñ•µl™¥±•%t€üü(€€€€€¥Ñ•µl‘É¥Ù•¥±•%t€üü(€€€€€¥Ñ•µl¥t€üü(€€€€€€œœ(€€€€¤¹Ñ½MÑÉ¥¹œ ¤¹ÑÉ¥´ ¤ì((€€€™¥¹…°•á¥ÍÑ¥¹œ€ô}Ù¥‘•½Q¡Õµ‰¹…¥±ÕÑÕÉ•Ím™¥±•%‘tì(€€€¥˜€¡•á¥ÍÑ¥¹œ€„ô¹Õ±°¤É•ÑÕÉ¸•á¥ÍÑ¥¹œì((€€€±…Ñ”™¥¹…°ÕÑÕÉ”ñMÑÉ¥¹œüø™ÕÑÕÉ”ì((€€€™ÕÑÕÉ”€ôÕÑÕÉ”ñMÑÉ¥¹œüø¹µ¥É½Ñ…Í¬  ¤…Íå¹Œì(€€€€€ÑÉäì(€€€€€€€™¥¹…°Ù¥‘•½A…Ñ €ô…İ…¥Ğ}É•Í½±Ù•…¡•‘Y¥‘•½A…Ñ ¡¥Ñ•´¤ì(€€€€€€€¥˜€¡Ù¥‘•½A…Ñ €ôô¹Õ±°¤É•ÑÕÉ¸¹Õ±°ì((€€€€€€€™¥¹…°Ù¥‘•½¥±”€ô¥±”¡Ù¥‘•½A…Ñ ¤ì(€€€€€€€¥˜€ ……İ…¥ĞÙ¥‘•½¥±”¹•á¥ÍÑÌ ¤¤É•ÑÕÉ¸¹Õ±°ì((€€€€€€€€¼¼Q•µÁ½É…Éä‘¥É•Ñ½Éä‹§uçâçnÀÖüÓZ7ìºw^~)Şvwî×ŸŠwÊkÍhİÇ"éİyø§yÛ¾5£\°‹§uçâçvúéİyø§yÜ(€€€€€€€€¼¼Ñ¡Õµ‰¹…¥°¦àÖÛãZ4\\İ\Ü\™XİÜKºw^~)ŞwqÈºw^~)ŞvohÛd
         final support = await getApplicationSupportDirectory();
         final safeId = fileId.replaceAll(
           RegExp(r'[^A-Za-z0-9_-]'),
@@ -7412,18 +3656,7 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: surfaceColor,
-        title: const Text('à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¿à¦¤ à¦«à¦¾à¦‡à¦² à¦®à§à¦›à¦¬à§‡?'),
-        content: Text(
-          '${selectedItems.length}à¦Ÿà¦¿ à¦›à¦¬à¦¿/à¦­à¦¿à¦¡à¦¿à¦“ à¦—à§à¦¯à¦¾à¦²à¦¾à¦°à¦¿ à¦¥à§‡à¦•à§‡ à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¾ à¦¹à¦¬à§‡à¥¤',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('à¦¬à¦¾à¦¤à¦¿à¦²'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('à¦®à§à¦›à§‡ à¦«à§‡à¦²à§‹'),
+        title: const Text('5£~ÀÖÛãZ7éºw^~)ŞvïhÒ 5£flÖsòr’À¢6öçFVçC¢FW‡B€¢rG·6VÆV7FVD—FV×2æÆVæwF‡î×ŸŠwûò.×ŸŠwºË§uçâçrúÓZ6oî×ŸŠwÊeÍhß¾5£~Âéİyø§yÜ¦”ÖÜr.×ŸŠwüZ5Èhß²ºw^~)Şv)¹5£}œ°(€€€€€€€€¤°(€€€€€€€…Ñ¥½¹Ìèl(€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ°™…±Í”¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ ¾°ÖÛû§uçâçbr’À¢’À¢f–ÆÆVD'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡BÂG'VR’À¢6†–ÆC¢6öç7BFW‡B‚sZ6fî×ŸŠwÊjÍhÛË'),
           ),
         ],
       ),
@@ -7495,8 +3728,7 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
       final length = await file.length();
       if (length <= 0) return false;
 
-      // App-à¦à¦° à¦¸à§à¦¥à¦¾à§Ÿà§€ media cache à¦¹à¦²à§‡ .complete marker-à¦“ à¦¯à¦¾à¦šà¦¾à¦‡ à¦•à¦°à§‹à¥¤
-      // à¦ªà§à¦°à§‹à¦¨à§‹ picker path-à¦ marker à¦¨à¦¾ à¦¥à¦¾à¦•à¦²à§‡à¦“ à¦¸à§‡à¦Ÿà¦¿ à¦—à§à¦°à¦¹à¦£à¦¯à§‹à¦—à§à¦¯à¥¤
+      // App-5£@€ÖÚSZ7ğYYXHØXÚHºw^~)Şvl®×ŸŠwÈ˜ÛÛ\]HX\šÙ\‹ºw^~)ŞtÈhßš5£\€Öœ»§uçâç@¢òòš£Z6rÍhÛ picker path-ºw^~)Şw marker 5£x€ÖùSZ7äÈºw^~)ŞvqÍhß 5£vÀÖºóZ7óMhÔ
       if (path.contains('/eternal_space_media/')) {
         final marker = File('$path.complete');
         if (!await marker.exists()) return false;
@@ -7531,35 +3763,20 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
 
     future = Future<String?>.microtask(() async {
       try {
-        // à§§. à¦†à¦—à§‡ item-à¦à¦° à¦¨à¦¿à¦œà§‡à¦° local path à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‹à¥¤
-        final localPath = (item['path'] ?? '').toString().trim();
-
-        if (localPath.isNotEmpty &&
-            await _isUsableGalleryPath(localPath)) {
-          return localPath;
-        }
-
-        if (fileId.isEmpty) return null;
-
-        final isPersonal = item['storage'] == 'personal';
-        final isShared = !isPersonal;
-
-        final prefs = await SharedPreferences.getInstance();
-        final savedPaths = prefs.getString('galleryLocalPaths');
-
-        Map<String, dynamic> pathMap = {};
-
-        if (savedPaths != null && savedPaths.isNotEmpty) {
-          try {
-            final decoded = jsonDecode(savedPaths);
-
-            if (decoded is Map) {
-              pathMap = Map<String, dynamic>.from(decoded);
-            }
-          } catch (_) {}
-        }
-
-        // à§¨. SharedPreferences-à¦ à¦¸à¦‚à¦°à¦•à§à¦·à¦¿à¦¤ path à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‹à¥¤
+        // ºw^~)Şw. 5£¥Ñ•´´ÖZ7çhĞ local path)ª5£fTÖûâ.×ŸŠwÛZ5ˆš[˜[ØØ[]H
+][VÉÜ]	×HÏÈ	ÉÊKÔİš[™Ê
+Kš[J
+NÂ‚ˆYˆ
+ØØ[]š\Ó›İ[\H	‰‚ˆ]ØZ]Ú\Õ\ØX›QØ[\T]
+ØØ[]
+JHÂˆ™]\›ˆØØ[]ÂˆB‚ˆYˆ
+š[RYš\Ñ[\JH™]\›ˆ[Â‚ˆš[˜[\Ô\œÛÛ˜[H][VÉÜİÜ˜YÙI×HOH	Ü\œÛÛ˜[	ÎÂˆš[˜[\ÔÚ\™YHZ\Ô\œÛÛ˜[Â‚ˆš[˜[™YœÈH]ØZ]Ú\™Y™Y™\™[˜Ù\Ë™Ù][œİ[˜ÙJ
+NÂˆš[˜[Ø]™Y]ÈH™YœË™Ù]İš[™Ê	ÙØ[\SØØ[]ÉÊNÂ‚ˆX\İš[™Ë[˜[ZXÏˆ]X\HßNÂ‚ˆYˆ
+Ø]™Y]ÈOH[	‰ˆØ]™Y]Ëš\Ó›İ[\JHÂˆHÂˆš[˜[XÛÙYHœÛÛ‘XÛÙJØ]™Y]ÊNÂ‚ˆYˆ
+XÛÙY\ÈX\
+HÂˆ]X\HX\İš[™Ë[˜[ZXÏ‹™œ›ÛJXÛÙY
+NÂˆBˆHØ]Ú
+ÊHßBˆB‚ˆËÊzˆÚ\™Y™Y™\™[˜Ù\ËcÈºw^~)Şv`hİÍ5£~Á…Ñ €ÖœZ7mî×ŸŠwŠeMhÛd
         final savedPath = (pathMap[fileId] ?? '').toString().trim();
 
         if (savedPath.isNotEmpty &&
@@ -7571,89 +3788,22 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
           pathMap.remove(fileId);
         }
 
-        // à§©. à¦†à¦—à§‡à¦° à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡à§‡à¦° à¦¸à§à¦¥à¦¾à§Ÿà§€ cache à¦–à§‹à¦à¦œà§‹à¥¤
-        final cachedPath = await SpaceSyncService.getCachedMediaPath(
-          fileId,
-          shared: isShared,
-        );
+        // ºw^~)Şu. 5£éİyø§yĞ¦„ÖšƒZ6èMhĞ 5£v”Öü66†R.×ŸŠwü³Z7rî×ŸŠwˆš[˜[ØXÚY]H]ØZ]ÜXÙTŞ[˜ÔÙ\šXÙK™Ù]ØXÚYYYXT]
+ˆš[RYˆÚ\™Yˆ\ÔÚ\™Yˆ
+NÂ‚ˆYˆ
+ØXÚY]OH[	‰ˆØXÚY]š\Ó›İ[\JHÂˆš[˜[ØXÚYš[HHš[JØXÚY]
+NÂ‚ˆYˆ
+]ØZ]ØXÚYš[K™^\İÊ
+H	‰‚ˆ]ØZ]ØXÚYš[K›[™İ
 
-        if (cachedPath != null && cachedPath.isNotEmpty) {
-          final cachedFile = File(cachedPath);
-
-          if (await cachedFile.exists() &&
-              await cachedFile.length() > 0) {
-            pathMap[fileId] = cachedPath;
-            await prefs.setString(
-              'galleryLocalPaths',
-              jsonEncode(pathMap),
-            );
-
-            return cachedPath;
-          }
-        }
-
-        // à§ª. Cache à¦¨à¦¾ à¦¥à¦¾à¦•à¦²à§‡à¦‡ à¦¶à§à¦§à§ à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à§‹à¥¤
-        final originalName =
-            (item['driveFileName'] ?? item['name'] ?? 'memory')
-                .toString();
-
-        final safeName = '${item['id'] ?? fileId}_$originalName';
-
-        final downloadedPath = isPersonal
-            ? await SpaceSyncService.downloadPersonalMedia(
-                fileId,
-                saveAs: safeName,
-              )
-            : await SpaceSyncService.downloadMedia(
-                fileId,
-                saveAs: safeName,
-              );
-
-        final downloadedFile = File(downloadedPath);
-
-        if (!await downloadedFile.exists() ||
-            await downloadedFile.length() == 0) {
-          throw Exception('à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à¦¾ à¦«à¦¾à¦‡à¦² à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-        }
-
-        // à§«. à¦­à¦¬à¦¿à¦·à§à¦¯à¦¤à§‡ à¦ªà§à¦¨à¦°à¦¾à§Ÿ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à¦¾à¦° à¦œà¦¨à§à¦¯ path à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à§‹à¥¤
-        pathMap[fileId] = downloadedPath;
-
-        await prefs.setString(
-          'galleryLocalPaths',
-          jsonEncode(pathMap),
-        );
-
-        return downloadedPath;
-      } catch (error) {
-        debugPrint('Gallery download error: $error');
-        return null;
-      }
-    });
-
-    // à¦¸à¦«à¦² Future à¦•à§à¦¯à¦¾à¦¶à§‡ à¦°à¦¾à¦–à§‹, à¦¯à¦¾à¦¤à§‡ à¦à¦•à¦‡ à¦ªà§‡à¦œ rebuild à¦¹à¦²à§‡ à¦†à¦¬à¦¾à¦°
-    // path lookup/download à¦¶à§à¦°à§ à¦¨à¦¾ à¦¹à§Ÿà¥¤ à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦²à§‡ retry à¦•à¦°à¦¾à¦° à¦¸à§à¦¯à§‹à¦— à¦¥à¦¾à¦•à¦¬à§‡à¥¤
-    future.then((path) {
-      if (path == null && identical(_pathFutures[key], future)) {
-        _pathFutures.remove(key);
-      }
-    });
-
-    _pathFutures[key] = future;
-    return future;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: Text(widget.title),
-        actions: [
-          if (_selectionMode)
-            IconButton(
-              tooltip: 'à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¿à¦¤ à¦«à¦¾à¦‡à¦² à¦®à§à¦›à§à¦¨',
+Hˆ
+HÂˆ]X\Ùš[RYHHØXÚY]Âˆ]ØZ]™YœËœÙ]İš[™Êˆ	ÙØ[\SØØ[]ÉËˆœÛÛ‘[˜ÛÙJ]X\
+Kˆ
+NÂ‚ˆ™]\›ˆØXÚY]ÂˆBˆB‚ˆËÈ.×ŸŠw‹ˆØXÚHhŞ 5£~TÖør.×ŸŠwüZ4Hhß‰5£o.éİyø§yÔ¦TÖ¶@¢f–æÂ÷&–v–æÄæÖRĞ¢†—FVÕ²vG&—fTf–ÆTæÖRuÒóò—FVÕ²væÖRuÒóòvÖVÖ÷'’r¢çFõ7G&–ær‚“° ¢f–æÂ6fTæÖRÒrG¶—FVÕ²v–BuÒóòf–ÆT–GÕòF÷&–v–æÄæÖRs° ¢f–æÂF÷væÆöFVEF‚Ò—5W'6öæÀ¢òv—B76U7–æ56W'f–6RæF÷væÆöEW'6öæÄÖVF–€¢f–ÆT–BÀ¢6fT3¢6fTæÖRÀ¢¢¢v—B76U7–æ56W'f–6RæF÷væÆöDÖVF–€¢f–ÆT–BÀ¢6fT3¢6fTæÖRÀ¢“° ¢f–æÂF÷væÆöFVDf–ÆRÒf–ÆR†F÷væÆöFVEF‚“° ¢–b‚v—BF÷væÆöFVDf–ÆRæW†—7G2‚’ÇÀ¢v—BF÷væÆöFVDf–ÆRæÆVæwF‚‚’ÓÒ’°¢F‡&÷rW†6WF–öâ‚sZ7âMhÛËºw^~)Şu)•5£x€Öø{§uçâçbš£Z6÷î×ŸŠwŠkÍhß¨5£Pœ¤ì(€€€€€€€ô((€€€€€€€€¼¼‹§uçâçl¸‹§uçâçv°ÖüÓZ7qÈºw^~)ŞvğMhÙ¾ºw^~)Şw)¬5£~°Öû.×ŸŠwÛZ4hÙÍºw^~)Şw path"éİyø§yÙ‚5£w4Ö2Z6rî×ŸŠwˆ]X\Ùš[RYHHİÛ›ØYY]Â‚ˆ]ØZ]™YœËœÙ]İš[™Êˆ	ÙØ[\SØØ[]ÉËˆœÛÛ‘[˜ÛÙJ]X\
+Kˆ
+NÂ‚ˆ™]\›ˆİÛ›ØYY]ÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	ÑØ[\HİÛ›ØY\œ›Üˆ	\œ›Ü‰ÊNÂˆ™]\›ˆ[ÂˆBˆJNÂ‚ˆËÈºw^~)Şvjî×ŸŠwˆ]\™Hhİ¯5£‹§uçâçføÖ²Â.×ŸŠwûãZ5Èhİ‡"éİyø§yÛÇºw^~)Şt rebuild"éİyø§yÙ²ºw^~)Şw)†5£~À(€€€€¼¼Á…Ñ ±½½­ÕÀ½‘½İ¹±½…¦ØÖœ.×ŸŠw›â.×ŸŠwû§uçâçBšÃZ7ìhÕ 5£oÉ•ÑÉä‹§uçâçvÀÖZ6kÍh× 5£~TÖö@¢gWGW&RçF†Vâ‚‡F‚’°¢–b‡F‚ÓÒçVÆÂbb–FVçF–6Â…÷F„gWGW&W5¶¶W•ÒÂgWGW&R’’°¢÷F„gWGW&W2ç&VÖ÷fR†¶W’“°¢Ğ¢Ò“° ¢÷F„gWGW&W5¶¶W•ÒÒgWGW&S°¢&WGW&âgWGW&S°¢Ğ ¢÷fW'&–FP¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°¢&WGW&â66fföÆB€¢&6¶w&÷VæD6öÆ÷#¢&6¶w&÷VæD6öÆ÷"À¢&#¢&"€¢&6¶w&÷VæD6öÆ÷#¢&6¶w&÷VæD6öÆ÷"À¢F—FÆS¢FW‡B‡v–FvWBçF—FÆR’À¢7F–öç3¢°¢–b…÷6VÆV7F–öäÖöFR¢–6öä'WGFöâ€¢FööÇF—¢sZ7ìhİ¾5£~‹§uçâçnøÖ"Z6fÍhØ',
               onPressed: _selectedIds.isEmpty ? null : _deleteSelectedItems,
               icon: const Icon(Icons.delete_outline_rounded),
             ),
@@ -7671,7 +3821,7 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
               color: pinkColor,
             ),
             label: Text(
-              _selectionMode ? 'à¦¬à¦¾à¦¤à¦¿à¦²' : 'à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¨',
+              _selectionMode ? /¬5£vşéİyø§yØœ€è€œÖûZ7ohØ',
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
@@ -8048,1159 +4198,126 @@ class _GalleryMediaViewerPageState
               if (path == null) {
                 return const Center(
                   child: Text(
-                    'à¦«à¦¾à¦‡à¦² à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦‡à¦¨à§à¦Ÿà¦¾à¦°à¦¨à§‡à¦Ÿ à¦“ Drive à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‹à¥¤',
-                    textAlign: TextAlign.center,
-                  ),
-                );
-              }
-
-              if (!isVideo) {
-                return Center(
-                  child: InteractiveViewer(
-                    minScale: 0.5,
-                    maxScale: 5,
-                    child: Image.file(
-                      File(path),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) {
-                        return const Text('à¦›à¦¬à¦¿à¦Ÿà¦¿ à¦–à§‹à¦²à¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤');
-                      },
-                    ),
-                  ),
-                );
-              }
-
-              return _GalleryVideoPlayer(
-                key: ValueKey(path),
-                path: path,
-                isActive: index == currentIndex,
-                onPrevious: () => _goTo(_previousVideoIndex(index)),
-                onNext: () => _goTo(_nextVideoIndex(index)),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _GalleryVideoPlayer extends StatefulWidget {
-  final String path;
-  final bool isActive;
-  final VoidCallback? onPrevious;
-  final VoidCallback? onNext;
-
-  const _GalleryVideoPlayer({
-    super.key,
-    required this.path,
-    this.isActive = true,
-    required this.onPrevious,
-    required this.onNext,
-  });
-
-  @override
-  State<_GalleryVideoPlayer> createState() =>
-      _GalleryVideoPlayerState();
-}
-
-class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
-  VideoPlayerController? _controller;
-  String? _error;
-  String? _optimizedPath;
-  bool _isOptimizing = false;
-  bool _hasAttemptedOptimization = false;
-  bool _showControls = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.isActive) unawaited(_initialize());
-  }
-
-  @override
-  void didUpdateWidget(covariant _GalleryVideoPlayer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isActive == widget.isActive) return;
-    final controller = _controller;
-    if (!widget.isActive) {
-      if (controller != null && controller.value.isInitialized) {
-        unawaited(controller.setVolume(0).then((_) => controller.pause()));
-      }
-    } else if (controller == null) {
-      unawaited(_initialize());
-    } else if (controller.value.isInitialized) {
-      unawaited(controller.setVolume(1).then((_) => controller.play()));
-    }
-  }
-
-  Future<void> _initialize([String? sourcePath]) async {
-    if (!widget.isActive) return;
-    final video = VideoPlayerController.file(File(sourcePath ?? _optimizedPath ?? widget.path));
-    _controller = video;
-
-    try {
-      await video.initialize();
-
-      if (!mounted) {
-        await video.dispose();
-        return;
-      }
-
-      setState(() {});
-      await video.setVolume(widget.isActive ? 1.0 : 0.0);
-      if (widget.isActive) await video.play();
-    } catch (error) {
-      await video.dispose();
-      if (identical(_controller, video)) _controller = null;
-
-      if (!mounted) return;
-      if (!_hasAttemptedOptimization) {
-        // à¦ªà§à¦°à§‹à¦¨à§‹/HEVC à¦­à¦¿à¦¡à¦¿à¦“ à¦ªà§à¦°à¦¥à¦®à¦¬à¦¾à¦° à¦¨à¦¾ à¦šà¦²à¦²à§‡ à¦¨à¦¿à¦œà§‡ à¦¥à§‡à¦•à§‡à¦‡ MP4/H.264-à¦ à¦°à§‚à¦ªà¦¾à¦¨à§à¦¤à¦° à¦•à¦°à§‹à¥¤
-        unawaited(_tryOptimizeAndPlay());
-        return;
-      }
-      setState(() {
-        _error = 'à¦­à¦¿à¦¡à¦¿à¦“ à¦–à§‹à¦²à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿ à¦…à¦¸à¦®à§à¦ªà§‚à¦°à§à¦£ à¦¬à¦¾ à¦à¦‡ à¦¡à¦¿à¦­à¦¾à¦‡à¦¸à§‡ à¦…à¦¸à¦®à¦°à§à¦¥à¦¿à¦¤ à¦¹à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¥¤';
-      });
-    }
-  }
-
-  Future<void> _tryOptimizeAndPlay({bool force = false}) async {
-    if (_isOptimizing || (_hasAttemptedOptimization && !force)) return;
-    _hasAttemptedOptimization = true;
-    setState(() {
-      _isOptimizing = true;
-      _error = null;
-    });
-    try {
-      final support = await getApplicationSupportDirectory();
-      final optimizedDirectory = Directory('${support.path}/orbit_optimized_videos');
-      await optimizedDirectory.create(recursive: true);
-      final sourceName = File(widget.path).uri.pathSegments.last
-          .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-      final sourceHash = widget.path.codeUnits.fold<int>(
-        17,
-        (hash, unit) => (hash * 31 + unit) & 0x7fffffff,
-      );
-      final optimizedFile = File(
-        '${optimizedDirectory.path}/${sourceName}_${sourceHash}_720p.mp4',
-      );
-
-      if (force && await optimizedFile.exists()) {
-        await optimizedFile.delete();
-      }
-      if (!await optimizedFile.exists() || await optimizedFile.length() <= 0) {
-        final result = await VideoCompress.compressVideo(
-          widget.path,
-          quality: VideoQuality.Res1280x720Quality,
-          deleteOrigin: false,
-          includeAudio: true,
-        );
-        final compressed = result?.file;
-        if (compressed == null ||
-            !await compressed.exists() ||
-            await compressed.length() <= 0) {
-          throw Exception('à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦•à¦°à¦¾ à¦«à¦¾à¦‡à¦² à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-        }
-        if (await optimizedFile.exists()) await optimizedFile.delete();
-        await compressed.copy(optimizedFile.path);
-      }
-
-      if (await optimizedFile.length() <= 0) {
-        throw Exception('à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦•à¦°à¦¾ à¦­à¦¿à¦¡à¦¿à¦“ à¦–à¦¾à¦²à¦¿à¥¤');
-      }
-      _optimizedPath = optimizedFile.path;
-      await _controller?.dispose();
-      _controller = null;
-      await _initialize(optimizedFile.path);
-    } catch (error) {
-      debugPrint('Automatic video optimization failed: $error');
-      if (mounted) {
-        setState(() {
-          _error = 'à¦­à¦¿à¦¡à¦¿à¦“ à¦¸à§à¦¬à§Ÿà¦‚à¦•à§à¦°à¦¿à§Ÿà¦­à¦¾à¦¬à§‡ à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _isOptimizing = false);
-    }
-  }
-
-  Future<void> _togglePlayback() async {
-    final video = _controller;
-    if (!widget.isActive || video == null || !video.value.isInitialized) return;
-
-    if (video.value.isPlaying) {
-      await video.pause();
-    } else {
-      await video.play();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final video = _controller;
-
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.video_file_outlined, size: 42, color: pinkColor),
-              const SizedBox(height: 10),
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 14),
-              FilledButton.icon(
-                onPressed: _isOptimizing ? null : () => _tryOptimizeAndPlay(force: true),
-                icon: _isOptimizing
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.auto_fix_high_rounded),
-                label: Text(_isOptimizing ? 'à¦­à¦¿à¦¡à¦¿à¦“ à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦¹à¦šà§à¦›à§‡â€¦' : 'à¦…à¦ªà¦Ÿà¦¿à¦®à¦¾à¦‡à¦œ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà¦¾à¦²à¦¾à¦“'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (video == null || !video.value.isInitialized) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    return Center(
-      child: AspectRatio(
-        aspectRatio: video.value.aspectRatio,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _showControls = !_showControls),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              VideoPlayer(video),
-              if (_showControls) Center(child: IconButton(onPressed: _togglePlayback, iconSize: 44, color: Colors.white, icon: Icon(video.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded))),
-              if (_showControls) Positioned(
-              left: 8,
-              right: 8,
-              bottom: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      tooltip: 'à¦†à¦—à§‡à¦° à¦­à¦¿à¦¡à¦¿à¦“',
-                      onPressed: widget.onPrevious,
-                      icon: const Icon(Icons.skip_previous_rounded),
-                    ),
-                    Expanded(
-                      child: VideoProgressIndicator(
-                        video,
-                        allowScrubbing: true,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 4,
-                        ),
-                      ),
-                    ),
-                    ValueListenableBuilder<VideoPlayerValue>(
-                      valueListenable: video,
-                      builder: (context, value, child) {
-                        return IconButton(
-                          tooltip: value.isPlaying ? 'Pause' : 'Play',
-                          onPressed: _togglePlayback,
-                          icon: Icon(
-                            value.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                          ),
-                        );
-                      },
-                    ),
-                    IconButton(
-                      tooltip: 'à¦ªà¦°à§‡à¦° à¦­à¦¿à¦¡à¦¿à¦“',
-                      onPressed: widget.onNext,
-                      icon: const Icon(Icons.skip_next_rounded),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        ),
-      ),
-    );
-  }
-}
-
-
-class ChatVoicePlayer extends StatefulWidget {
-  const ChatVoicePlayer({
-    super.key,
-    required this.path,
-    this.durationMs,
-  });
-
-  final String path;
-  final int? durationMs;
-
-  @override
-  State<ChatVoicePlayer> createState() => _ChatVoicePlayerState();
-}
-
-class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
-  AudioPlayer? _player;
-  StreamSubscription<PlayerState>? _stateSubscription;
-  StreamSubscription<Duration>? _durationSubscription;
-  StreamSubscription<Duration>? _positionSubscription;
-  bool _isPlaying = false;
-  bool _isPreparing = false;
-  bool _sourceLoaded = false;
-  Future<void>? _sourceLoadFuture;
-  Duration? _duration;
-  Duration _position = Duration.zero;
-  double _playbackRate = 1.0;
-
-  String _formatDuration(Duration duration) {
-    final totalSeconds = duration.inSeconds;
-    final minutes = totalSeconds ~/ 60;
-    final seconds = totalSeconds % 60;
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    final milliseconds = widget.durationMs ?? 0;
-    if (milliseconds > 0) {
-      _duration = Duration(milliseconds: milliseconds);
-    } else {
-      // Older voice messages do not contain duration metadata; read it in the
-      // background so the total duration appears before the user presses Play.
-      unawaited(_preloadDuration());
-    }
-  }
-
-  Future<void> _preloadDuration() async {
-    try {
-      final player = await _getPlayer();
-      await _loadSource(player);
-    } catch (error) {
-      debugPrint('Voice duration preload failed: $error');
-    }
-  }
-
-  Future<AudioPlayer> _getPlayer() async {
-    var player = _player;
-    if (player != null) return player;
-
-    player = AudioPlayer();
-    _player = player;
-    _stateSubscription = player.onPlayerStateChanged.listen((state) {
-      if (!mounted) return;
-      if (state == PlayerState.playing && !_isPlaying) {
-        unawaited(InteractionFeedbackSettings.vibrate());
-      }
-      setState(() {
-        _isPlaying = state == PlayerState.playing;
-        if (state == PlayerState.completed && _duration != null) {
-          _position = _duration!;
-        }
-      });
-    });
-    _durationSubscription = player.onDurationChanged.listen((duration) {
-      if (!mounted) return;
-      setState(() => _duration = duration);
-    });
-    _positionSubscription = player.onPositionChanged.listen((position) {
-      if (!mounted) return;
-      setState(() => _position = position);
-    });
-    // Keep the local audio source available after completion so replaying
-    // a voice message starts reliably from the beginning.
-    await player.setReleaseMode(ReleaseMode.stop);
-    await player.setPlaybackRate(_playbackRate);
-    return player;
-  }
-
-  Future<void> _loadSource(AudioPlayer player) {
-    if (_sourceLoaded) return Future<void>.value();
-    final existingLoad = _sourceLoadFuture;
-    if (existingLoad != null) return existingLoad;
-    final load = _loadSourceInternal(player);
-    _sourceLoadFuture = load;
-    return load;
-  }
-
-  Future<void> _loadSourceInternal(AudioPlayer player) async {
-    try {
-      await player.setSource(DeviceFileSource(widget.path));
-      _sourceLoaded = true;
-      final actualDuration = await player.getDuration();
-      if (actualDuration != null && mounted) {
-        setState(() => _duration = actualDuration);
-      }
-    } catch (_) {
-      _sourceLoadFuture = null;
-      rethrow;
-    }
-  }
-
-  Future<void> _togglePlayback() async {
-    if (_isPreparing) return;
-    setState(() => _isPreparing = true);
-    try {
-      final player = await _getPlayer();
-
-      if (player.state == PlayerState.playing) {
-        await player.pause();
-      } else if (player.state == PlayerState.paused) {
-        await player.resume();
-      } else {
-        // Load metadata first so the full duration appears before playback starts.
-        await _loadSource(player);
-        if (player.state == PlayerState.completed) {
-          await player.seek(Duration.zero);
-          if (mounted) setState(() => _position = Duration.zero);
-        }
-        await player.setPlaybackRate(_playbackRate);
-        await player.resume();
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('à¦­à§Ÿà§‡à¦¸ à¦®à§‡à¦¸à§‡à¦œ à¦šà¦¾à¦²à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isPreparing = false);
-    }
-  }
-
-  Future<void> _cyclePlaybackRate() async {
-    final nextRate = _playbackRate == 1.0
-        ? 2.0
-        : _playbackRate == 2.0
-            ? 4.0
-            : 1.0;
-
-    setState(() => _playbackRate = nextRate);
-
-    final player = _player;
-    if (player != null) {
-      try {
-        await player.setPlaybackRate(nextRate);
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('à¦ªà§à¦²à§‡à¦¬à§à¦¯à¦¾à¦•à§‡à¦° à¦—à¦¤à¦¿ à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-          );
-        }
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _stateSubscription?.cancel();
-    _durationSubscription?.cancel();
-    _positionSubscription?.cancel();
-    final player = _player;
-    if (player != null) unawaited(player.dispose());
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total = _duration == null ? '--:--' : _formatDuration(_duration!);
-    final elapsed = _formatDuration(_position);
-    return Container(
-      width: 270,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: _isPlaying ? 'Pause voice message' : 'Play voice message',
-            onPressed: _isPreparing ? null : _togglePlayback,
-            icon: _isPreparing
-                ? const SizedBox(
-                    width: 25,
-                    height: 25,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: pinkColor,
-                    ),
-                  )
-                : Icon(
-                    _isPlaying
-                        ? Icons.pause_circle_filled_rounded
-                        : Icons.play_circle_fill_rounded,
-                    color: pinkColor,
-                    size: 34,
-                  ),
-          ),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: 32,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final durationMs = (_duration?.inMilliseconds ?? 0).clamp(0, 1 << 31);
-                      final positionMs = _position.inMilliseconds.clamp(0, durationMs);
-                      final progress = durationMs <= 0 ? 0.0 : positionMs / durationMs;
-                      return Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          CustomPaint(
-                            size: Size(constraints.maxWidth, 30),
-                            painter: _VoiceWaveformPainter(progress: progress),
-                          ),
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 1,
-                              activeTrackColor: Colors.transparent,
-                              inactiveTrackColor: Colors.transparent,
-                              thumbColor: pinkColor,
-                              overlayColor: pinkColor.withValues(alpha: 0.16),
-                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 11),
-                            ),
-                            child: Slider(
-                              min: 0,
-                              max: durationMs > 0 ? durationMs.toDouble() : 1,
-                              value: durationMs > 0 ? positionMs.toDouble() : 0,
-                              onChanged: durationMs <= 0 ? null : (value) {
-                                final target = Duration(milliseconds: value.round());
-                                setState(() => _position = target);
-                                unawaited(_player?.seek(target) ?? Future<void>.value());
-                              },
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                Text(
-                  '$elapsed / $total',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 4),
-          TextButton(
-            onPressed: _cyclePlaybackRate,
-            style: TextButton.styleFrom(
-              minimumSize: const Size(44, 36),
-              padding: const EdgeInsets.symmetric(horizontal: 7),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(
-              '${_playbackRate.toInt()}Ã—',
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VoiceWaveformPainter extends CustomPainter {
-  _VoiceWaveformPainter({required this.progress});
-  final double progress;
-  static const List<double> _heights = [
-    0.28, 0.52, 0.38, 0.72, 0.46, 0.88, 0.58, 0.34, 0.66, 0.95,
-    0.43, 0.61, 0.31, 0.78, 0.50, 0.90, 0.40, 0.64, 0.35, 0.82,
-    0.55, 0.29, 0.70, 0.48, 0.93, 0.37, 0.59, 0.76, 0.42, 0.67,
-    0.33, 0.86, 0.51, 0.73, 0.39, 0.62, 0.97, 0.44, 0.56, 0.30,
-  ];
-  @override
-  void paint(Canvas canvas, Size size) {
-    final active = Paint()..color = pinkColor..strokeWidth = 2.2..strokeCap = StrokeCap.round;
-    final inactive = Paint()..color = Colors.white38..strokeWidth = 2.2..strokeCap = StrokeCap.round;
-    final step = size.width / _heights.length;
-    final playedWidth = size.width * progress.clamp(0.0, 1.0);
-    for (var i = 0; i < _heights.length; i++) {
-      final x = step * i + step / 2;
-      final h = 5 + _heights[i] * (size.height - 7);
-      canvas.drawLine(Offset(x, (size.height - h) / 2), Offset(x, (size.height + h) / 2), x <= playedWidth ? active : inactive);
-    }
-  }
-  @override
-  bool shouldRepaint(covariant _VoiceWaveformPainter oldDelegate) => oldDelegate.progress != progress;
-}
-
-class ImageViewerPage extends StatelessWidget {
-  final String path;
-
-  const ImageViewerPage({
-    super.key,
-    required this.path,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black),
-      body: Center(
-        child: InteractiveViewer(
-          minScale: 0.5,
-          maxScale: 5,
-          child: Image.file(
-            File(path),
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) {
-              return const Text('à¦›à¦¬à¦¿à¦Ÿà¦¿ à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤');
-            },
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class VideoViewerPage extends StatelessWidget {
-  final String path;
-
-  const VideoViewerPage({
-    super.key,
-    required this.path,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black),
-      body: _GalleryVideoPlayer(
-        path: path,
-        onPrevious: null,
-        onNext: null,
-      ),
-    );
-  }
-}
-
-// ============================================================
-// SPECIAL DATES
-// ============================================================
-
-class SpecialDatesPage extends StatefulWidget {
-  const SpecialDatesPage({super.key});
-
-  @override
-  State<SpecialDatesPage> createState() => _SpecialDatesPageState();
-}
-
-class _SpecialDatesPageState extends State<SpecialDatesPage> {
-  List<Map<String, dynamic>> dates = [];
-
-  @override
-  void initState() {
-    super.initState();
-    dates = SpaceStore.readList('specialDates');
-    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
-  }
-
-  void _handleSyncVersionChanged() {
-    if (!mounted) return;
-
-    final latestDates = SpaceStore.readList('specialDates');
-
-    setState(() {
-      dates = latestDates;
-    });
-  }
-
-  @override
-  void dispose() {
-    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
-    super.dispose();
-  }
-
-  Future<void> _save() {
-    return SpaceStore.saveList('specialDates', dates);
-  }
-
-  Future<void> _addOrEdit({Map<String, dynamic>? existing}) async {
-    final titleController =
-        TextEditingController(text: '${existing?['title'] ?? ''}');
-    final noteController =
-        TextEditingController(text: '${existing?['note'] ?? ''}');
-
-    DateTime selectedDate =
-        DateTime.tryParse('${existing?['date'] ?? ''}') ?? DateTime.now();
-
-    bool yearly = existing?['yearly'] != false;
-
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: surfaceColor,
-          title: Text(existing == null ? 'Add special date' : 'Edit date'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Event name',
-                    hintText: 'Our anniversary',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: noteController,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Note (optional)',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.calendar_month_rounded),
-                  label: Text(
-                    '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
-                  ),
-                  onPressed: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: selectedDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-
-                    if (picked != null) {
-                      setDialogState(() => selectedDate = picked);
-                    }
-                  },
-                ),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: yearly,
-                  onChanged: (value) {
-                    setDialogState(() => yearly = value ?? true);
-                  },
-                  title: const Text('Repeat every year'),
-                  controlAffinity: ListTileControlAffinity.leading,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final title = titleController.text.trim();
-                if (title.isEmpty) return;
-
-                Navigator.pop(dialogContext, {
-                  'title': title,
-                  'note': noteController.text.trim(),
-                  'date': selectedDate.toIso8601String(),
-                  'yearly': yearly,
-                });
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    titleController.dispose();
-    noteController.dispose();
-
-    if (result == null) return;
-
-    final id =
-        '${existing?['id'] ?? DateTime.now().microsecondsSinceEpoch}';
-
-    result['id'] = id;
-
-    setState(() {
-      final index = dates.indexWhere((d) => d['id'] == id);
-
-      if (index >= 0) {
-        dates[index] = result;
-      } else {
-        dates.add(result);
-      }
-    });
-
-    await _save();
-    await _scheduleReminder(result);
-  }
-
-  Future<void> _scheduleReminder(Map<String, dynamic> item) async {
-    final date = DateTime.tryParse('${item['date']}');
-    if (date == null) return;
-
-    final now = DateTime.now();
-    final yearly = item['yearly'] != false;
-
-    DateTime reminderDate = DateTime(
-      yearly ? now.year : date.year,
-      date.month,
-      date.day,
-      9,
-    );
-
-    if (yearly) {
-      if (!reminderDate.isAfter(now)) {
-        reminderDate = DateTime(
-          now.year + 1,
-          date.month,
-          date.day,
-          9,
-        );
-      }
-    } else if (!reminderDate.isAfter(now)) {
-      return;
-    }
-
-    final id = '${item['id']}'.hashCode & 0x7fffffff;
-
-    await notifications.cancel(id);
-
-    await notifications.zonedSchedule(
-      id,
-      'A special day is coming ğŸ’—',
-      '${item['title']} â€” ${item['note'] ?? ''}',
-      tz.TZDateTime.from(reminderDate, tz.local),
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'special_dates',
-          'Special Dates',
-          channelDescription: 'Reminders for your special days',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents:
-          yearly ? DateTimeComponents.dateAndTime : null,
-    );
-  }
-
-  Future<void> _delete(Map<String, dynamic> item) async {
-    final id = '${item['id']}'.hashCode & 0x7fffffff;
-
-    await notifications.cancel(id);
-
-    setState(() {
-      dates.removeWhere((d) => d['id'] == item['id']);
-    });
-
-    await _save();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sorted = [...dates]
-      ..sort((a, b) => '${a['date']}'.compareTo('${b['date']}'));
-
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: const Text('Special Dates'),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _addOrEdit(),
-        child: const Icon(Icons.add_rounded),
-      ),
-      body: sorted.isEmpty
-          ? const Center(
-              child: Text(
-                'Add the dates that mean the most to you.',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: sorted.length,
-              itemBuilder: (context, index) {
-                final item = sorted[index];
-                final date = DateTime.tryParse('${item['date']}');
-                final note = '${item['note'] ?? ''}';
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Color(0x33FF5FA2),
-                      child: Icon(
-                        Icons.favorite_rounded,
-                        color: pinkColor,
-                      ),
-                    ),
-                    title: Text('${item['title']}'),
-                    subtitle: Text(
-                      '${date?.day}/${date?.month}/${date?.year}'
-                      '${item['yearly'] == true ? ' â€¢ Every year' : ''}'
-                      '${note.isNotEmpty ? '\n$note' : ''}',
-                    ),
-                    isThreeLine: note.isNotEmpty,
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (value) {
-                        if (value == 'edit') {
-                          _addOrEdit(existing: item);
-                        } else if (value == 'delete') {
-                          _delete(item);
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
-                          value: 'edit',
-                          child: Text('Edit'),
-                        ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete'),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-// ============================================================
-// LOVE NOTES
-// ============================================================
-
-class LoveNotesPage extends StatefulWidget {
-  const LoveNotesPage({super.key});
-
-  @override
-  State<LoveNotesPage> createState() => _LoveNotesPageState();
-}
-
-class _LoveNotesPageState extends State<LoveNotesPage> {
-  List<Map<String, dynamic>> notes = [];
-
-  @override
-  void initState() {
-    super.initState();
-    notes = SpaceStore.readList('loveNotes');
-    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
-  }
-
-  void _handleSyncVersionChanged() {
-    if (!mounted) return;
-
-    final latestNotes = SpaceStore.readList('loveNotes');
-
-    setState(() {
-      notes = latestNotes;
-    });
-  }
-
-  @override
-  void dispose() {
-    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
-    super.dispose();
-  }
-
-  Future<void> _addNote() async {
-    final controller = TextEditingController();
-
-    final text = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Write a love note'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            hintText: 'Write from your heart...',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext, controller.text.trim());
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    controller.dispose();
-
-    if (text == null || text.isEmpty) return;
-
-    setState(() {
-      notes.insert(0, {
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        'text': text,
-        'date': DateTime.now().toIso8601String(),
-      });
-    });
-
-    await SpaceStore.saveList('loveNotes', notes);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: const Text('Love Notes'),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addNote,
-        child: const Icon(Icons.edit_rounded),
-      ),
-      body: notes.isEmpty
-          ? const Center(
-              child: Text(
-                'Save little words of love here.',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: notes.length,
-              itemBuilder: (context, index) {
-                final note = notes[index];
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: pinkColor.withValues(alpha: 0.14),
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.favorite, color: pinkColor),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text('${note['text']}')),
-                      IconButton(
-                        onPressed: () async {
-                          setState(() => notes.removeAt(index));
-                          await SpaceStore.saveList('loveNotes', notes);
-                        },
-                        icon: const Icon(Icons.delete_outline, size: 20),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-// ============================================================
-// SETTINGS
-// ============================================================
-
-class SettingsPage extends StatefulWidget {
-  final String partnerOne;
-  final String partnerTwo;
-  final void Function(String first, String second) onSave;
-
-  const SettingsPage({
-    super.key,
-    required this.partnerOne,
-    required this.partnerTwo,
-    required this.onSave,
-  });
-
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
-}
-
-class _SettingsPageState extends State<SettingsPage> {
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const Text(
-          'Settings',
-          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Make your little space feel like yours.',
-          style: TextStyle(color: Colors.white54),
-        ),
-        const SizedBox(height: 25),
-        Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: const CircleAvatar(
-              backgroundColor: blueColor,
-              child: Icon(Icons.privacy_tip_outlined, color: Colors.white),
-            ),
-            title: const Text('Privacy & account'),
-            subtitle: const Text('à¦‡à¦®à§‡à¦‡à¦², à¦ªà¦¾à¦¸à¦“à§Ÿà¦¾à¦°à§à¦¡, à¦¨à¦¾à¦® à¦“ à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦² à¦¸à§‡à¦Ÿà¦¿à¦‚à¦¸'),
+                    /«5£~È‹§uçâçnøÖûâ.×ŸŠwûãZ6oî×ŸŠw
+aÍhİŸ5£f Öò§uçâçrG&—fRš£Z6eMhß¾"éİyø§yİ°5£Pœ°(€€€€€€€€€€€€€€€€€€€Ñ•áÑ±¥¸èQ•áÑ±¥¸¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€ô((€€€€€€€€€€€€€¥˜€ …¥ÍY¥‘•¼¤ì(€€€€€€€€€€€€€€€É•ÑÕÉ¸•¹Ñ•È (€€€€€€€€€€€€€€€€€¡¥±è%¹Ñ•É…Ñ¥Ù•Y¥•İ•È (€€€€€€€€€€€€€€€€€€€µ¥¹M…±”è€À¸Ô°(€€€€€€€€€€€€€€€€€€€µ…áM…±”è€Ô°(€€€€€€€€€€€€€€€€€€€¡¥±è%µ…”¹™¥±” (€€€€€€€€€€€€€€€€€€€€€¥±”¡Á…Ñ ¤°(€€€€€€€€€€€€€€€€€€€€€™¥Ğè	½á¥Ğ¹½¹Ñ…¥¸°(€€€€€€€€€€€€€€€€€€€€€•ÉÉ½É	Õ¥±‘•Èè€¡|°}|°}}|¤ì(€€€€€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸½¹ÍĞQ•áĞ ¾lÖùû§uçâçr™cZ6ïˆºw^~)Şwïhİ›ºw^~)Şw)¨5£Pœ¤ì(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€ô((€€€€€€€€€€€€€É•ÑÕÉ¸}…±±•ÉåY¥‘•½A±…å•È (€€€€€€€€€€€€€€€­•äèY…±Õ•-•ä¡Á…Ñ ¤°(€€€€€€€€€€€€€€€Á…Ñ èÁ…Ñ °(€€€€€€€€€€€€€€€¥ÍÑ¥Ù”è¥¹‘•à€ôôÕÉÉ•¹Ñ%¹‘•à°(€€€€€€€€€€€€€€€½¹AÉ•Ù¥½ÕÌè€ ¤€ôø}½Q¼¡}ÁÉ•Ù¥½ÕÍY¥‘•½%¹‘•à¡¥¹‘•à¤¤°(€€€€€€€€€€€€€€€½¹9•áĞè€ ¤€ôø}½Q¼¡}¹•áÑY¥‘•½%¹‘•à¡¥¹‘•à¤¤°(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô°(€€€€€€€€€€¤ì(€€€€€€€ô°(€€€€€€¤°(€€€€¤ì(€ô)ô()±…ÍÌ}…±±•ÉåY¥‘•½A±…å•È•áÑ•¹‘ÌMÑ…Ñ•™Õ±]¥‘•Ğì(€™¥¹…°MÑÉ¥¹œÁ…Ñ ì(€™¥¹…°‰½½°¥ÍÑ¥Ù”ì(€™¥¹…°Y½¥‘…±±‰…¬ü½¹AÉ•Ù¥½ÕÌì(€™¥¹…°Y½¥‘…±±‰…¬ü½¹9•áĞì((€½¹ÍĞ}…±±•ÉåY¥‘•½A±…å•È¡ì(€€€ÍÕÁ•È¹­•ä°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹Á…Ñ °(€€€Ñ¡¥Ì¹¥ÍÑ¥Ù”€ôÑÉÕ”°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹½¹AÉ•Ù¥½ÕÌ°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹½¹9•áĞ°(€ô¤ì((€½Ù•ÉÉ¥‘”(€MÑ…Ñ”ñ}…±±•ÉåY¥‘•½A±…å•ÈøÉ•…Ñ•MÑ…Ñ” ¤€ôø(€€€€€}…±±•ÉåY¥‘•½A±…å•ÉMÑ…Ñ” ¤ì)ô()±…ÍÌ}…±±•ÉåY¥‘•½A±…å•ÉMÑ…Ñ”•áÑ•¹‘ÌMÑ…Ñ”ñ}…±±•ÉåY¥‘•½A±…å•Èøì(€Y¥‘•½A±…å•É½¹ÑÉ½±±•Èü}½¹ÑÉ½±±•Èì(€MÑÉ¥¹œü}•ÉÉ½Èì(€MÑÉ¥¹œü}½ÁÑ¥µ¥é•‘A…Ñ ì(€‰½½°}¥Í=ÁÑ¥µ¥é¥¹œ€ô™…±Í”ì(€‰½½°}¡…ÍÑÑ•µÁÑ•‘=ÁÑ¥µ¥é…Ñ¥½¸€ô™…±Í”ì(€‰½½°}Í¡½İ½¹ÑÉ½±Ì€ô™…±Í”ì((€½Ù•ÉÉ¥‘”(€Ù½¥¥¹¥ÑMÑ…Ñ” ¤ì(€€€ÍÕÁ•È¹¥¹¥ÑMÑ…Ñ” ¤ì(€€€¥˜€¡İ¥‘•Ğ¹¥ÍÑ¥Ù”¤Õ¹…İ…¥Ñ•¡}¥¹¥Ñ¥…±¥é” ¤¤ì(€ô((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥‘UÁ‘…Ñ•]¥‘•Ğ¡½Ù…É¥…¹Ğ}…±±•ÉåY¥‘•½A±…å•È½±‘]¥‘•Ğ¤ì(€€€ÍÕÁ•È¹‘¥‘UÁ‘…Ñ•]¥‘•Ğ¡½±‘]¥‘•Ğ¤ì(€€€¥˜€¡½±‘]¥‘•Ğ¹¥ÍÑ¥Ù”€ôôİ¥‘•Ğ¹¥ÍÑ¥Ù”¤É•ÑÕÉ¸ì(€€€™¥¹…°½¹ÑÉ½±±•È€ô}½¹ÑÉ½±±•Èì(€€€¥˜€ …İ¥‘•Ğ¹¥ÍÑ¥Ù”¤ì(€€€€€¥˜€¡½¹ÑÉ½±±•È€„ô¹Õ±°€˜˜½¹ÑÉ½±±•È¹Ù…±Õ”¹¥Í%¹¥Ñ¥…±¥é•¤ì(€€€€€€€Õ¹…İ…¥Ñ•¡½¹ÑÉ½±±•È¹Í•ÑY½±Õµ” À¤¹Ñ¡•¸ ¡|¤€ôø½¹ÑÉ½±±•È¹Á…ÕÍ” ¤¤¤ì(€€€€€ô(€€€ô•±Í”¥˜€¡½¹ÑÉ½±±•È€ôô¹Õ±°¤ì(€€€€€Õ¹…İ…¥Ñ•¡}¥¹¥Ñ¥…±¥é” ¤¤ì(€€€ô•±Í”¥˜€¡½¹ÑÉ½±±•È¹Ù…±Õ”¹¥Í%¹¥Ñ¥…±¥é•¤ì(€€€€€Õ¹…İ…¥Ñ•¡½¹ÑÉ½±±•È¹Í•ÑY½±Õµ” Ä¤¹Ñ¡•¸ ¡|¤€ôø½¹ÑÉ½±±•È¹Á±…ä ¤¤¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}¥¹¥Ñ¥…±¥é”¡mMÑÉ¥¹œüÍ½ÕÉ•A…Ñ¡t¤…Íå¹Œì(€€€¥˜€ …İ¥‘•Ğ¹¥ÍÑ¥Ù”¤É•ÑÕÉ¸ì(€€€™¥¹…°Ù¥‘•¼€ôY¥‘•½A±…å•É½¹ÑÉ½±±•È¹™¥±”¡¥±”¡Í½ÕÉ•A…Ñ €üü}½ÁÑ¥µ¥é•‘A…Ñ €üüİ¥‘•Ğ¹Á…Ñ ¤¤ì(€€€}½¹ÑÉ½±±•È€ôÙ¥‘•¼ì((€€€ÑÉäì(€€€€€…İ…¥ĞÙ¥‘•¼¹¥¹¥Ñ¥…±¥é” ¤ì((€€€€€¥˜€ …µ½Õ¹Ñ•¤ì(€€€€€€€…İ…¥ĞÙ¥‘•¼¹‘¥ÍÁ½Í” ¤ì(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô((€€€€€Í•ÑMÑ…Ñ”  ¤íô¤ì(€€€€€…İ…¥ĞÙ¥‘•¼¹Í•ÑY½±Õµ”¡İ¥‘•Ğ¹¥ÍÑ¥Ù”€ü€Ä¸À€è€À¸À¤ì(€€€€€¥˜€¡İ¥‘•Ğ¹¥ÍÑ¥Ù”¤…İ…¥ĞÙ¥‘•¼¹Á±…ä ¤ì(€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€…İ…¥ĞÙ¥‘•¼¹‘¥ÍÁ½Í” ¤ì(€€€€€¥˜€¡¥‘•¹Ñ¥…°¡}½¹ÑÉ½±±•È°Ù¥‘•¼¤¤}½¹ÑÉ½±±•È€ô¹Õ±°ì((€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€¥˜€ …}¡…ÍÑÑ•µÁÑ•‘=ÁÑ¥µ¥é…Ñ¥½¸¤ì(€€€€€€€€¼¼€Ö›Z6rËÒUÈhß¡5£L€ÖÛZ7ëhĞ 5£x€Ö»+§uçâçršƒZ7qÈºw^~)ŞwqÍhß‡ MP4/H.264-"éİyø§yÙÂ5£~ ÖÛ.×ŸŠwÛZ5ˆ[˜]ØZ]Y
+İSÜ[Z^™P[™^J
+JNÂˆ™]\›ÂˆBˆÙ]İ]J
+
+HÂˆÙ\œ›ÜˆHëMhÙ¿ºw^~)Şw)–5£nø‹§uçâç~øÖ›û§uçâçBš³Z7ìhß 5£f¸Ö¼#Z7hÈºw^~)Şwoˆºw^~)ŞwáÈºw^~)ŞvoÍhß‡5£\€ÖšãZ7iMhÔ 5£w‹§uçâçnøÖöBs°¢Ò“°¢Ğ¢Ğ ¢gWGW&SÇfö–Câ÷G'”÷F–Ö—¦TæEÆ’‡¶&ööÂf÷&6RÒfÇ6WÒ’7–æ2°¢–b…ö—4÷F–Ö—¦–ærÇÂ…ö†4GFV×FVD÷F–Ö—¦F–öâbbf÷&6R’’&WGW&ã°¢ö†4GFV×FVD÷F–Ö—¦F–öâÒG'VS°¢6WE7FFR‚‚’°¢ö—4÷F–Ö—¦–ærÒG'VS°¢öW'&÷"ÒçVÆÃ°¢Ò“°¢G'’°¢f–æÂ7W÷'BÒv—BvWDÆ–6F–öå7W÷'DF—&V7F÷'’‚“°¢f–æÂ÷F–Ö—¦VDF—&V7F÷'’ÒF—&V7F÷'’‚rG·7W÷'BçF‡Òö÷&&—Eö÷F–Ö—¦VE÷f–FV÷2r“°¢v—B÷F–Ö—¦VDF—&V7F÷'’æ7&VFR‡&V7W'6—fS¢G'VR“°¢f–æÂ6÷W&6TæÖRÒf–ÆR‡v–FvWBçF‚’çW&’çF…6VvÖVçG2æÆ7@¢ç&WÆ6TÆÂ…&VtW‡‡"uµäÕ¦×£Ó’åòÕÒr’Âuòr“°¢f–æÂ6÷W&6T†6‚Òv–FvWBçF‚æ6öFUVæ—G2æföÆCÆ–çCâ€¢rÀ¢††6‚ÂVæ—B’Óâ††6‚¢3²Væ—B’bƒvffffffbÀ¢“°¢f–æÂ÷F–Ö—¦VDf–ÆRÒf–ÆR€¢rG¶÷F–Ö—¦VDF—&V7F÷'’çF‡ÒòG·6÷W&6TæÖWÕòG·6÷W&6T†6‡Õós#æ×BrÀ¢“° ¢–b†f÷&6Rbbv—B÷F–Ö—¦VDf–ÆRæW†—7G2‚’’°¢v—B÷F–Ö—¦VDf–ÆRæFVÆWFR‚“°¢Ğ¢–b‚v—B÷F–Ö—¦VDf–ÆRæW†—7G2‚’ÇÂv—B÷F–Ö—¦VDf–ÆRæÆVæwF‚‚’ÃÒ’°¢f–æÂ&W7VÇBÒv—Bf–FVô6ö×&W72æ6ö×&W75f–FVò€¢v–FvWBçF‚À¢VÆ—G“¢f–FVõVÆ—G’å&W3#ƒƒs#VÆ—G’À¢FVÆWFT÷&–v–ã¢fÇ6RÀ¢–æ6ÇVFTVF–ó¢G'VRÀ¢“°¢f–æÂ6ö×&W76VBÒ&W7VÇCòæf–ÆS°¢–b†6ö×&W76VBÓÒçVÆÂÇÀ¢v—B6ö×&W76VBæW†—7G2‚’ÇÀ¢v—B6ö×&W76VBæÆVæwF‚‚’ÃÒ’°¢F‡&÷rW†6WF–öâ‚øSZ7ïÍhß‡ºw^~)Şt)•5£x€Öø{§uçâçbš£Z6÷î×ŸŠwŠkÍhß¨5£Pœ¤ì(€€€€€€€ô(€€€€€€€¥˜€¡…İ…¥Ğ½ÁÑ¥µ¥é•‘¥±”¹•á¥ÍÑÌ ¤¤…İ…¥Ğ½ÁÑ¥µ¥é•‘¥±”¹‘•±•Ñ” ¤ì(€€€€€€€…İ…¥Ğ½µÁÉ•ÍÍ•¹½Áä¡½ÁÑ¥µ¥é•‘¥±”¹Á…Ñ ¤ì(€€€€€ô((€€€€€¥˜€¡…İ…¥Ğ½ÁÑ¥µ¥é•‘¥±”¹±•¹Ñ  ¤€ğô€À¤ì(€€€€€€€Ñ¡É½Üá•ÁÑ¥½¸ ›§uçâçv¨ÖúãZ7çºw^~)Şwl.×ŸŠwŠkMhÙ¿ºw^~)Şw)–5£nşéİyø§yĞœ¤ì(€€€€€ô(€€€€€}½ÁÑ¥µ¥é•‘A…Ñ €ô½ÁÑ¥µ¥é•‘¥±”¹Á…Ñ ì(€€€€€…İ…¥Ğ}½¹ÑÉ½±±•Èü¹‘¥ÍÁ½Í” ¤ì(€€€€€}½¹ÑÉ½±±•È€ô¹Õ±°ì(€€€€€…İ…¥Ğ}¥¹¥Ñ¥…±¥é”¡½ÁÑ¥µ¥é•‘¥±”¹Á…Ñ ¤ì(€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€‘•‰ÕAÉ¥¹Ğ ÕÑ½µ…Ñ¥ŒÙ¥‘•¼½ÁÑ¥µ¥é…Ñ¥½¸™…¥±•è€‘•ÉÉ½Èœ¤ì(€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€€€€€}•ÉÉ½È€ô€›§uçâçvüÖù2.×ŸŠwœÓZ7àhİ°5£~´ÖÜr.×ŸŠwÚ£Z7ëhßœ"éİyø§yİ°ºw^~)Şv)¯5£~ ÖBZ7o®×ŸŠw
+fhßÍ5£x€ÖœZ5	ÎÂˆJNÂˆBˆHš[˜[HÂˆYˆ
+[İ[Y
+HÙ]İ]J
+
+HOˆÚ\ÓÜ[Z^š[™ÈH˜[ÙJNÂˆBˆB‚ˆ]\™O›ÚYˆİÙÙÛT^X˜XÚÊ
+H\Ş[˜ÈÂˆš[˜[šY[ÈHØÛÛ›Û\ÂˆYˆ
+]ÚYÙ]š\ĞXİ]™HšY[ÈOH[]šY[Ë˜[YKš\Ò[š]X[^™Y
+H™]\›Â‚ˆYˆ
+šY[Ë˜[YKš\Ô^Z[™ÊHÂˆ]ØZ]šY[Ëœ]\ÙJ
+NÂˆH[ÙHÂˆ]ØZ]šY[Ëœ^J
+NÂˆBˆB‚ˆİ™\œšYBˆ›ÚY\ÜÜÙJ
+HÂˆØÛÛ›Û\Ë™\ÜÜÙJ
+NÂˆİ\\‹™\ÜÜÙJ
+NÂˆB‚ˆİ™\œšYBˆÚYÙ]Z[
+Z[ÛÛ^ÛÛ^
+HÂˆš[˜[šY[ÈHØÛÛ›Û\Â‚ˆYˆ
+Ù\œ›ÜˆOH[
+HÂˆ™]\›ˆÙ[\ŠˆÚ[ˆY[™ÊˆY[™ÎˆÛÛœİYÙR[œÙ]Ë˜[
+
+KˆÚ[ˆÛÛ[[ŠˆXZ[^\ÔÚ^™NˆXZ[^\ÔÚ^™K›Z[‹ˆÚ[™[ˆÂˆÛÛœİXÛÛŠXÛÛœËšY[×Ùš[WÛİ][™YÚ^™Nˆ‹ÛÛÜˆ[šĞÛÛÜŠKˆÛÛœİÚ^™Y›Ş
+ZYÚˆL
+Kˆ^
+Ù\œ›ÜˆK^[YÛˆ^[YÛ‹˜Ù[\ŠKˆÛÛœİÚ^™Y›Ş
+ZYÚˆM
+Kˆš[Y]Û‹šXÛÛŠˆÛ”™\ÜÙYˆÚ\ÓÜ[Z^š[™ÈÈ[ˆ
+
+HOˆİSÜ[Z^™P[™^J›Ü˜ÙNˆYJKˆXÛÛˆÚ\ÓÜ[Z^š[™ÂˆÈÛÛœİÚ^™Y›Ş
+ÚYˆNZYÚˆNÚ[ˆÚ\˜İ[\”›ÙÜ™\ÜÒ[™XØ]ÜŠİ›ÚÙUÚYˆŠJBˆˆÛÛœİXÛÛŠXÛÛœË˜]]×Ùš^ÚYÚÜ›İ[™Y
+KˆX™[ˆ^
+Ú\ÓÜ[Z^š[™ÈÈ	ºw^~)ŞwoÍhß“"éİyø§yİª5£~¸ÖùÂ.×ŸŠw™£Z6ñî×ŸŠw‰Èˆ	ÍhÛŸ5£~øÖÂZ6qÈºw^~)ŞwëhĞ 5£~ÈÖ2r’À¢’À¢ÒÀ¢’À¢’À¢“°¢Ğ ¢–b‡f–FVòÓÒçVÆÂÇÂf–FVòçfÇVRæ—4–æ—F–Æ—¦VB’°¢&WGW&â6öç7B6VçFW"€¢6†–ÆC¢6—&7VÆ%&öw&W74–æF–6F÷"‚’À¢“°¢Ğ ¢&WGW&â6VçFW"€¢6†–ÆC¢7V7E&F–ò€¢7V7E&F–ó¢f–FVòçfÇVRæ7V7E&F–òÀ¢6†–ÆC¢vW7GW&TFWFV7F÷"€¢&V†f–÷#¢†—EFW7D&V†f–÷"æ÷VRÀ¢öåF¢‚’Óâ6WE7FFR‚‚’Óâ÷6†÷t6öçG&öÇ2Ò÷6†÷t6öçG&öÇ2’À¢6†–ÆC¢7F6²€¢Æ–væÖVçC¢Æ–væÖVçBæ6VçFW"À¢6†–ÆG&Vã¢°¢f–FVõÆ–W"‡f–FVò’À¢–b…÷6†÷t6öçG&öÇ2’6VçFW"†6†–ÆC¢–6öä'WGFöâ†öå&W76VC¢÷FövvÆUÆ–&6²Â–6öå6—¦S¢CBÂ6öÆ÷#¢6öÆ÷'2çv†—FRÂ–6öã¢–6öâ‡f–FVòçfÇVRæ—5Æ––ærò–6öç2çW6Uö6—&6ÆUöf–ÆÆVE÷&÷VæFVB¢–6öç2çÆ•ö6—&6ÆUöf–ÆÅ÷&÷VæFVB’’’À¢–b…÷6†÷t6öçG&öÇ2’÷6—F–öæVB€¢ÆVgC¢‚À¢&–v‡C¢‚À¢&÷GFöÓ¢‚À¢6†–ÆC¢6öçF–æW"€¢FF–æs¢6öç7BVFvT–ç6WG2ç7–ÖÖWG&–2€¢†÷&—¦öçFÃ¢BÀ¢fW'F–6Ã¢BÀ¢’À¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢6öÆ÷#¢6öÆ÷'2æ&Æ6²çv—F…fÇVW2†Ç†¢ãcR’À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒB’À¢’À¢6†–ÆC¢&÷r€¢6†–ÆG&Vã¢°¢–6öä'WGFöâ€¢FööÇF—¢n×ŸŠwùsZ4hß¡5£Lœ°(€€€€€€€€€€€€€€€€€€€€€½¹AÉ•ÍÍ•èİ¥‘•Ğ¹½¹AÉ•Ù¥½ÕÌ°(€€€€€€€€€€€€€€€€€€€€€¥½¸è½¹ÍĞ%½¸¡%½¹Ì¹Í­¥Á}ÁÉ•Ù¥½ÕÍ}É½Õ¹‘•¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€áÁ…¹‘• (€€€€€€€€€€€€€€€€€€€€€¡¥±èY¥‘•½AÉ½É•ÍÍ%¹‘¥…Ñ½È (€€€€€€€€€€€€€€€€€€€€€€€Ù¥‘•¼°(€€€€€€€€€€€€€€€€€€€€€€€…±±½İMÉÕ‰‰¥¹œèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ (€€€€€€€€€€€€€€€€€€€€€€€€€Ù•ÉÑ¥…°è€ÄÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€¡½É¥é½¹Ñ…°è€Ğ°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€Y…±Õ•1¥ÍÑ•¹…‰±•	Õ¥±‘•ÈñY¥‘•½A±…å•ÉY…±Õ”ø (€€€€€€€€€€€€€€€€€€€€€Ù…±Õ•1¥ÍÑ•¹…‰±”èÙ¥‘•¼°(€€€€€€€€€€€€€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°Ù…±Õ”°¡¥±¤ì(€€€€€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸%½¹	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€Ñ½½±Ñ¥ÀèÙ…±Õ”¹¥ÍA±…å¥¹œ€ü€A…ÕÍ”œ€è€A±…äœ°(€€€€€€€€€€€€€€€€€€€€€€€€€½¹AÉ•ÍÍ•è}Ñ½±•A±…å‰…¬°(€€€€€€€€€€€€€€€€€€€€€€€€€¥½¸è%½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”¹¥ÍA±…å¥¹œ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ü%½¹Ì¹Á…ÕÍ•}É½Õ¹‘•(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€è%½¹Ì¹Á±…å}…ÉÉ½İ}É½Õ¹‘•°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€%½¹	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€€€€€Ñ½½±Ñ¥Àè€¾¨Öû.×ŸŠwÛóZ7äÉËˆÛ”™\ÜÙYˆÚYÙ]›Û“™^ˆXÛÛˆÛÛœİXÛÛŠXÛÛœËœÚÚ\Û™^Ü›İ[™Y
+Kˆ
+KˆKˆ
+Kˆ
+Kˆ
+KˆKˆ
+Kˆ
+Kˆ
+Kˆ
+NÂˆBŸB‚‚˜Û\ÜÈÚ]›ÚXÙT^Y\ˆ^[™Èİ]Y[ÚYÙ]ÂˆÛÛœİÚ]›ÚXÙT^Y\ŠÂˆİ\\‹šÙ^Kˆ™\]Z\™Y\Ëœ]ˆ\Ë™\˜][Û“\ËˆJNÂ‚ˆš[˜[İš[™È]Âˆš[˜[[È\˜][Û“\ÎÂ‚ˆİ™\œšYBˆİ]OÚ]›ÚXÙT^Y\ˆÜ™X]Tİ]J
+HOˆĞÚ]›ÚXÙT^Y\”İ]J
+NÂŸB‚˜Û\ÜÈĞÚ]›ÚXÙT^Y\”İ]H^[™Èİ]OÚ]›ÚXÙT^Y\ˆÂˆ]Y[Ô^Y\ÈÜ^Y\Âˆİ™X[TİXœØÜš\[Û^Y\”İ]OÈÜİ]TİXœØÜš\[ÛÂˆİ™X[TİXœØÜš\[Û\˜][ÛÈÙ\˜][Û”İXœØÜš\[ÛÂˆİ™X[TİXœØÜš\[Û\˜][ÛÈÜÜÚ][Û”İXœØÜš\[ÛÂˆ›ÛÛÚ\Ô^Z[™ÈH˜[ÙNÂˆ›ÛÛÚ\Ô™\\š[™ÈH˜[ÙNÂˆ›ÛÛÜÛİ\˜ÙSØYYH˜[ÙNÂˆ]\™O›ÚYÈÜÛİ\˜ÙSØY]\™NÂˆ\˜][ÛÈÙ\˜][ÛÂˆ\˜][ÛˆÜÜÚ][ÛˆH\˜][Û‹™\›ÎÂˆİX›HÜ^X˜XÚÔ˜]HHKŒÂ‚ˆİš[™ÈÙ›Ü›X]\˜][ÛŠ\˜][Ûˆ\˜][ÛŠHÂˆš[˜[İ[ÙXÛÛ™ÈH\˜][Û‹š[”ÙXÛÛ™ÎÂˆš[˜[Z[]\ÈHİ[ÙXÛÛ™È‹ÈŒÂˆš[˜[ÙXÛÛ™ÈHİ[ÙXÛÛ™È	HŒÂˆ™]\›ˆ	ÉZ[]\Î‰ÜÙXÛÛ™ËÔİš[™Ê
+KœYY
+‹	Ì	Ê_IÎÂˆB‚ˆİ™\œšYBˆ›ÚY[š]İ]J
+HÂˆİ\\‹š[š]İ]J
+NÂˆš[˜[Z[\ÙXÛÛ™ÈHÚYÙ]™\˜][Û“\ÈÏÈÂˆYˆ
+Z[\ÙXÛÛ™Èˆ
+HÂˆÙ\˜][ÛˆH\˜][ÛŠZ[\ÙXÛÛ™ÎˆZ[\ÙXÛÛ™ÊNÂˆH[ÙHÂˆËÈÛ\ˆ›ÚXÙHY\ÜØYÙ\ÈÈ›İÛÛZ[ˆ\˜][ÛˆY]Y]NÈ™XY][ˆBˆËÈ˜XÚÙÜ›İ[™ÛÈHİ[\˜][Ûˆ\X\œÈ™Y›Ü™HH\Ù\ˆ™\ÜÙ\È^K‚ˆ[˜]ØZ]Y
+Ü™[ØY\˜][ÛŠ
+JNÂˆBˆB‚ˆ]\™O›ÚYˆÜ™[ØY\˜][ÛŠ
+H\Ş[˜ÈÂˆHÂˆš[˜[^Y\ˆH]ØZ]ÙÙ]^Y\Š
+NÂˆ]ØZ]ÛØYÛİ\˜ÙJ^Y\ŠNÂˆHØ]Ú
+\œ›ÜŠHÂˆXYÔš[
+	Õ›ÚXÙH\˜][Ûˆ™[ØY˜Z[Yˆ	\œ›Ü‰ÊNÂˆBˆB‚ˆ]\™O]Y[Ô^Y\ˆÙÙ]^Y\Š
+H\Ş[˜ÈÂˆ˜\ˆ^Y\ˆHÜ^Y\ÂˆYˆ
+^Y\ˆOH[
+H™]\›ˆ^Y\Â‚ˆ^Y\ˆH]Y[Ô^Y\Š
+NÂˆÜ^Y\ˆH^Y\ÂˆÜİ]TİXœØÜš\[ÛˆH^Y\‹›Û”^Y\”İ]PÚ[™ÙY›\İ[Š
+İ]JHÂˆYˆ
+[[İ[Y
+H™]\›ÂˆYˆ
+İ]HOH^Y\”İ]Kœ^Z[™È	‰ˆWÚ\Ô^Z[™ÊHÂˆ[˜]ØZ]Y
+[\˜Xİ[Û‘™YY˜XÚÔÙ][™ÜËšXœ˜]J
+JNÂˆBˆÙ]İ]J
+
+HÂˆÚ\Ô^Z[™ÈHİ]HOH^Y\”İ]Kœ^Z[™ÎÂˆYˆ
+İ]HOH^Y\”İ]K˜ÛÛ\]Y	‰ˆÙ\˜][ÛˆOH[
+HÂˆÜÜÚ][ÛˆHÙ\˜][ÛˆNÂˆBˆJNÂˆJNÂˆÙ\˜][Û”İXœØÜš\[ÛˆH^Y\‹›Û‘\˜][ÛÚ[™ÙY›\İ[Š
+\˜][ÛŠHÂˆYˆ
+[[İ[Y
+H™]\›ÂˆÙ]İ]J
+
+HOˆÙ\˜][ÛˆH\˜][ÛŠNÂˆJNÂˆÜÜÚ][Û”İXœØÜš\[ÛˆH^Y\‹›Û”ÜÚ][ÛÚ[™ÙY›\İ[Š
+ÜÚ][ÛŠHÂˆYˆ
+[[İ[Y
+H™]\›ÂˆÙ]İ]J
+
+HOˆÜÜÚ][ÛˆHÜÚ][ÛŠNÂˆJNÂˆËÈÙY\HØØ[]Y[ÈÛİ\˜ÙH]˜Z[X›HY\ˆÛÛ\][ÛˆÛÈ™\^Z[™ÂˆËÈH›ÚXÙHY\ÜØYÙHİ\È™[XX›Hœ›ÛHH™YÚ[›š[™Ë‚ˆ]ØZ]^Y\‹œÙ]™[X\ÙS[ÙJ™[X\ÙS[ÙKœİÜ
+NÂˆ]ØZ]^Y\‹œÙ]^X˜XÚÔ˜]JÜ^X˜XÚÔ˜]JNÂˆ™]\›ˆ^Y\ÂˆB‚ˆ]\™O›ÚYˆÛØYÛİ\˜ÙJ]Y[Ô^Y\ˆ^Y\ŠHÂˆYˆ
+ÜÛİ\˜ÙSØYY
+H™]\›ˆ]\™O›ÚY‹˜[YJ
+NÂˆš[˜[^\İ[™ÓØYHÜÛİ\˜ÙSØY]\™NÂˆYˆ
+^\İ[™ÓØYOH[
+H™]\›ˆ^\İ[™ÓØYÂˆš[˜[ØYHÛØYÛİ\˜ÙR[\›˜[
+^Y\ŠNÂˆÜÛİ\˜ÙSØY]\™HHØYÂˆ™]\›ˆØYÂˆB‚ˆ]\™O›ÚYˆÛØYÛİ\˜ÙR[\›˜[
+]Y[Ô^Y\ˆ^Y\ŠH\Ş[˜ÈÂˆHÂˆ]ØZ]^Y\‹œÙ]Ûİ\˜ÙJ]šXÙQš[TÛİ\˜ÙJÚYÙ]œ]
+JNÂˆÜÛİ\˜ÙSØYYHYNÂˆš[˜[XİX[\˜][ÛˆH]ØZ]^Y\‹™Ù]\˜][ÛŠ
+NÂˆYˆ
+XİX[\˜][ÛˆOH[	‰ˆ[İ[Y
+HÂˆÙ]İ]J
+
+HOˆÙ\˜][ÛˆHXİX[\˜][ÛŠNÂˆBˆHØ]Ú
+ÊHÂˆÜÛİ\˜ÙSØY]\™HH[Âˆ™]›İÎÂˆBˆB‚ˆ]\™O›ÚYˆİÙÙÛT^X˜XÚÊ
+H\Ş[˜ÈÂˆYˆ
+Ú\Ô™\\š[™ÊH™]\›ÂˆÙ]İ]J
+
+HOˆÚ\Ô™\\š[™ÈHYJNÂˆHÂˆš[˜[^Y\ˆH]ØZ]ÙÙ]^Y\Š
+NÂ‚ˆYˆ
+^Y\‹œİ]HOH^Y\”İ]Kœ^Z[™ÊHÂˆ]ØZ]^Y\‹œ]\ÙJ
+NÂˆH[ÙHYˆ
+^Y\‹œİ]HOH^Y\”İ]Kœ]\ÙY
+HÂˆ]ØZ]^Y\‹œ™\İ[YJ
+NÂˆH[ÙHÂˆËÈØYY]Y]Hš\œİÛÈH[\˜][Ûˆ\X\œÈ™Y›Ü™H^X˜XÚÈİ\Ë‚ˆ]ØZ]ÛØYÛİ\˜ÙJ^Y\ŠNÂˆYˆ
+^Y\‹œİ]HOH^Y\”İ]K˜ÛÛ\]Y
+HÂˆ]ØZ]^Y\‹œÙYZÊ\˜][Û‹™\›ÊNÂˆYˆ
+[İ[Y
+HÙ]İ]J
+
+HOˆÜÜÚ][ÛˆH\˜][Û‹™\›ÊNÂˆBˆ]ØZ]^Y\‹œÙ]^X˜XÚÔ˜]JÜ^X˜XÚÔ˜]JNÂˆ]ØZ]^Y\‹œ™\İ[YJ
+NÂˆBˆHØ]Ú
+\œ›ÜŠHÂˆYˆ
+[İ[Y
+HÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+ëMhß¸"éİyø§yßÇ5£~p‹§uçâçnøÖú‹§uçâçršóZ7êhÔ 5£vúéİyø§yĞ¦hÖüÓZ7ˆhÙÁ5£Pœ¤¤°(€€€€€€€€¤ì(€€€€€ô(€€€ô™¥¹…±±äì(€€€€€¥˜€¡µ½Õ¹Ñ•¤Í•ÑMÑ…Ñ”  ¤€ôø}¥ÍAÉ•Á…É¥¹œ€ô™…±Í”¤ì(€€€ô(€ô((€ÕÑÕÉ”ñÙ½¥ø}å±•A±…å‰…­I…Ñ” ¤…Íå¹Œì(€€€™¥¹…°¹•áÑI…Ñ”€ô}Á±…å‰…­I…Ñ”€ôô€Ä¸À(€€€€€€€€ü€È¸À(€€€€€€€€è}Á±…å‰…­I…Ñ”€ôô€È¸À(€€€€€€€€€€€€ü€Ğ¸À(€€€€€€€€€€€€è€Ä¸Àì((€€€Í•ÑMÑ…Ñ”  ¤€ôø}Á±…å‰…­I…Ñ”€ô¹•áÑI…Ñ”¤ì((€€€™¥¹…°Á±…å•È€ô}Á±…å•Èì(€€€¥˜€¡Á±…å•È€„ô¹Õ±°¤ì(€€€€€ÑÉäì(€€€€€€€…İ…¥ĞÁ±…å•È¹Í•ÑA±…å‰…­I…Ñ”¡¹•áÑI…Ñ”¤ì(€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€¥˜€¡µ½Õ¹Ñ•¤ì(€€€€€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€€€€€M¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ ›§uçâço4ÖúÃZ7ïhß°"éİyø§yß¤ºw^~)Şw)ª5£~°ÖÚK§uçâçB™SZ7ˆhßß5£}‹§uçâç~°ÖZ7íÍhß¾"éİyø§yİ°5£eœ¤¤°(€€€€€€€€€€¤ì(€€€€€€€ô(€€€€€ô(€€€ô(€ô((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥ÍÁ½Í” ¤ì(€€€}ÍÑ…Ñ•MÕ‰ÍÉ¥ÁÑ¥½¸ü¹…¹•° ¤ì(€€€}‘ÕÉ…Ñ¥½¹MÕ‰ÍÉ¥ÁÑ¥½¸ü¹…¹•° ¤ì(€€€}Á½Í¥Ñ¥½¹MÕ‰ÍÉ¥ÁÑ¥½¸ü¹…¹•° ¤ì(€€€™¥¹…°Á±…å•È€ô}Á±…å•Èì(€€€¥˜€¡Á±…å•È€„ô¹Õ±°¤Õ¹…İ…¥Ñ•¡Á±…å•È¹‘¥ÍÁ½Í” ¤¤ì(€€€ÍÕÁ•È¹‘¥ÍÁ½Í” ¤ì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€™¥¹…°Ñ½Ñ…°€ô}‘ÕÉ…Ñ¥½¸€ôô¹Õ±°€ü€œ´´è´´œ€è}™½Éµ…ÑÕÉ…Ñ¥½¸¡}‘ÕÉ…Ñ¥½¸„¤ì(€€€™¥¹…°•±…ÁÍ•€ô}™½Éµ…ÑÕÉ…Ñ¥½¸¡}Á½Í¥Ñ¥½¸¤ì(€€€É•ÑÕÉ¸½¹Ñ…¥¹•È (€€€€€İ¥‘Ñ è€ÈÜÀ°(€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ¡¡½É¥é½¹Ñ…°è€Ø°Ù•ÉÑ¥…°è€Ğ¤°(€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€½±½Èè½±½ÉÌ¹‰±…¬¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÄÈ¤°(€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È ÄÈ¤°(€€€€€€¤°(€€€€€¡¥±èI½Ü (€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€%½¹	ÕÑÑ½¸ (€€€€€€€€€€€Ñ½½±Ñ¥Àè}¥ÍA±…å¥¹œ€ü€A…ÕÍ”Ù½¥”µ•ÍÍ…”œ€è€A±…äÙ½¥”µ•ÍÍ…”œ°(€€€€€€€€€€€½¹AÉ•ÍÍ•è}¥ÍAÉ•Á…É¥¹œ€ü¹Õ±°€è}Ñ½±•A±…å‰…¬°(€€€€€€€€€€€¥½¸è}¥ÍAÉ•Á…É¥¹œ(€€€€€€€€€€€€€€€€ü½¹ÍĞM¥é•‘	½à (€€€€€€€€€€€€€€€€€€€İ¥‘Ñ è€ÈÔ°(€€€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ÈÔ°(€€€€€€€€€€€€€€€€€€€¡¥±è¥ÉÕ±…ÉAÉ½É•ÍÍ%¹‘¥…Ñ½È (€€€€€€€€€€€€€€€€€€€€€ÍÑÉ½­•]¥‘Ñ è€È°(€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€€€è%½¸ (€€€€€€€€€€€€€€€€€€€}¥ÍA±…å¥¹œ(€€€€€€€€€€€€€€€€€€€€€€€€ü%½¹Ì¹Á…ÕÍ•}¥É±•}™¥±±•‘}É½Õ¹‘•(€€€€€€€€€€€€€€€€€€€€€€€€è%½¹Ì¹Á±…å}¥É±•}™¥±±}É½Õ¹‘•°(€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€Í¥é”è€ÌĞ°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€€áÁ…¹‘• (€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€M¥é•‘	½à (€€€€€€€€€€€€€€€€€¡•¥¡Ğè€ÌÈ°(€€€€€€€€€€€€€€€€€¡¥±è1…å½ÕÑ	Õ¥±‘•È (€€€€€€€€€€€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°½¹ÍÑÉ…¥¹ÑÌ¤ì(€€€€€€€€€€€€€€€€€€€€€™¥¹…°‘ÕÉ…Ñ¥½¹5Ì€ô€¡}‘ÕÉ…Ñ¥½¸ü¹¥¹5¥±±¥Í•½¹‘Ì€üü€À¤¹±…µÀ À°€Ä€ğğ€ÌÄ¤ì(€€€€€€€€€€€€€€€€€€€€€™¥¹…°Á½Í¥Ñ¥½¹5Ì€ô}Á½Í¥Ñ¥½¸¹¥¹5¥±±¥Í•½¹‘Ì¹±…µÀ À°‘ÕÉ…Ñ¥½¹5Ì¤ì(€€€€€€€€€€€€€€€€€€€€€™¥¹…°ÁÉ½É•ÍÌ€ô‘ÕÉ…Ñ¥½¹5Ì€ğô€À€ü€À¸À€èÁ½Í¥Ñ¥½¹5Ì€¼‘ÕÉ…Ñ¥½¹5Ìì(€€€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸MÑ…¬ (€€€€€€€€€€€€€€€€€€€€€€€…±¥¹µ•¹Ğè±¥¹µ•¹Ğ¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€€€€€ÕÍÑ½µA…¥¹Ğ (€€€€€€€€€€€€€€€€€€€€€€€€€€€Í¥é”èM¥é”¡½¹ÍÑÉ…¥¹ÑÌ¹µ…á]¥‘Ñ °€ÌÀ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€Á…¥¹Ñ•Èè}Y½¥•]…Ù•™½ÉµA…¥¹Ñ•È¡ÁÉ½É•ÍÌèÁÉ½É•ÍÌ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€M±¥‘•ÉQ¡•µ” (€€€€€€€€€€€€€€€€€€€€€€€€€€€‘…Ñ„èM±¥‘•ÉQ¡•µ”¹½˜¡½¹Ñ•áĞ¤¹½Áå]¥Ñ  (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÑÉ…­!•¥¡Ğè€Ä°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€…Ñ¥Ù•QÉ…­½±½Èè½±½ÉÌ¹ÑÉ…¹ÍÁ…É•¹Ğ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¥¹…Ñ¥Ù•QÉ…­½±½Èè½±½ÉÌ¹ÑÉ…¹ÍÁ…É•¹Ğ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ñ¡Õµ‰½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½Ù•É±…å½±½ÈèÁ¥¹­½±½È¹İ¥Ñ¡Y…±Õ•Ì¡…±Á¡„è€À¸ÄØ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ñ¡Õµ‰M¡…Á”è½¹ÍĞI½Õ¹‘M±¥‘•ÉQ¡Õµ‰M¡…Á”¡•¹…‰±•‘Q¡Õµ‰I…‘¥ÕÌè€Ô¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½Ù•É±…åM¡…Á”è½¹ÍĞI½Õ¹‘M±¥‘•É=Ù•É±…åM¡…Á”¡½Ù•É±…åI…‘¥ÕÌè€ÄÄ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±èM±¥‘•È (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€µ¥¸è€À°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€µ…àè‘ÕÉ…Ñ¥½¹5Ì€ø€À€ü‘ÕÉ…Ñ¥½¹5Ì¹Ñ½½Õ‰±” ¤€è€Ä°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”è‘ÕÉ…Ñ¥½¹5Ì€ø€À€üÁ½Í¥Ñ¥½¹5Ì¹Ñ½½Õ‰±” ¤€è€À°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹•è‘ÕÉ…Ñ¥½¹5Ì€ğô€À€ü¹Õ±°€è€¡Ù…±Õ”¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™¥¹…°Ñ…É•Ğ€ôÕÉ…Ñ¥½¸¡µ¥±±¥Í•½¹‘ÌèÙ…±Õ”¹É½Õ¹ ¤¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”  ¤€ôø}Á½Í¥Ñ¥½¸€ôÑ…É•Ğ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Õ¹…İ…¥Ñ•¡}Á±…å•Èü¹Í••¬¡Ñ…É•Ğ¤€üüÕÑÕÉ”ñÙ½¥ø¹Ù…±Õ” ¤¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€Q•áĞ (€€€€€€€€€€€€€€€€€€œ‘•±…ÁÍ•€¼€‘Ñ½Ñ…°œ°(€€€€€€€€€€€€€€€€€µ…á1¥¹•Ìè€Ä°(€€€€€€€€€€€€€€€€€½Ù•É™±½ÜèQ•áÑ=Ù•É™±½Ü¹•±±¥ÁÍ¥Ì°(€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÄÀ°(€€€€€€€€€€€€€€€€€€€™½¹Ñ•…ÑÕÉ•Ìèm½¹Ñ•…ÑÕÉ”¹Ñ…‰Õ±…É¥ÕÉ•Ì ¥t°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€t°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€€€½¹ÍĞM¥é•‘	½à¡İ¥‘Ñ è€Ğ¤°(€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è}å±•A±…å‰…­I…Ñ”°(€€€€€€€€€€€ÍÑå±”èQ•áÑ	ÕÑÑ½¸¹ÍÑå±•É½´ (€€€€€€€€€€€€€µ¥¹¥µÕµM¥é”è½¹ÍĞM¥é” ĞĞ°€ÌØ¤°(€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ¡¡½É¥é½¹Ñ…°è€Ü¤°(€€€€€€€€€€€€€Ñ…ÁQ…É•ÑM¥é”è5…Ñ•É¥…±Q…ÁQ…É•ÑM¥é”¹Í¡É¥¹­]É…À°(€€€€€€€€€€€€€™½É•É½Õ¹‘½±½Èè½±½ÉÌ¹İ¡¥Ñ”°(€€€€€€€€€€€€¤°(€€€€€€€€€€€¡¥±èQ•áĞ (€€€€€€€€€€€€€€œ‘í}Á±…å‰…­I…Ñ”¹Ñ½%¹Ğ ¥÷\œ°(€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±” (€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÄÌ°(€€€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹‰½±°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€¤°(€€€€€€€t°(€€€€€€¤°(€€€€¤ì(€ô)ô()±…ÍÌ}Y½¥•]…Ù•™½ÉµA…¥¹Ñ•È•áÑ•¹‘ÌÕÍÑ½µA…¥¹Ñ•Èì(€}Y½¥•]…Ù•™½ÉµA…¥¹Ñ•È¡íÉ•ÅÕ¥É•Ñ¡¥Ì¹ÁÉ½É•ÍÍô¤ì(€™¥¹…°‘½Õ‰±”ÁÉ½É•ÍÌì(€ÍÑ…Ñ¥Œ½¹ÍĞ1¥ÍĞñ‘½Õ‰±”ø}¡•¥¡ÑÌ€ôl(€€€€À¸Èà°€À¸ÔÈ°€À¸Ìà°€À¸ÜÈ°€À¸ĞØ°€À¸àà°€À¸Ôà°€À¸ÌĞ°€À¸ØØ°€À¸äÔ°(€€€€À¸ĞÌ°€À¸ØÄ°€À¸ÌÄ°€À¸Üà°€À¸ÔÀ°€À¸äÀ°€À¸ĞÀ°€À¸ØĞ°€À¸ÌÔ°€À¸àÈ°(€€€€À¸ÔÔ°€À¸Èä°€À¸ÜÀ°€À¸Ğà°€À¸äÌ°€À¸ÌÜ°€À¸Ôä°€À¸ÜØ°€À¸ĞÈ°€À¸ØÜ°(€€€€À¸ÌÌ°€À¸àØ°€À¸ÔÄ°€À¸ÜÌ°€À¸Ìä°€À¸ØÈ°€À¸äÜ°€À¸ĞĞ°€À¸ÔØ°€À¸ÌÀ°(€tì(€½Ù•ÉÉ¥‘”(€Ù½¥Á…¥¹Ğ¡…¹Ù…Ì…¹Ù…Ì°M¥é”Í¥é”¤ì(€€€™¥¹…°…Ñ¥Ù”€ôA…¥¹Ğ ¤¸¹½±½È€ôÁ¥¹­½±½È¸¹ÍÑÉ½­•]¥‘Ñ €ô€È¸È¸¹ÍÑÉ½­•…À€ôMÑÉ½­•…À¹É½Õ¹ì(€€€™¥¹…°¥¹…Ñ¥Ù”€ôA…¥¹Ğ ¤¸¹½±½È€ô½±½ÉÌ¹İ¡¥Ñ”Ìà¸¹ÍÑÉ½­•]¥‘Ñ €ô€È¸È¸¹ÍÑÉ½­•…À€ôMÑÉ½­•…À¹É½Õ¹ì(€€€™¥¹…°ÍÑ•À€ôÍ¥é”¹İ¥‘Ñ €¼}¡•¥¡ÑÌ¹±•¹Ñ ì(€€€™¥¹…°Á±…å•‘]¥‘Ñ €ôÍ¥é”¹İ¥‘Ñ €¨ÁÉ½É•ÍÌ¹±…µÀ À¸À°€Ä¸À¤ì(€€€™½È€¡Ù…È¤€ô€Àì¤€ğ}¡•¥¡ÑÌ¹±•¹Ñ ì¤¬¬¤ì(€€€€€™¥¹…°à€ôÍÑ•À€¨¤€¬ÍÑ•À€¼€Èì(€€€€€™¥¹…° €ô€Ô€¬}¡•¥¡ÑÍm¥t€¨€¡Í¥é”¹¡•¥¡Ğ€´€Ü¤ì(€€€€€…¹Ù…Ì¹‘É…İ1¥¹”¡=™™Í•Ğ¡à°€¡Í¥é”¹¡•¥¡Ğ€´ ¤€¼€È¤°=™™Í•Ğ¡à°€¡Í¥é”¹¡•¥¡Ğ€¬ ¤€¼€È¤°à€ğôÁ±…å•‘]¥‘Ñ €ü…Ñ¥Ù”€è¥¹…Ñ¥Ù”¤ì(€€€ô(€ô(€½Ù•ÉÉ¥‘”(€‰½½°Í¡½Õ±‘I•Á…¥¹Ğ¡½Ù…É¥…¹Ğ}Y½¥•]…Ù•™½ÉµA…¥¹Ñ•È½±‘•±•…Ñ”¤€ôø½±‘•±•…Ñ”¹ÁÉ½É•ÍÌ€„ôÁÉ½É•ÍÌì)ô()±…ÍÌ%µ…•Y¥•İ•ÉA…”•áÑ•¹‘ÌMÑ…Ñ•±•ÍÍ]¥‘•Ğì(€™¥¹…°MÑÉ¥¹œÁ…Ñ ì((€½¹ÍĞ%µ…•Y¥•İ•ÉA…”¡ì(€€€ÍÕÁ•È¹­•ä°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹Á…Ñ °(€ô¤ì((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸M…™™½± (€€€€€‰…­É½Õ¹‘½±½Èè½±½ÉÌ¹‰±…¬°(€€€€€…ÁÁ	…ÈèÁÁ	…È¡‰…­É½Õ¹‘½±½Èè½±½ÉÌ¹‰±…¬¤°(€€€€€‰½‘äè•¹Ñ•È (€€€€€€€¡¥±è%¹Ñ•É…Ñ¥Ù•Y¥•İ•È (€€€€€€€€€µ¥¹M…±”è€À¸Ô°(€€€€€€€€€µ…áM…±”è€Ô°(€€€€€€€€€¡¥±è%µ…”¹™¥±” (€€€€€€€€€€€¥±”¡Á…Ñ ¤°(€€€€€€€€€€€™¥Ğè	½á¥Ğ¹½¹Ñ…¥¸°(€€€€€€€€€€€•ÉÉ½É	Õ¥±‘•Èè€¡|°}|°}}|¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸½¹ÍĞQ•áĞ ¾lÖùû§uçâçrš£Z6÷î×ŸŠwŠkÍhÛÍ5£\€ÖöBr“°¢ÒÀ¢’À¢’À¢’À¢“°¢Ğ§Ğ ¦6Æ72f–FVõf–WvW%vRW‡FVæG27FFVÆW75v–FvWB°¢f–æÂ7G&–ærFƒ° ¢6öç7Bf–FVõf–WvW%vR‡°¢7WW"æ¶W’À¢&WV—&VBF†—2çF‚À¢Ò“° ¢÷fW'&–FP¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°¢&WGW&â66fföÆB€¢&6¶w&÷VæD6öÆ÷#¢6öÆ÷'2æ&Æ6²À¢&#¢&"†&6¶w&÷VæD6öÆ÷#¢6öÆ÷'2æ&Æ6²’À¢&öG“¢ôvÆÆW'•f–FVõÆ–W"€¢Fƒ¢F‚À¢öå&Wf–÷W3¢çVÆÂÀ¢öäæW‡C¢çVÆÂÀ¢’À¢“°¢Ğ§Ğ ¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓĞ¢òò5T4”ÂDDU0¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓĞ ¦6Æ727V6–ÄFFW5vRW‡FVæG27FFVgVÅv–FvWB°¢6öç7B7V6–ÄFFW5vR‡·7WW"æ¶W—Ò“° ¢÷fW'&–FP¢7FFSÅ7V6–ÄFFW5vSâ7&VFU7FFR‚’Óâõ7V6–ÄFFW5vU7FFR‚“°§Ğ ¦6Æ72õ7V6–ÄFFW5vU7FFRW‡FVæG27FFSÅ7V6–ÄFFW5vSâ°¢Æ—7CÄÖÅ7G&–ærÂG–æÖ–3ãâFFW2ÒµÓ° ¢÷fW'&–FP¢fö–B–æ—E7FFR‚’°¢7WW"æ–æ—E7FFR‚“°¢FFW2Ò76U7F÷&Rç&VDÆ—7B‚w7V6–ÄFFW2r“°¢76U7F÷&Rç7–æ5fW'6–öâæFDÆ—7FVæW"…ö†æFÆU7–æ5fW'6–öä6†ævVB“°¢Ğ ¢fö–Bö†æFÆU7–æ5fW'6–öä6†ævVB‚’°¢–b‚Ö÷VçFVB’&WGW&ã° ¢f–æÂÆFW7DFFW2Ò76U7F÷&Rç&VDÆ—7B‚w7V6–ÄFFW2r“° ¢6WE7FFR‚‚’°¢FFW2ÒÆFW7DFFW3°¢Ò“°¢Ğ ¢÷fW'&–FP¢fö–BF—7÷6R‚’°¢76U7F÷&Rç7–æ5fW'6–öâç&VÖ÷fTÆ—7FVæW"…ö†æFÆU7–æ5fW'6–öä6†ævVB“°¢7WW"æF—7÷6R‚“°¢Ğ ¢gWGW&SÇfö–Câ÷6fR‚’°¢&WGW&â76U7F÷&Rç6fTÆ—7B‚w7V6–ÄFFW2rÂFFW2“°¢Ğ ¢gWGW&SÇfö–CâöFD÷$VF—B‡´ÖÅ7G&–ærÂG–æÖ–3ãòW†—7F–æwÒ’7–æ2°¢f–æÂF—FÆT6öçG&öÆÆW"Ğ¢FW‡DVF—F–æt6öçG&öÆÆW"‡FW‡C¢rG¶W†—7F–æsõ²wF—FÆRuÒóòrwÒr“°¢f–æÂæ÷FT6öçG&öÆÆW"Ğ¢FW‡DVF—F–æt6öçG&öÆÆW"‡FW‡C¢rG¶W†—7F–æsõ²væ÷FRuÒóòrwÒr“° ¢FFUF–ÖR6VÆV7FVDFFRĞ¢FFUF–ÖRçG'•'6R‚rG¶W†—7F–æsõ²vFFRuÒóòrwÒr’óòFFUF–ÖRææ÷r‚“° ¢&ööÂ–V&Ç’ÒW†—7F–æsõ²w–V&Ç’uÒÒfÇ6S° ¢f–æÂ&W7VÇBÒv—B6†÷tF–ÆösÄÖÅ7G&–ærÂG–æÖ–3ãâ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†F–Æöt6öçFW‡B’Óâ7FFVgVÄ'V–ÆFW"€¢'V–ÆFW#¢†6öçFW‡BÂ6WDF–Æöu7FFR’ÓâÆW'DF–Æör€¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢F—FÆS¢FW‡B†W†—7F–ærÓÒçVÆÂòtFB7V6–ÂFFRr¢tVF—BFFRr’À¢6öçFVçC¢6–ævÆT6†–ÆE67&öÆÅf–Wr€¢6†–ÆC¢6öÇVÖâ€¢Ö–ä†—56—¦S¢Ö–ä†—56—¦RæÖ–âÀ¢6†–ÆG&Vã¢°¢FW‡Df–VÆB€¢6öçG&öÆÆW#¢F—FÆT6öçG&öÆÆW"À¢FV6÷&F–öã¢6öç7B–çWDFV6÷&F–öâ€¢Æ&VÅFW‡C¢tWfVçBæÖRrÀ¢†–çEFW‡C¢t÷W"ææ—fW'6'’rÀ¢’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢"’À¢FW‡Df–VÆB€¢6öçG&öÆÆW#¢æ÷FT6öçG&öÆÆW"À¢Ö„Æ–æW3¢"À¢FV6÷&F–öã¢6öç7B–çWDFV6÷&F–öâ€¢Æ&VÅFW‡C¢tæ÷FR†÷F–öæÂ’rÀ¢’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢B’À¢÷WFÆ–æVD'WGFöâæ–6öâ€¢–6öã¢6öç7B–6öâ„–6öç2æ6ÆVæF%öÖöçF…÷&÷VæFVB’À¢Æ&VÃ¢FW‡B€¢rG·6VÆV7FVDFFRæF—ÒòG·6VÆV7FVDFFRæÖöçF‡ÒòG·6VÆV7FVDFFRç–V'ÒrÀ¢’À¢öå&W76VC¢‚’7–æ2°¢f–æÂ–6¶VBÒv—B6†÷tFFU–6¶W"€¢6öçFW‡C¢6öçFW‡BÀ¢–æ—F–ÄFFS¢6VÆV7FVDFFRÀ¢f—'7DFFS¢FFUF–ÖRƒ#’À¢Æ7DFFS¢FFUF–ÖRƒ#’À¢“° ¢–b‡–6¶VBÒçVÆÂ’°¢6WDF–Æöu7FFR‚‚’Óâ6VÆV7FVDFFRÒ–6¶VB“°¢Ğ¢ÒÀ¢’À¢6†V6¶&÷„Æ—7EF–ÆR€¢6öçFVçEFF–æs¢VFvT–ç6WG2ç¦W&òÀ¢fÇVS¢–V&Ç’À¢öä6†ævVC¢‡fÇVR’°¢6WDF–Æöu7FFR‚‚’Óâ–V&Ç’ÒfÇVRóòG'VR“°¢ÒÀ¢F—FÆS¢6öç7BFW‡B‚u&WVBWfW'’–V"r’À¢6öçG&öÄff–æ—G“¢Æ—7EF–ÆT6öçG&öÄff–æ—G’æÆVF–ærÀ¢’À¢ÒÀ¢’À¢’À¢7F–öç3¢°¢FW‡D'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡B’À¢6†–ÆC¢6öç7BFW‡B‚t6æ6VÂr’À¢’À¢f–ÆÆVD'WGFöâ€¢öå&W76VC¢‚’°¢f–æÂF—FÆRÒF—FÆT6öçG&öÆÆW"çFW‡BçG&–Ò‚“°¢–b‡F—FÆRæ—4V×G’’&WGW&ã° ¢æf–vF÷"ç÷†F–Æöt6öçFW‡BÂ°¢wF—FÆRs¢F—FÆRÀ¢væ÷FRs¢æ÷FT6öçG&öÆÆW"çFW‡BçG&–Ò‚’À¢vFFRs¢6VÆV7FVDFFRçFô—6óƒc7G&–ær‚’À¢w–V&Ç’s¢–V&Ç’À¢Ò“°¢ÒÀ¢6†–ÆC¢6öç7BFW‡B‚u6fRr’À¢’À¢ÒÀ¢’À¢’À¢“° ¢F—FÆT6öçG&öÆÆW"æF—7÷6R‚“°¢æ÷FT6öçG&öÆÆW"æF—7÷6R‚“° ¢–b‡&W7VÇBÓÒçVÆÂ’&WGW&ã° ¢f–æÂ–BĞ¢rG¶W†—7F–æsõ²v–BuÒóòFFUF–ÖRææ÷r‚’æÖ–7&÷6V6öæG56–æ6TWö6‡Òs° ¢&W7VÇE²v–BuÒÒ–C° ¢6WE7FFR‚‚’°¢f–æÂ–æFW‚ÒFFW2æ–æFW…v†W&R‚†B’ÓâE²v–BuÒÓÒ–B“° ¢–b†–æFW‚ãÒ’°¢FFW5¶–æFW…ÒÒ&W7VÇC°¢ÒVÇ6R°¢FFW2æFB‡&W7VÇB“°¢Ğ¢Ò“° ¢v—B÷6fR‚“°¢v—B÷66†VGVÆU&VÖ–æFW"‡&W7VÇB“°¢Ğ ¢gWGW&SÇfö–Câ÷66†VGVÆU&VÖ–æFW"„ÖÅ7G&–ærÂG–æÖ–3â—FVÒ’7–æ2°¢f–æÂFFRÒFFUF–ÖRçG'•'6R‚rG¶—FVÕ²vFFRu×Òr“°¢–b†FFRÓÒçVÆÂ’&WGW&ã° ¢f–æÂæ÷rÒFFUF–ÖRææ÷r‚“°¢f–æÂ–V&Ç’Ò—FVÕ²w–V&Ç’uÒÒfÇ6S° ¢FFUF–ÖR&VÖ–æFW$FFRÒFFUF–ÖR€¢–V&Ç’òæ÷rç–V"¢FFRç–V"À¢FFRæÖöçF‚À¢FFRæF’À¢’À¢“° ¢–b‡–V&Ç’’°¢–b‚&VÖ–æFW$FFRæ—4gFW"†æ÷r’’°¢&VÖ–æFW$FFRÒFFUF–ÖR€¢æ÷rç–V"²À¢FFRæÖöçF‚À¢FFRæF’À¢’À¢“°¢Ğ¢ÒVÇ6R–b‚&VÖ–æFW$FFRæ—4gFW"†æ÷r’’°¢&WGW&ã°¢Ğ ¢f–æÂ–BÒrG¶—FVÕ²v–Bu×Òræ†6„6öFRbƒvffffffc° ¢v—Bæ÷F–f–6F–öç2æ6æ6VÂ†–B“° ¢v—Bæ÷F–f–6F–öç2ç¦öæVE66†VGVÆR€¢–BÀ¢t7V6–ÂF’—26öÖ–ærºw^~)ŞwÛ§uçâçrrÀ¢rG¶—FVÕ²wF—FÆRu×Ò.×ŸŠwBG¶—FVÕ²væ÷FRuÒóòrwÒrÀ¢G¢åE¤FFUF–ÖRæg&öÒ‡&VÖ–æFW$FFRÂG¢æÆö6Â’À¢6öç7Bæ÷F–f–6F–öäFWF–Ç2€¢æG&ö–C¢æG&ö–Dæ÷F–f–6F–öäFWF–Ç2€¢w7V6–ÅöFFW2rÀ¢u7V6–ÂFFW2rÀ¢6†ææVÄFW67&—F–öã¢u&VÖ–æFW'2f÷"–÷W"7V6–ÂF—2rÀ¢–×÷'Fæ6S¢–×÷'Fæ6Ræ†–v‚À¢&–÷&—G“¢&–÷&—G’æ†–v‚À¢’À¢’À¢æG&ö–E66†VGVÆTÖöFS¢æG&ö–E66†VGVÆTÖöFRæ–æW†7DÆÆ÷uv†–ÆT–FÆRÀ¢V”Æö6Äæ÷F–f–6F–öäFFT–çFW'&WFF–öã ¢T”Æö6Äæ÷F–f–6F–öäFFT–çFW'&WFF–öâæ'6öÇWFUF–ÖRÀ¢ÖF6„FFUF–ÖT6ö×öæVçG3 ¢–V&Ç’òFFUF–ÖT6ö×öæVçG2æFFTæEF–ÖR¢çVÆÂÀ¢“°¢Ğ ¢gWGW&SÇfö–CâöFVÆWFR„ÖÅ7G&–ærÂG–æÖ–3â—FVÒ’7–æ2°¢f–æÂ–BÒrG¶—FVÕ²v–Bu×Òræ†6„6öFRbƒvffffffc° ¢v—Bæ÷F–f–6F–öç2æ6æ6VÂ†–B“° ¢6WE7FFR‚‚’°¢FFW2ç&VÖ÷fUv†W&R‚†B’ÓâE²v–BuÒÓÒ—FVÕ²v–BuÒ“°¢Ò“° ¢v—B÷6fR‚“°¢Ğ ¢÷fW'&–FP¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°¢f–æÂ6÷'FVBÒ²ââæFFW5Ğ¢âç6÷'B‚†Â"’ÓârG¶²vFFRu×Òræ6ö×&UFò‚rG¶%²vFFRu×Òr’“° ¢&WGW&â66fföÆB€¢&6¶w&÷VæD6öÆ÷#¢&6¶w&÷VæD6öÆ÷"À¢&#¢&"€¢&6¶w&÷VæD6öÆ÷#¢&6¶w&÷VæD6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚u7V6–ÂFFW2r’À¢’À¢fÆöF–æt7F–öä'WGFöã¢fÆöF–æt7F–öä'WGFöâ€¢öå&W76VC¢‚’ÓâöFD÷$VF—B‚’À¢6†–ÆC¢6öç7B–6öâ„–6öç2æFE÷&÷VæFVB’À¢’À¢&öG“¢6÷'FVBæ—4V×G¢ò6öç7B6VçFW"€¢6†–ÆC¢FW‡B€¢tFBF†RFFW2F†BÖVâF†RÖ÷7BFò–÷RârÀ¢7G–ÆS¢FW‡E7G–ÆR†6öÆ÷#¢6öÆ÷'2çv†—FSSB’À¢’À¢¢¢Æ—7Ef–Wræ'V–ÆFW"€¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒb’À¢—FVÔ6÷VçC¢6÷'FVBæÆVæwF‚À¢—FVÔ'V–ÆFW#¢†6öçFW‡BÂ–æFW‚’°¢f–æÂ—FVÒÒ6÷'FVE¶–æFW…Ó°¢f–æÂFFRÒFFUF–ÖRçG'•'6R‚rG¶—FVÕ²vFFRu×Òr“°¢f–æÂæ÷FRÒrG¶—FVÕ²væ÷FRuÒóòrwÒs° ¢&WGW&â6öçF–æW"€¢Ö&v–ã¢6öç7BVFvT–ç6WG2æöæÇ’†&÷GFöÓ¢"’À¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢6öÆ÷#¢7W&f6T6öÆ÷"À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ‚’À¢’À¢6†–ÆC¢Æ—7EF–ÆR€¢ÆVF–æs¢6öç7B6—&6ÆTfF"€¢&6¶w&÷VæD6öÆ÷#¢6öÆ÷"ƒƒ34dcTd"’À¢6†–ÆC¢–6öâ€¢–6öç2æff÷&—FU÷&÷VæFVBÀ¢6öÆ÷#¢–æ´6öÆ÷"À¢’À¢’À¢F—FÆS¢FW‡B‚rG¶—FVÕ²wF—FÆRu×Òr’À¢7V'F—FÆS¢FW‡B€¢rG¶FFSòæF—ÒòG¶FFSòæÖöçF‡ÒòG¶FFSòç–V'Òp¢rG¶—FVÕ²w–V&Ç’uÒÓÒG'VRòr.×ŸŠw"WfW'’–V"r¢rwÒp¢rG¶æ÷FRæ—4æ÷DV×G’òuÆâFæ÷FRr¢rwÒrÀ¢’À¢—5F‡&VTÆ–æS¢æ÷FRæ—4æ÷DV×G’À¢G&–Æ–æs¢÷WÖVçT'WGFöãÅ7G&–æsâ€¢öå6VÆV7FVC¢‡fÇVR’°¢–b‡fÇVRÓÒvVF—Br’°¢öFD÷$VF—B†W†—7F–æs¢—FVÒ“°¢ÒVÇ6R–b‡fÇVRÓÒvFVÆWFRr’°¢öFVÆWFR†—FVÒ“°¢Ğ¢ÒÀ¢—FVÔ'V–ÆFW#¢…ò’Óâ6öç7B°¢÷WÖVçT—FVÒ€¢fÇVS¢vVF—BrÀ¢6†–ÆC¢FW‡B‚tVF—Br’À¢’À¢÷WÖVçT—FVÒ€¢fÇVS¢vFVÆWFRrÀ¢6†–ÆC¢FW‡B‚tFVÆWFRr’À¢’À¢ÒÀ¢’À¢’À¢“°¢ÒÀ¢’À¢“°¢Ğ§Ğ ¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓĞ¢òòÄõdRäõDU0¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓĞ ¦6Æ72Æ÷fTæ÷FW5vRW‡FVæG27FFVgVÅv–FvWB°¢6öç7BÆ÷fTæ÷FW5vR‡·7WW"æ¶W—Ò“° ¢÷fW'&–FP¢7FFSÄÆ÷fTæ÷FW5vSâ7&VFU7FFR‚’ÓâôÆ÷fTæ÷FW5vU7FFR‚“°§Ğ ¦6Æ72ôÆ÷fTæ÷FW5vU7FFRW‡FVæG27FFSÄÆ÷fTæ÷FW5vSâ°¢Æ—7CÄÖÅ7G&–ærÂG–æÖ–3ãâæ÷FW2ÒµÓ° ¢÷fW'&–FP¢fö–B–æ—E7FFR‚’°¢7WW"æ–æ—E7FFR‚“°¢æ÷FW2Ò76U7F÷&Rç&VDÆ—7B‚vÆ÷fTæ÷FW2r“°¢76U7F÷&Rç7–æ5fW'6–öâæFDÆ—7FVæW"…ö†æFÆU7–æ5fW'6–öä6†ævVB“°¢Ğ ¢fö–Bö†æFÆU7–æ5fW'6–öä6†ævVB‚’°¢–b‚Ö÷VçFVB’&WGW&ã° ¢f–æÂÆFW7Dæ÷FW2Ò76U7F÷&Rç&VDÆ—7B‚vÆ÷fTæ÷FW2r“° ¢6WE7FFR‚‚’°¢æ÷FW2ÒÆFW7Dæ÷FW3°¢Ò“°¢Ğ ¢÷fW'&–FP¢fö–BF—7÷6R‚’°¢76U7F÷&Rç7–æ5fW'6–öâç&VÖ÷fTÆ—7FVæW"…ö†æFÆU7–æ5fW'6–öä6†ævVB“°¢7WW"æF—7÷6R‚“°¢Ğ ¢gWGW&SÇfö–CâöFDæ÷FR‚’7–æ2°¢f–æÂ6öçG&öÆÆW"ÒFW‡DVF—F–æt6öçG&öÆÆW"‚“° ¢f–æÂFW‡BÒv—B6†÷tF–ÆösÅ7G&–æsâ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†F–Æöt6öçFW‡B’ÓâÆW'DF–Æör€¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚uw&—FRÆ÷fRæ÷FRr’À¢6öçFVçC¢FW‡Df–VÆB€¢6öçG&öÆÆW#¢6öçG&öÆÆW"À¢WFöfö7W3¢G'VRÀ¢Ö„Æ–æW3¢RÀ¢FV6÷&F–öã¢6öç7B–çWDFV6÷&F–öâ€¢†–çEFW‡C¢uw&—FRg&öÒ–÷W"†V'BââârÀ¢’À¢’À¢7F–öç3¢°¢FW‡D'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡B’À¢6†–ÆC¢6öç7BFW‡B‚t6æ6VÂr’À¢’À¢f–ÆÆVD'WGFöâ€¢öå&W76VC¢‚’°¢æf–vF÷"ç÷†F–Æöt6öçFW‡BÂ6öçG&öÆÆW"çFW‡BçG&–Ò‚’“°¢ÒÀ¢6†–ÆC¢6öç7BFW‡B‚u6fRr’À¢’À¢ÒÀ¢’À¢“° ¢6öçG&öÆÆW"æF—7÷6R‚“° ¢–b‡FW‡BÓÒçVÆÂÇÂFW‡Bæ—4V×G’’&WGW&ã° ¢6WE7FFR‚‚’°¢æ÷FW2æ–ç6W'BƒÂ°¢v–Bs¢FFUF–ÖRææ÷r‚’æÖ–7&÷6V6öæG56–æ6TWö6‚çFõ7G&–ær‚’À¢wFW‡Bs¢FW‡BÀ¢vFFRs¢FFUF–ÖRææ÷r‚’çFô—6óƒc7G&–ær‚’À¢Ò“°¢Ò“° ¢v—B76U7F÷&Rç6fTÆ—7B‚vÆ÷fTæ÷FW2rÂæ÷FW2“°¢Ğ ¢÷fW'&–FP¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°¢&WGW&â66fföÆB€¢&6¶w&÷VæD6öÆ÷#¢&6¶w&÷VæD6öÆ÷"À¢&#¢&"€¢&6¶w&÷VæD6öÆ÷#¢&6¶w&÷VæD6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚tÆ÷fRæ÷FW2r’À¢’À¢fÆöF–æt7F–öä'WGFöã¢fÆöF–æt7F–öä'WGFöâ€¢öå&W76VC¢öFDæ÷FRÀ¢6†–ÆC¢6öç7B–6öâ„–6öç2æVF—E÷&÷VæFVB’À¢’À¢&öG“¢æ÷FW2æ—4V×G¢ò6öç7B6VçFW"€¢6†–ÆC¢FW‡B€¢u6fRÆ—GFÆRv÷&G2öbÆ÷fR†W&RârÀ¢7G–ÆS¢FW‡E7G–ÆR†6öÆ÷#¢6öÆ÷'2çv†—FSSB’À¢’À¢¢¢Æ—7Ef–Wræ'V–ÆFW"€¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒb’À¢—FVÔ6÷VçC¢æ÷FW2æÆVæwF‚À¢—FVÔ'V–ÆFW#¢†6öçFW‡BÂ–æFW‚’°¢f–æÂæ÷FRÒæ÷FW5¶–æFW…Ó° ¢&WGW&â6öçF–æW"€¢Ö&v–ã¢6öç7BVFvT–ç6WG2æöæÇ’†&÷GFöÓ¢"’À¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒ‚’À¢FV6÷&F–öã¢&÷„FV6÷&F–öâ€¢6öÆ÷#¢7W&f6T6öÆ÷"À¢&÷&FW%&F—W3¢&÷&FW%&F—W2æ6—&7VÆ"ƒ#’À¢&÷&FW#¢&÷&FW"æÆÂ€¢6öÆ÷#¢–æ´6öÆ÷"çv—F…fÇVW2†Ç†¢ãB’À¢’À¢’À¢6†–ÆC¢&÷r€¢7&÷74†—4Æ–væÖVçC¢7&÷74†—4Æ–væÖVçBç7F'BÀ¢6†–ÆG&Vã¢°¢6öç7B–6öâ„–6öç2æff÷&—FRÂ6öÆ÷#¢–æ´6öÆ÷"’À¢6öç7B6—¦VD&÷‚‡v–GFƒ¢"’À¢W‡æFVB†6†–ÆC¢FW‡B‚rG¶æ÷FU²wFW‡Bu×Òr’’À¢–6öä'WGFöâ€¢öå&W76VC¢‚’7–æ2°¢6WE7FFR‚‚’Óâæ÷FW2ç&VÖ÷fTB†–æFW‚’“°¢v—B76U7F÷&Rç6fTÆ—7B‚vÆ÷fTæ÷FW2rÂæ÷FW2“°¢ÒÀ¢–6öã¢6öç7B–6öâ„–6öç2æFVÆWFUö÷WFÆ–æRÂ6—¦S¢#’À¢’À¢ÒÀ¢’À¢“°¢ÒÀ¢’À¢“°¢Ğ§Ğ ¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓĞ¢òò4UED”äu0¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓĞ ¦6Æ726WGF–æw5vRW‡FVæG27FFVgVÅv–FvWB°¢f–æÂ7G&–ær'FæW$öæS°¢f–æÂ7G&–ær'FæW%Gvó°¢f–æÂfö–BgVæ7F–öâ…7G&–ærf—'7BÂ7G&–ær6V6öæB’öå6fS° ¢6öç7B6WGF–æw5vR‡°¢7WW"æ¶W’À¢&WV—&VBF†—2ç'FæW$öæRÀ¢&WV—&VBF†—2ç'FæW%GvòÀ¢&WV—&VBF†—2æöå6fRÀ¢Ò“° ¢÷fW'&–FP¢7FFSÅ6WGF–æw5vSâ7&VFU7FFR‚’Óâõ6WGF–æw5vU7FFR‚“°§Ğ ¦6Æ72õ6WGF–æw5vU7FFRW‡FVæG27FFSÅ6WGF–æw5vSâ°¢÷fW'&–FP¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°¢&WGW&âÆ—7Ef–Wr€¢FF–æs¢6öç7BVFvT–ç6WG2æÆÂƒ#’À¢6†–ÆG&Vã¢°¢6öç7BFW‡B€¢u6WGF–æw2rÀ¢7G–ÆS¢FW‡E7G–ÆR†föçE6—¦S¢#bÂföçEvV–v‡C¢föçEvV–v‡Bæ&öÆB’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢‚’À¢6öç7BFW‡B€¢tÖ¶R–÷W"Æ—GFÆR76RfVVÂÆ–¶R–÷W'2ârÀ¢7G–ÆS¢FW‡E7G–ÆR†6öÆ÷#¢6öÆ÷'2çv†—FSSB’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢#R’À¢6&B€¢6öÆ÷#¢7W&f6T6öÆ÷"À¢6†–ÆC¢Æ—7EF–ÆR€¢ÆVF–æs¢6öç7B6—&6ÆTfF"€¢&6¶w&÷VæD6öÆ÷#¢&ÇVT6öÆ÷"À¢6†–ÆC¢–6öâ„–6öç2ç&—f7•÷F—ö÷WFÆ–æVBÂ6öÆ÷#¢6öÆ÷'2çv†—FR’À¢’À¢F—FÆS¢6öç7BFW‡B‚u&—f7’b66÷VçBr’À¢7V'F—FÆS¢6öç7BFW‡B‚sZ7ñÍhÒ,"éİyø§yÛ¾5£o|ÖœÛ§uçâçRÂZ7ëˆºw^~)ŞtÈhİ°5£nøÖ"Z7çÍhÛ¸'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () {
               Navigator.of(context).push(
@@ -9224,7 +4341,7 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Icon(Icons.info_outline_rounded, color: Colors.white),
             ),
             title: const Text('App information'),
-            subtitle: const Text('à¦…à§à¦¯à¦¾à¦ªà§‡à¦° à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦“ à¦¸à¦®à¦¸à§à¦¯à¦¾ à¦¸à¦®à¦¾à¦§à¦¾à¦¨'),
+            subtitle: const Text(/…5£~øÖû.×ŸŠwÜÓZ7nMhĞ ºw^~)Şw)¸5£g4ÖâZ7ïhß¨'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AppInformationPage()),
@@ -9263,281 +4380,102 @@ class _SettingsPageState extends State<SettingsPage> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          'Data Saver à¦¸à§‡à¦Ÿà¦¿à¦‚ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤',
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 20),
+                          'Data Saver)¸5£~şéİyø§yØ¦àÖ™SZ7èÈºw^~)Şwl.×ŸŠwŠkÍhß¨5£Pœ°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô°(€€€€€€€€¤°(€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÈÀ¤°((€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÈÀ¤°(€€€€€€€½¹ÍĞM•Ñ¥½¹!•…‘¥¹œ¡Ñ¥Ñ±”è€9½Ñ¥™¥…Ñ¥½¹Ìœ¤°(€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÄÀ¤°(€€€€€€€Y…±Õ•1¥ÍÑ•¹…‰±•	Õ¥±‘•Èñ‰½½°ø (€€€€€€€€€Ù…±Õ•1¥ÍÑ•¹…‰±”è9½Ñ¥™¥…Ñ¥½¹AÉ¥Ù…åM•ÑÑ¥¹Ì¹¹½Ñ¥™¥…Ñ¥½¹Í¹…‰±•°(€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°¹½Ñ¥™¥…Ñ¥½¹Í¹…‰±•°|¤ì(€€€€€€€€€€€™¥¹…°¡¥‘•9½Ñ¥™¥…Ñ¥½¹Ì€ô€…¹½Ñ¥™¥…Ñ¥½¹Í¹…‰±•ì(€€€€€€€€€€€É•ÑÕÉ¸…É (€€€€€€€€€€€€€½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€€€€€¡¥±èMİ¥Ñ¡1¥ÍÑQ¥±” (€€€€€€€€€€€€€€€Í•½¹‘…Éäè%½¸ (€€€€€€€€€€€€€€€€€¡¥‘•9½Ñ¥™¥…Ñ¥½¹Ì(€€€€€€€€€€€€€€€€€€€€€€ü%½¹Ì¹¹½Ñ¥™¥…Ñ¥½¹Í}½™™}½ÕÑ±¥¹•(€€€€€€€€€€€€€€€€€€€€€€è%½¹Ì¹¹½Ñ¥™¥…Ñ¥½¹Í}…Ñ¥Ù•}½ÕÑ±¥¹•°(€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ 5•ÍÍ…”¹½Ñ¥™¥…Ñ¥½¹Ìœ¤°(€€€€€€€€€€€€€€€ÍÕ‰Ñ¥Ñ±”èQ•áĞ (€€€€€€€€€€€€€€€€€¡¥‘•9½Ñ¥™¥…Ñ¥½¹Ì(€€€€€€€€€€€€€€€€€€€€€€ü€œÖœÛ§uçâçs¢Z7pn×ŸŠw
+khÙÇ5£~À‹§uçâçg,Öú³Z7qÍhØ 5£f²éİyø§yÜ¦ ÖBp¢¢ù£Z6ğNŠjhÙ¨"éİyø§yßÇ5£~pÖZ6çÍhÛ¿5£~Úéİyø§yĞ¦ÖÜ{§uçâçBrÀ¢’À¢fÇVS¢†–FTæ÷F–f–6F–öç2À¢7F—fT6öÆ÷#¢–æ´6öÆ÷"À¢öä6†ævVC¢††–FR’7–æ2°¢G'’°¢v—Bæ÷F–f–6F–öå&—f7•6WGF–æw2ç6WDæ÷F–f–6F–öç4Væ&ÆVB‚†–FR“°¢Ò6F6‚†W'&÷"’°¢–b‚6öçFW‡BæÖ÷VçFVB’&WGW&ã°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6öç7B6æ6´&"€¢6öçFVçC¢FW‡B‚tæ÷F–f–6F–öâ6WGF–ær6÷VÆBæ÷B&R6fVBâr’À¢’À¢“°¢Ğ¢ÒÀ¢’À¢“°¢ÒÀ¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢’À¢fÇVTÆ—7FVæ&ÆT'V–ÆFW#Æ&ööÃâ€¢fÇVTÆ—7FVæ&ÆS¢æ÷F–f–6F–öå&—f7•6WGF–æw2æ†–FTFWF–Ç2À¢'V–ÆFW#¢†6öçFW‡BÂ†–FTFWF–Ç2Âò’Óâ6&B€¢6öÆ÷#¢7W&f6T6öÆ÷"À¢6†–ÆC¢7v—F6„Æ—7EF–ÆR€¢6V6öæF'“¢6öç7B–6öâ„–6öç2çf—6–&–Æ—G•ööfeö÷WFÆ–æVBÂ6öÆ÷#¢–æ´6öÆ÷"’À¢F—FÆS¢6öç7BFW‡B‚t†–FRÖW76vRFWF–Ç2r’À¢7V'F—FÆS¢FW‡B€¢†–FTFWF–Ç0¢òn×ŸŠwœ³Z7êÍhİÇ5£g‹§uçâçÖZ7kÍhİ¤5£~‹§uçâçfÖÙSZ7ìhİ¾"éİyø§yßÇ5£~°ÖBp¢¢sZ6çÍhÛ¿5£~ØÖrZ7îhİÇºw^~)Şt)¬5£vÂéİyø§yÜ¦˜Öûâ.×ŸŠwûãZ7Ù	Ëˆ
+Kˆ˜[YNˆYQ]Z[ËˆXİ]™PÛÛÜˆ[šĞÛÛÜ‹ˆÛÚ[™ÙYˆ
+˜[YJH\Ş[˜ÈÂˆHÂˆ]ØZ]›İYšXØ][Û”š]˜XŞTÙ][™ÜËœÙ]YQ]Z[Ê˜[YJNÂˆHØ]Ú
+\œ›ÜŠHÂˆYˆ
+XÛÛ^›[İ[Y
+H™]\›ÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛÛœİÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+	Ôš]˜XŞHÙ][™ÈÛİ[›İ™HØ]™Y‰ÊJKˆ
+NÂˆBˆKˆ
+Kˆ
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆŒ
+KˆÚ^™Y›Ş
+ˆÚYˆİX›Kš[™š[š]KˆÚ[ˆ^]Û‹šXÛÛŠˆÛ”™\ÜÙYˆ
 
-        const SizedBox(height: 20),
-        const SectionHeading(title: 'Notifications'),
-        const SizedBox(height: 10),
-        ValueListenableBuilder<bool>(
-          valueListenable: NotificationPrivacySettings.notificationsEnabled,
-          builder: (context, notificationsEnabled, _) {
-            final hideNotifications = !notificationsEnabled;
-            return Card(
-              color: surfaceColor,
-              child: SwitchListTile(
-                secondary: Icon(
-                  hideNotifications
-                      ? Icons.notifications_off_outlined
-                      : Icons.notifications_active_outlined,
-                  color: pinkColor,
-                ),
-                title: const Text('Message notifications'),
-                subtitle: Text(
-                  hideNotifications
-                      ? 'à¦¬à¦¨à§à¦§: à¦¨à¦¤à§à¦¨ à¦®à§‡à¦¸à§‡à¦œà§‡à¦° à¦¨à§‹à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦†à¦¸à¦¬à§‡ à¦¨à¦¾à¥¤'
-                      : 'à¦šà¦¾à¦²à§: à¦¨à¦¤à§à¦¨ à¦®à§‡à¦¸à§‡à¦œà§‡à¦° à¦¨à§‹à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦†à¦¸à¦¬à§‡à¥¤',
-                ),
-                value: hideNotifications,
-                activeColor: pinkColor,
-                onChanged: (hide) async {
-                  try {
-                    await NotificationPrivacySettings.setNotificationsEnabled(!hide);
-                  } catch (error) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Notification setting could not be saved.'),
-                      ),
-                    );
-                  }
-                },
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 10),
-        ValueListenableBuilder<bool>(
-          valueListenable: NotificationPrivacySettings.hideDetails,
-          builder: (context, hideDetails, _) => Card(
-            color: surfaceColor,
-            child: SwitchListTile(
-              secondary: const Icon(Icons.visibility_off_outlined, color: pinkColor),
-              title: const Text('Hide message details'),
-              subtitle: Text(
-                hideDetails
-                    ? 'à¦¨à§‹à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨à§‡ à¦¶à§à¦§à§ à¦¬à§à¦¯à¦•à§à¦¤à¦¿à¦—à¦¤ à¦¸à¦¤à¦°à§à¦•à¦¬à¦¾à¦°à§à¦¤à¦¾ à¦¦à§‡à¦–à¦¾à¦¬à§‡à¥¤'
-                    : 'à¦¨à§‹à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨à§‡ à¦®à§‡à¦¸à§‡à¦œà§‡à¦° à¦¬à¦¿à¦¬à¦°à¦£ à¦¦à§‡à¦–à¦¾ à¦¯à¦¾à¦¬à§‡à¥¤',
-              ),
-              value: hideDetails,
-              activeColor: pinkColor,
-              onChanged: (value) async {
-                try {
-                  await NotificationPrivacySettings.setHideDetails(value);
-                } catch (error) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Privacy setting could not be saved.')),
-                  );
-                }
-              },
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          child: TextButton.icon(
-            onPressed: () async {
-              final shouldLogout = await showDialog<bool>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  backgroundColor: surfaceColor,
-                  title: const Text('Log out?'),
-                  content: const Text('You can sign in again with the same account.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext, false),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext, true),
-                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                      child: const Text('Log out'),
-                    ),
-                  ],
-                ),
-              );
-              if (shouldLogout != true || !context.mounted) return;
-              try {
-                await SpaceStore.stopRealtimeSync();
-                await PushNotificationService.unregisterCurrentToken();
-                await PrivateSpaceService.clearCachedSpaceData();
-                await AuthService.signOut();
-                if (!context.mounted) return;
-                rootNavigatorKey.currentState?.pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const SplashScreen()),
-                  (route) => false,
-                );
-              } catch (error) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('à¦¸à¦¾à¦‡à¦¨ à¦†à¦‰à¦Ÿ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-                );
-              }
-            },
-            icon: const Icon(Icons.logout, color: Colors.redAccent),
-            label: const Text('Log out', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Center(child: Text('Orbit Two Made by Tawsif', style: TextStyle(color: Colors.white60, fontSize: 11))),
-        const SizedBox(height: 8),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 48),
-          child: Divider(height: 1, thickness: 0.7, color: Colors.white24),
-        ),
-        const SizedBox(height: 8),
-        const Center(child: Text('Made with love', style: TextStyle(color: Colors.white38, fontSize: 11))),
-      ],
-    );
-  }
-}
+H\Ş[˜ÈÂˆš[˜[Úİ[ÙÛİ]H]ØZ]ÚİÑX[ÙÏ›ÛÛŠˆÛÛ^ˆÛÛ^ˆZ[\ˆ
+X[ÙĞÛÛ^
+HOˆ[\X[ÙÊˆ˜XÚÙÜ›İ[™ÛÛÜˆİ\™˜XÙPÛÛÜ‹ˆ]NˆÛÛœİ^
+	ÓÙÈİ]ÉÊKˆÛÛ[ˆÛÛœİ^
+	Ö[İHØ[ˆÚYÛˆ[ˆYØZ[ˆÚ]HØ[YHXØÛİ[‰ÊKˆXİ[ÛœÎˆÂˆ^]ÛŠˆÛ”™\ÜÙYˆ
 
+HOˆ˜]šYØ]Ü‹œÜ
+X[ÙĞÛÛ^˜[ÙJKˆÚ[ˆÛÛœİ^
+	ĞØ[˜Ù[	ÊKˆ
+Kˆ^]ÛŠˆÛ”™\ÜÙYˆ
 
-class PrivacyPage extends StatefulWidget {
-  final String partnerOne;
-  final String partnerTwo;
-  final void Function(String first, String second) onSave;
+HOˆ˜]šYØ]Ü‹œÜ
+X[ÙĞÛÛ^YJKˆİ[Nˆ^]Û‹œİ[Qœ›ÛJ›Ü™YÜ›İ[™ÛÛÜˆÛÛÜœËœ™YXØÙ[
+KˆÚ[ˆÛÛœİ^
+	ÓÙÈİ]	ÊKˆ
+KˆKˆ
+Kˆ
+NÂˆYˆ
+Úİ[ÙÛİ]OHYHXÛÛ^›[İ[Y
+H™]\›ÂˆHÂˆ]ØZ]ÜXÙTİÜ™KœİÜ™X[[YTŞ[˜Ê
+NÂˆ]ØZ]\Ú›İYšXØ][Û”Ù\šXÙK[œ™YÚ\İ\İ\œ™[ÚÙ[Š
+NÂˆ]ØZ]š]˜]TÜXÙTÙ\šXÙK˜ÛX\ØXÚYÜXÙQ]J
+NÂˆ]ØZ]]]Ù\šXÙKœÚYÛ“İ]
 
-  const PrivacyPage({
-    super.key,
-    required this.partnerOne,
-    required this.partnerTwo,
-    required this.onSave,
-  });
-
-  @override
-  State<PrivacyPage> createState() => _PrivacyPageState();
-}
-
-class _PrivacyPageState extends State<PrivacyPage> {
-  late final TextEditingController firstController;
-
-  @override
-  void initState() {
-    super.initState();
-    firstController = TextEditingController(text: widget.partnerOne);
-  }
-
-  @override
-  void dispose() {
-    firstController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveProfile() async {
-    final ownName = firstController.text.trim();
-
-    if (ownName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('à¦¨à¦¿à¦œà§‡à¦° à¦¨à¦¾à¦® à¦²à¦¿à¦–à¦¤à§‡ à¦¹à¦¬à§‡à¥¤')),
-      );
-      return;
-    }
-
-    try {
-      await RelationshipService.saveOwnName(ownName);
-      await SpaceStore.saveString('partnerOne', ownName);
-
-      widget.onSave(ownName, widget.partnerTwo);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('à¦¨à¦¿à¦œà§‡à¦° à¦¨à¦¾à¦® à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦¹à§Ÿà§‡à¦›à§‡à¥¤')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('à¦¨à¦¾à¦® à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤')),
-      );
-    }
-  }
-
-  Future<void> _pickProfilePhoto() async {
-    if (!mounted) return;
-
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('à¦†à¦—à§‡ à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡ à¦¸à¦¾à¦‡à¦¨ à¦‡à¦¨ à¦•à¦°à§‹à¥¤'),
-        ),
-      );
-      return;
-    }
-
-    try {
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 1000,
-        maxHeight: 1000,
-      );
-
-      if (!mounted || picked == null) return;
-
-      final sourceFile = File(picked.path);
-
-      if (!await sourceFile.exists() ||
-          await sourceFile.length() == 0) {
-        throw Exception('à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¿à¦¤ à¦›à¦¬à¦¿à¦Ÿà¦¿ à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-      }
-
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: picked.path,
-        aspectRatio: const CropAspectRatio(
-          ratioX: 1,
-          ratioY: 1,
-        ),
-        maxWidth: 384,
-        maxHeight: 384,
-        compressFormat: ImageCompressFormat.jpg,
-        compressQuality: 70,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦² à¦›à¦¬à¦¿ à¦ à¦¿à¦• à¦•à¦°à§‹',
-            toolbarColor: const Color(0xFF111026),
-            toolbarWidgetColor: Colors.white,
-            activeControlsWidgetColor: pinkColor,
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: true,
-            cropStyle: CropStyle.circle,
-            showCropGrid: true,
-            hideBottomControls: false,
-          ),
-          IOSUiSettings(
-            title: 'à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦² à¦›à¦¬à¦¿ à¦ à¦¿à¦• à¦•à¦°à§‹',
-            aspectRatioLockEnabled: true,
-            resetAspectRatioEnabled: false,
-            cropStyle: CropStyle.circle,
-          ),
-        ],
-      );
-
-      if (!mounted || cropped == null) return;
-
-      final croppedFile = File(cropped.path);
-
-      if (!await croppedFile.exists()) {
-        throw Exception('à¦•à§à¦°à¦ª à¦•à¦°à¦¾ à¦›à¦¬à¦¿à¦Ÿà¦¿ à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-      }
-
-      final bytes = await croppedFile.readAsBytes();
-
-      if (bytes.isEmpty || bytes.length > 500 * 1024) {
-        throw Exception(
-          'à¦›à¦¬à¦¿à¦Ÿà¦¿ à§«à§¦à§¦ KB-à¦à¦° à¦¬à§‡à¦¶à¦¿à¥¤ à¦›à§‹à¦Ÿ à¦›à¦¬à¦¿ à¦¦à¦¿à§Ÿà§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤',
+NÂˆYˆ
+XÛÛ^›[İ[Y
+H™]\›Âˆ›Ûİ˜]šYØ]Ü’Ù^K˜İ\œ™[İ]OËœ\Ú[™™[[İ™U[[
+ˆX]\šX[YÙT›İ]JZ[\ˆ
+ÊHOˆÛÛœİÜ\ÚØÜ™Y[Š
+JKˆ
+›İ]JHOˆ˜[ÙKˆ
+NÂˆHØ]Ú
+\œ›ÜŠHÂˆYˆ
+XÛÛ^›[İ[Y
+H™]\›ÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+îhß¨"éİyø§yß‰ºw^~)Şw)•5£x€ÖıóZ7Ùºw^~)ŞwëhĞ 5£~ÜÖûâ.×ŸŠwÛZ6Y	ÊJKˆ
+NÂˆBˆKˆXÛÛˆÛÛœİXÛÛŠXÛÛœË›ÙÛİ]ÛÛÜˆÛÛÜœËœ™YXØÙ[
+KˆX™[ˆÛÛœİ^
+	ÓÙÈİ]	Ëİ[Nˆ^İ[JÛÛÜˆÛÛÜœËœ™YXØÙ[
+JKˆ
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆŒ
+KˆÛÛœİÙ[\ŠÚ[ˆ^
+	ÓÜ˜š]ÛÈXYHH]ÜÚY‰Ëİ[Nˆ^İ[JÛÛÜˆÛÛÜœËÚ]MŒ›ÛÚ^™NˆLJJJKˆÛÛœİÚ^™Y›Ş
+ZYÚˆ
+KˆÛÛœİY[™ÊˆY[™ÎˆYÙR[œÙ]ËœŞ[[Y]šXÊÜš^›Û[ˆ
+KˆÚ[ˆ]šY\ŠZYÚˆKXÚÛ™\ÜÎˆËÛÛÜˆÛÛÜœËÚ]L
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆ
+KˆÛÛœİÙ[\ŠÚ[ˆ^
+	ÓXYHÚ]İ™IËİ[Nˆ^İ[JÛÛÜˆÛÛÜœËÚ]LÎ›ÛÚ^™NˆLJJJKˆKˆ
+NÂˆBŸB‚‚˜Û\ÜÈš]˜XŞTYÙH^[™Èİ]Y[ÚYÙ]Âˆš[˜[İš[™È\™\“Û™NÂˆš[˜[İš[™È\™\•ÛÎÂˆš[˜[›ÚY[˜İ[ÛŠİš[™Èš\œİİš[™ÈÙXÛÛ™
+HÛ”Ø]™NÂ‚ˆÛÛœİš]˜XŞTYÙJÂˆİ\\‹šÙ^Kˆ™\]Z\™Y\Ëœ\™\“Û™Kˆ™\]Z\™Y\Ëœ\™\•ÛËˆ™\]Z\™Y\Ë›Û”Ø]™KˆJNÂ‚ˆİ™\œšYBˆİ]Oš]˜XŞTYÙOˆÜ™X]Tİ]J
+HOˆÔš]˜XŞTYÙTİ]J
+NÂŸB‚˜Û\ÜÈÔš]˜XŞTYÙTİ]H^[™Èİ]Oš]˜XŞTYÙOˆÂˆ]Hš[˜[^Y][™ĞÛÛ›Û\ˆš\œİÛÛ›Û\Â‚ˆİ™\œšYBˆ›ÚY[š]İ]J
+HÂˆİ\\‹š[š]İ]J
+NÂˆš\œİÛÛ›Û\ˆH^Y][™ĞÛÛ›Û\Š^ˆÚYÙ]œ\™\“Û™JNÂˆB‚ˆİ™\œšYBˆ›ÚY\ÜÜÙJ
+HÂˆš\œİÛÛ›Û\‹™\ÜÜÙJ
+NÂˆİ\\‹™\ÜÜÙJ
+NÂˆB‚ˆ]\™O›ÚYˆÜØ]™T›Ùš[J
+H\Ş[˜ÈÂˆš[˜[İÛ“˜[YHHš\œİÛÛ›Û\‹^š[J
+NÂ‚ˆYˆ
+İÛ“˜[YKš\Ñ[\JHÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛÛœİÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+	ºw^~)ŞvoÍhß°"éİyø§yÙ¾ºw^~)Şv)²5£~’éİyø§yÜ¦äÖöBr’’À¢“°¢&WGW&ã°¢Ğ ¢G'’°¢v—B&VÆF–öç6†—6W'f–6Rç6fT÷väæÖR†÷väæÖR“°¢v—B76U7F÷&Rç6fU7G&–ær‚w'FæW$öæRrÂ÷väæÖR“° ¢v–FvWBæöå6fR†÷väæÖRÂv–FvWBç'FæW%Gvò“° ¢–b‚Ö÷VçFVB’&WGW&ã°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6öç7B6æ6´&"†6öçFVçC¢FW‡B‚sZ7çhĞ 5£~¸‹§uçâçfÖÜÓZ4ÈhßÇ5£}œ¤¤°(€€€€€€¤ì(€€€ô…Ñ €¡”¤ì(€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€M¹…­	…È¡½¹Ñ•¹ĞèQ•áĞ ›§uçâçfúéİyø§yØ¦àÖ™SZ7èÈºw^~)Şwl.×ŸŠwŠkÍhß¨5£P€ÖÛë§uçâçB™£Z7óMhŞ 5£gÖBr’’À¢“°¢Ğ¢Ğ ¢gWGW&SÇfö–Câ÷–6µ&öf–ÆU†÷Fò‚’7–æ2°¢–b‚Ö÷VçFVB’&WGW&ã° ¢f–æÂW6W"Òf—&V&6TWF‚æ–ç7Fæ6Ræ7W'&VçEW6W#° ¢–b‡W6W"ÓÒçVÆÂ’°¢66fföÆDÖW76VævW"æöb†6öçFW‡B’ç6†÷u6æ6´&"€¢6öç7B6æ6´&"€¢6öçFVçC¢FW‡B‚sZ7ñÈºw^~)ŞwsMhß•5£f Öür.×ŸŠw›ãZ6hØ 5£g.éİyø§yĞœ¤°(€€€€€€€€¤°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô((€€€ÑÉäì(€€€€€™¥¹…°Á¥­•€ô…İ…¥Ğ%µ…•A¥­•È ¤¹Á¥­%µ…” (€€€€€€€Í½ÕÉ”è%µ…•M½ÕÉ”¹…±±•Éä°(€€€€€€€¥µ…•EÕ…±¥Ñäè€àÔ°(€€€€€€€µ…á]¥‘Ñ è€ÄÀÀÀ°(€€€€€€€µ…á!•¥¡Ğè€ÄÀÀÀ°(€€€€€€¤ì((€€€€€¥˜€ …µ½Õ¹Ñ•ñğÁ¥­•€ôô¹Õ±°¤É•ÑÕÉ¸ì((€€€€€™¥¹…°Í½ÕÉ•¥±”€ô¥±”¡Á¥­•¹Á…Ñ ¤ì((€€€€€¥˜€ ……İ…¥ĞÍ½ÕÉ•¥±”¹•á¥ÍÑÌ ¤ñğ(€€€€€€€€€…İ…¥ĞÍ½ÕÉ•¥±”¹±•¹Ñ  ¤€ôô€À¤ì(€€€€€€€Ñ¡É½Üá•ÁÑ¥½¸ ¾ ÖœÓZ7æhÔ 5£vüÖòZ7äÍhŞ 5£|ÖöBr“°¢Ğ ¢f–æÂ7&÷VBÒv—B–ÖvT7&÷W"‚’æ7&÷–ÖvR€¢6÷W&6UFƒ¢–6¶VBçF‚À¢7V7E&F–ó¢6öç7B7&÷7V7E&F–ò€¢&F–õƒ¢À¢&F–õ“¢À¢’À¢Ö…v–GFƒ¢3ƒBÀ¢Ö„†V–v‡C¢3ƒBÀ¢6ö×&W74f÷&ÖC¢–ÖvT6ö×&W74f÷&ÖBæ§rÀ¢6ö×&W75VÆ—G“¢sÀ¢V•6WGF–æw3¢°¢æG&ö–EV•6WGF–æw2€¢FööÆ&%F—FÆS¢n×ŸŠw¼ÓZ6êÍhß²"éİyø§yÛ¬ºw^~)Şw) 5£T€Öœ²rÀ¢FööÆ&$6öÆ÷#¢6öç7B6öÆ÷"ƒ„dc#b’À¢FööÆ&%v–FvWD6öÆ÷#¢6öÆ÷'2çv†—FRÀ¢7F—fT6öçG&öÇ5v–FvWD6öÆ÷#¢–æ´6öÆ÷"À¢–æ—D7V7E&F–ó¢7&÷7V7E&F–õ&W6WBç7V&RÀ¢Æö6´7V7E&F–ó¢G'VRÀ¢7&÷7G–ÆS¢7&÷7G–ÆRæ6—&6ÆRÀ¢6†÷t7&÷w&–C¢G'VRÀ¢†–FT&÷GFöÔ6öçG&öÇ3¢fÇ6RÀ¢’À¢”õ5V•6WGF–æw2€¢F—FÆS¢sZ7lhÛ¾5£H€ÖÛò.×ŸŠw›û§uçâçR™SZ6ÉËˆ\ÜXİ˜][ÓØÚÑ[˜X›YˆYKˆ™\Ù]\ÜXİ˜][Ñ[˜X›Yˆ˜[ÙKˆÜ›Üİ[NˆÜ›Üİ[K˜Ú\˜ÛKˆ
+KˆKˆ
+NÂ‚ˆYˆ
+[[İ[YÜ›ÜYOH[
+H™]\›Â‚ˆš[˜[Ü›ÜYš[HHš[JÜ›ÜYœ]
+NÂ‚ˆYˆ
+X]ØZ]Ü›ÜYš[K™^\İÊ
+JHÂˆ›İÈ^Ù\[ÛŠ	Íhİ°ºw^~)Şv)•5£x€ÖÛóZ7Èhß“5£x€ÖıóZ7Ù	ÊNÂˆB‚ˆš[˜[]\ÈH]ØZ]Ü›ÜYš[Kœ™XY\Ğ]\Ê
+NÂ‚ˆYˆ
+]\Ëš\Ñ[\H]\Ë›[™İˆL
+ˆL
+HÂˆ›İÈ^Ù\[ÛŠˆ	Íhİ¿5£|€Öşb´"î×ŸŠwû.×ŸŠwÜsZ7Ùºw^~)Şvòî×ŸŠwÊfÍhß 5£~éİyø§yÜ¦Öû.×ŸŠw¼sZ7gî×ŸŠwŠeMhÛd',
         );
       }
 
@@ -9554,139 +4492,46 @@ class _PrivacyPageState extends State<PrivacyPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦² à¦›à¦¬à¦¿ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦¹à§Ÿà§‡à¦›à§‡à¥¤'),
-        ),
-      );
-    } catch (error, stackTrace) {
-      debugPrint('Profile photo error: $error');
-      debugPrintStack(stackTrace: stackTrace);
+          content: Text(&éİyø§yÛÍ5£n¬Öû".×ŸŠwºË§uçâçr›ƒZ6eMhß£"éİyø§yÙß5£oéİyø§yĞœ¤°(€€€€€€€€¤°(€€€€€€¤ì(€€€ô…Ñ €¡•ÉÉ½È°ÍÑ…­QÉ…”¤ì(€€€€€‘•‰ÕAÉ¥¹Ğ AÉ½™¥±”Á¡½Ñ¼•ÉÉ½Èè€‘•ÉÉ½Èœ¤ì(€€€€€‘•‰ÕAÉ¥¹ÑMÑ…¬¡ÍÑ…­QÉ…”èÍÑ…­QÉ…”¤ì((€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì((€€€€€M…™™½±‘5•ÍÍ•¹•È¹½˜¡½¹Ñ•áĞ¤¹Í¡½İM¹…­	…È (€€€€€€€M¹…­	…È (€€€€€€€€€½¹Ñ•¹ĞèQ•áĞ (€€€€€€€€€€€€œÖÛZ6ïhÒ 5£vü‹§uçâçfÖÜÓZ4ÈhÙ¾"éİyø§yß¾5£fşéİyø§yĞ¦àÖü»§uçâçrš£Z6eMhß¾"éİyø§yİ°ºw^~)Şw)†5£~À‹§uçâçoÖÙû§uçâçb™SZ6j.×ŸŠw	Ëˆ
+Kˆ
+Kˆ
+NÂˆBˆB‚‚ˆ]\™O›ÚYˆØÚ[™ÙQ[XZ[
 
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦² à¦›à¦¬à¦¿ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦¸à¦‚à¦¯à§‹à¦— à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤',
-          ),
-        ),
-      );
-    }
-  }
-
-
-  Future<void> _changeEmail() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _showMessage('à¦†à¦—à§‡ à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡ à¦¸à¦¾à¦‡à¦¨ à¦‡à¦¨ à¦•à¦°à§‹à¥¤');
-      return;
-    }
-
-    final controller = TextEditingController();
-    final newEmail = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.emailAddress,
-          autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'à¦¨à¦¤à§à¦¨ à¦‡à¦®à§‡à¦‡à¦²',
-            prefixIcon: Icon(Icons.email_outlined),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('à¦¬à¦¾à¦¤à¦¿à¦²'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('à¦­à§‡à¦°à¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦ªà¦¾à¦ à¦¾à¦“'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-
-    if (newEmail == null || newEmail.trim().isEmpty || !mounted) return;
-    if (!newEmail.contains('@') || !newEmail.contains('.')) {
-      _showMessage('à¦¸à¦ à¦¿à¦• à¦‡à¦®à§‡à¦‡à¦² à¦ à¦¿à¦•à¦¾à¦¨à¦¾ à¦¦à¦¾à¦“à¥¤');
+H\Ş[˜ÈÂˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\ÂˆYˆ
+\Ù\ˆOH[
+HÂˆÜÚİÓY\ÜØYÙJ	ÍhßÇ"éİyø§yİÍ5£~TÖšƒZ7ñÈºw^~)ŞvohØ 5£`€Öœ»§uçâçBr“°¢&WGW&ã°¢Ğ ¢f–æÂ6öçG&öÆÆW"ÒFW‡DVF—F–æt6öçG&öÆÆW"‚“°¢f–æÂæWtVÖ–ÂÒv—B6†÷tF–ÆösÅ7G&–æsâ€¢6öçFW‡C¢6öçFW‡BÀ¢'V–ÆFW#¢†F–Æöt6öçFW‡B’ÓâÆW'DF–Æör€¢&6¶w&÷VæD6öÆ÷#¢7W&f6T6öÆ÷"À¢F—FÆS¢6öç7BFW‡B‚sZ7ñÍhÒ 5£füÖœÓZ6	ÊKˆÛÛ[ˆ^šY[
+ˆÛÛ›Û\ˆÛÛ›Û\‹ˆÙ^X›Ø\™\Nˆ^[œ]\K™[XZ[Y™\ÜËˆ]]ØÛÜœ™Xİˆ˜[ÙKˆXÛÜ˜][ÛˆÛÛœİ[œ]XÛÜ˜][ÛŠˆX™[^ˆ	ÍhİÁºw^~)Şt)‡5£~éİyø§yØœ°(€€€€€€€€€€€ÁÉ•™¥á%½¸è%½¸¡%½¹Ì¹•µ…¥±}½ÕÑ±¥¹•¤°(€€€€€€€€€€¤°(€€€€€€€€¤°(€€€€€€€…Ñ¥½¹Ìèl(€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ ›§uçâçvøÖû"r’À¢’À¢f–ÆÆVD'WGFöâ€¢öå&W76VC¢‚’Óâæf–vF÷"ç÷†F–Æöt6öçFW‡BÂ6öçG&öÆÆW"çFW‡BçG&–Ò‚’’À¢6†–ÆC¢6öç7BFW‡B‚úÓZ6oÍhß•5£~ ‹§uçâçnøÖù2r’À¢’À¢ÒÀ¢’À¢“°¢6öçG&öÆÆW"æF—7÷6R‚“° ¢–b†æWtVÖ–ÂÓÒçVÆÂÇÂæWtVÖ–ÂçG&–Ò‚’æ—4V×G’ÇÂÖ÷VçFVB’&WGW&ã°¢–b‚æWtVÖ–Âæ6öçF–ç2‚tr’ÇÂæWtVÖ–Âæ6öçF–ç2‚râr’’°¢÷6†÷tÖW76vR‚n×ŸŠwšZ5HhßÇ5£H€ÖùSZ6oˆºw^~)ŞwïhÔ');
       return;
     }
     if (newEmail.trim().toLowerCase() == (user.email ?? '').toLowerCase()) {
-      _showMessage('à¦à¦Ÿà¦¿ à¦¤à§‹à¦®à¦¾à¦° à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦‡à¦®à§‡à¦‡à¦²à¥¤');
-      return;
-    }
-
-    try {
-      await user.verifyBeforeUpdateEmail(newEmail.trim());
-      if (!mounted) return;
-      _showMessage('à¦¨à¦¤à§à¦¨ à¦‡à¦®à§‡à¦‡à¦²à§‡ à¦­à§‡à¦°à¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦²à¦¿à¦‚à¦• à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡à¥¤ à¦‡à¦®à§‡à¦‡à¦² à¦¯à¦¾à¦šà¦¾à¦‡ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦²à¦—à¦‡à¦¨ à¦•à¦°à§‹à¥¤');
-    } on FirebaseAuthException catch (error) {
-      if (!mounted) return;
-      final message = error.code == 'requires-recent-login'
-          ? 'à¦¨à¦¿à¦°à¦¾à¦ªà¦¤à§à¦¤à¦¾à¦° à¦œà¦¨à§à¦¯ à¦†à¦¬à¦¾à¦° à¦²à¦—à¦‡à¦¨ à¦•à¦°à§‡ à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨ à¦•à¦°à§‹à¥¤'
-          : error.code == 'email-already-in-use'
-              ? 'à¦à¦‡ à¦‡à¦®à§‡à¦‡à¦²à¦Ÿà¦¿ à¦…à¦¨à§à¦¯ à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡ à¦¬à§à¦¯à¦¬à¦¹à§ƒà¦¤ à¦¹à¦šà§à¦›à§‡à¥¤'
-              : error.code == 'invalid-email'
-                  ? 'à¦¸à¦ à¦¿à¦• à¦‡à¦®à§‡à¦‡à¦² à¦ à¦¿à¦•à¦¾à¦¨à¦¾ à¦¦à¦¾à¦“à¥¤'
-                  : 'à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨à§‡à¦° à¦…à¦¨à§à¦°à§‹à¦§ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿: ${error.message ?? error.code}';
-      _showMessage(message);
-    } catch (error) {
-      if (!mounted) return;
-      _showMessage('à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨à§‡à¦° à¦…à¦¨à§à¦°à§‹à¦§ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤');
-    }
-  }
-
-  Future<void> _sendPasswordReset() async {
-    final email = FirebaseAuth.instance.currentUser?.email?.trim() ?? '';
-    if (email.isEmpty) {
-      _showMessage('à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡à¦° à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤');
-      return;
-    }
-
-    try {
-      await AuthService.resetPassword(email);
-      if (!mounted) return;
-      _showMessage('à¦ªà¦¾à¦¸à¦“à§Ÿà¦¾à¦°à§à¦¡ à¦°à¦¿à¦¸à§‡à¦Ÿ à¦•à¦°à¦¾à¦° à¦²à¦¿à¦‚à¦• à¦‡à¦®à§‡à¦‡à¦²à§‡ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡à¥¤ Inbox/Spam à¦¦à§‡à¦–à§‹à¥¤');
+      _showMessage('5£~ü‹§uçâçw,Öû.×ŸŠwÛZ7khØ 5£Ö¶Br“°¢&WGW&ã°¢Ğ ¢G'’°¢v—BW6W"çfW&–g”&Vf÷&UWFFTVÖ–Â†æWtVÖ–ÂçG&–Ò‚’“°¢–b‚Ö÷VçFVB’&WGW&ã°¢÷6†÷tÖW76vR‚n×ŸŠwšCZ6hßÇ5£o‹§uçâçwÖú³Z7qÍhØ 5£~
+éİyø§yÔ¦¨Ö›ãZ6ÈhßÇ5£}‹§uçâç~¸Öû".×ŸŠwûãZ7áÈºw^~)Şwl.×ŸŠwÊahß°"éİyø§yÛ—5£`€Öœ»§uçâçBr“°¢Òöâf—&V&6TWF„W†6WF–öâ6F6‚†W'&÷"’°¢–b‚Ö÷VçFVB’&WGW&ã°¢f–æÂÖW76vRÒW'&÷"æ6öFRÓÒw&WV—&W2×&V6VçBÖÆöv–âp¢òsZ7ìhÛ¤5£vúéİyø§yĞ¦pÖÚò.×ŸŠwúÃZ4hß‡ºw^~)Şt)•5£\€ÖüsZ4ˆhÙ¿5£g4Ö‚Z6rî×ŸŠw	Âˆˆ\œ›Ü‹˜ÛÙHOH	Ù[XZ[X[™XYKZ[‹]\ÙIÂˆÈ	Íh× 5£Ö¹û§uçâçr˜SZ7kÈºw^~)ŞwsMhß•5£f Öür.×ŸŠwÜÓZ7nMhÔ 5£o4ÖöBp¢¢W'&÷"æ6öFRÓÒv–çfÆ–BÖVÖ–Âp¢òsZ6oî×ŸŠwJaÍhß‡ºw^~)Şv) 5£vøÖâZ7äî×ŸŠw	Âˆˆ	ÍhßÇ5£H€Ö›óZ6sMhÙÇºw^~)Şt)…5£fÀÖrZ7èhÙË"éİyø§yß¾5£füè€‘í•ÉÉ½È¹µ•ÍÍ…”€üü•ÉÉ½È¹½‘•ôœì(€€€€€}Í¡½İ5•ÍÍ…”¡µ•ÍÍ…”¤ì(€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€}Í¡½İ5•ÍÍ…” ¾Öø{§uçâçbš£Z7ëhİ¤5£~À‹§uçâçv Öœ»§uçâçrš£Z6ohÛ 5£|ÖöB.×ŸŠwúÃZ4hß·5£~ø‹§uçâçvÀÖBr“°¢Ğ¢Ğ ¢gWGW&SÇfö–Câ÷6VæE77v÷&E&W6WB‚’7–æ2°¢f–æÂVÖ–ÂÒf—&V&6TWF‚æ–ç7Fæ6Ræ7W'&VçEW6W#òæVÖ–ÃòçG&–Ò‚’óòrs°¢–b†VÖ–Âæ—4V×G’’°¢÷6†÷tÖW76vR‚sZ7kÍhİ¾5£g4Öû.×ŸŠwúãZ7ìˆºw^~)Şvïhß¾"éİyø§yß¾5£fşéİyø§yĞœ¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô((€€€ÑÉäì(€€€€€…İ…¥ĞÕÑ¡M•ÉÙ¥”¹É•Í•ÑA…ÍÍİ½É¡•µ…¥°¤ì(€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€}Í¡½İ5•ÍÍ…” ›§uçâçnøÖ½óZ6sn×ŸŠwJlhÙÇºw^~)Şw)•5£~À‹§uçâçnüÖRZ7ñÍhÛÇ"éİyø§yÛ¾5£~¢éİyø§yÜ¦äÖù³Z5[˜›ŞÔÜ[JihßËºw^~)Şt');
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
       _showMessage(AuthService.friendlyError(error));
     } catch (error) {
       if (!mounted) return;
-      _showMessage('à¦°à¦¿à¦¸à§‡à¦Ÿ à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¯à¦¾à§Ÿà¦¨à¦¿à¥¤ à¦‡à¦®à§‡à¦‡à¦² à¦ à¦¿à¦•à¦¾à¦¨à¦¾ à¦“ à¦‡à¦¨à§à¦Ÿà¦¾à¦°à¦¨à§‡à¦Ÿ à¦¸à¦‚à¦¯à§‹à¦— à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§‡ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨à¥¤');
-    }
-  }
-
-  void _showMessage(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Privacy & account'),
-        backgroundColor: backgroundColor,
-      ),
-      body: GlowBackground(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const Text(
-              'Account security',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'à¦¤à§‹à¦®à¦¾à¦° à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿ à¦“ à¦¬à§à¦¯à¦•à§à¦¤à¦¿à¦—à¦¤ à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦² à¦à¦–à¦¾à¦¨à§‡ à¦ªà¦°à¦¿à¦šà¦¾à¦²à¦¨à¦¾ à¦•à¦°à§‹à¥¤',
+      _showMessage('5£~àÖòZ7ñÍhÒ 5£~€Öœ².×ŸŠwûãZ6oî×ŸŠw
+aÍhß‡ºw^~)Şv) 5£vøÖâ§uçâçr˜sZ7gÍhÙ¨5£|€ÖºóZ5ÈhÙÀ5£vŞéİyø§yØ¦TÖrZ7o®×ŸŠw
+fhßÍ5£x€ÖœZ5	ÊNÂˆBˆB‚ˆ›ÚYÜÚİÓY\ÜØYÙJİš[™ÈY\ÜØYÙJHÂˆYˆ
+[[İ[Y
+H™]\›ÂˆØØY™›ÛY\ÜÙ[™Ù\‹›ÙŠÛÛ^
+KœÚİÔÛ˜XÚĞ˜\ŠˆÛ˜XÚĞ˜\ŠÛÛ[ˆ^
+Y\ÜØYÙJJKˆ
+NÂˆB‚ˆİ™\œšYBˆÚYÙ]Z[
+Z[ÛÛ^ÛÛ^
+HÂˆš[˜[\Ù\ˆHš\™X˜\ÙP]]š[œİ[˜ÙK˜İ\œ™[\Ù\Â‚ˆ™]\›ˆØØY™›Û
+ˆ\˜\ˆ\˜\Šˆ]NˆÛÛœİ^
+	Ôš]˜XŞH	ˆXØÛİ[	ÊKˆ˜XÚÙÜ›İ[™ÛÛÜˆ˜XÚÙÜ›İ[™ÛÛÜ‹ˆ
+Kˆ›ÙNˆÛİĞ˜XÚÙÜ›İ[™
+ˆÚ[ˆ\İšY]ÊˆY[™ÎˆÛÛœİYÙR[œÙ]Ë˜[
+Œ
+KˆÚ[™[ˆÂˆÛÛœİ^
+ˆ	ĞXØÛİ[ÙXİ\š]IËˆİ[Nˆ^İ[J›ÛÚ^™Nˆ›ÛÙZYÚˆ›ÛÙZYÚ˜›Û
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆŠKˆÛÛœİ^
+ˆéhß¾ºw^~)Şt)…5£~øÖø“Z7gÈºw^~)ŞtÈhİ¯5£vÖúB.×ŸŠw¼ÓZ6êÍhß²"éİyø§yß–5£g‹§uçâçnÀÖ»ãZ6oˆºw^~)ŞwlhÔ',
               style: TextStyle(color: Colors.white60),
             ),
             const SizedBox(height: 22),
@@ -9696,687 +4541,22 @@ class _PrivacyPageState extends State<PrivacyPage> {
               color: surfaceColor,
               child: ListTile(
                 leading: const Icon(Icons.email_outlined, color: pinkColor),
-                title: Text(user?.email ?? 'à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦¾à¦“à§Ÿà¦¾ à¦¯à¦¾à§Ÿà¦¨à¦¿'),
-                subtitle: const Text('à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿ à¦‡à¦®à§‡à¦‡à¦²'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _changeEmail,
-              icon: const Icon(Icons.mark_email_read_outlined),
-              label: const Text('à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨ à¦•à¦°à§‹'),
-            ),
-            const SizedBox(height: 20),
-            const SectionHeading(title: 'Password'),
-            const SizedBox(height: 10),
-            Card(
-              color: surfaceColor,
-              child: ListTile(
-                leading: const Icon(Icons.lock_reset_rounded, color: purpleColor),
-                title: const Text('à¦ªà¦¾à¦¸à¦“à§Ÿà¦¾à¦°à§à¦¡ à¦°à¦¿à¦¸à§‡à¦Ÿ'),
-                subtitle: const Text('à¦‡à¦®à§‡à¦‡à¦²à§‡ à¦¨à¦¿à¦°à¦¾à¦ªà¦¦ à¦°à¦¿à¦¸à§‡à¦Ÿ à¦²à¦¿à¦‚à¦• à¦ªà¦¾à¦ à¦¾à¦¬à§‡'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: _sendPasswordReset,
-              ),
-            ),
-            const SizedBox(height: 22),
-            const SectionHeading(title: 'Profile'),
-            const SizedBox(height: 10),
-            TextField(
-              controller: firstController,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'à¦¤à§‹à¦®à¦¾à¦° à¦¨à¦¾à¦®',
-                prefixIcon: Icon(Icons.person_outline),
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: _saveProfile,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('à¦¨à¦¾à¦® à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à§‹'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _pickProfilePhoto,
-              icon: const Icon(Icons.add_a_photo_outlined),
-              label: const Text('à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦² à¦›à¦¬à¦¿ à¦¸à§‡à¦Ÿ à¦•à¦°à§‹'),
+                title: Text(user?.email ?? /‡5£~éİyø§yØ¦¨Ö½û§uçâçbšóZ7ê.×ŸŠwÉÊKˆİX]NˆÛÛœİ^
+	ºw^~)Şwlhİ®5£`€ÖÚóZ7ohÙÍºw^~)Şw)‡5£~éİyø§yØœ¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€à¤°(€€€€€€€€€€€=ÕÑ±¥¹•‘	ÕÑÑ½¸¹¥½¸ (€€€€€€€€€€€€€½¹AÉ•ÍÍ•è}¡…¹•µ…¥°°(€€€€€€€€€€€€€¥½¸è½¹ÍĞ%½¸¡%½¹Ì¹µ…É­}•µ…¥±}É•…‘}½ÕÑ±¥¹•¤°(€€€€€€€€€€€€€±…‰•°è½¹ÍĞQ•áĞ ¾Öø{§uçâçbš£Z7ëhİ¤ºw^~)Şt)•5£lœ¤°(€€€€€€€€€€€€¤°(€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÈÀ¤°(€€€€€€€€€€€½¹ÍĞM•Ñ¥½¹!•…‘¥¹œ¡Ñ¥Ñ±”è€A…ÍÍİ½Éœ¤°(€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÄÀ¤°(€€€€€€€€€€€…É (€€€€€€€€€€€€€½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€€€€€¡¥±è1¥ÍÑQ¥±” (€€€€€€€€€€€€€€€±•…‘¥¹œè½¹ÍĞ%½¸¡%½¹Ì¹±½­}É•Í•Ñ}É½Õ¹‘•°½±½ÈèÁÕÉÁ±•½±½È¤°(€€€€€€€€€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ ¾¨Ö™3Z7ìhÑ 5£~àÖòr’À¢7V'F—FÆS¢6öç7BFW‡B‚øsZ7áÍh× 5£~ÀÖºb.×ŸŠw›óZ7çÈºw^~)ŞvïÍhÕ 5£~€ÖÜrr’À¢G&–Æ–æs¢6öç7B–6öâ„–6öç2æ6†Wg&öå÷&–v‡E÷&÷VæFVB’À¢öåF¢÷6VæE77v÷&E&W6WBÀ¢’À¢’À¢6öç7B6—¦VD&÷‚††V–v‡C¢#"’À¢6öç7B6V7F–öä†VF–ær‡F—FÆS¢u&öf–ÆRr’À¢6öç7B6—¦VD&÷‚††V–v‡C¢’À¢FW‡Df–VÆB€¢6öçG&öÆÆW#¢f—'7D6öçG&öÆÆW"À¢FW‡D6—FÆ—¦F–öã¢FW‡D6—FÆ—¦F–öâçv÷&G2À¢FV6÷&F–öã¢6öç7B–çWDFV6÷&F–öâ€¢Æ&VÅFW‡C¢n×ŸŠwÜ³Z7ìºw^~)Şvo®×ŸŠw‰Ëˆ™Yš^XÛÛˆXÛÛŠXÛÛœËœ\œÛÛ—Ûİ][™JKˆ
+Kˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆLŠKˆš[Y]Û‹šXÛÛŠˆÛ”™\ÜÙYˆÜØ]™T›Ùš[KˆXÛÛˆÛÛœİXÛÛŠXÛÛœËœØ]™WÛİ][™Y
+KˆX™[ˆÛÛœİ^
+	Íhß®"éİyø§yÙ‚5£w4Ö2Z6rÉÊKˆ
+KˆÛÛœİÚ^™Y›Ş
+ZYÚˆ
+Kˆİ][™Y]Û‹šXÛÛŠˆÛ”™\ÜÙYˆÜXÚÔ›Ùš[TİËˆXÛÛˆÛÛœİXÛÛŠXÛÛœË˜YØWÜİ×Ûİ][™Y
+KˆX™[ˆÛÛœİ^
+	Íhİ°5£nøÖ"Z7oÈºw^~)Şvqî×ŸŠwÊeMhÛ'),
             ),
             const SizedBox(height: 20),
             const Card(
               color: surfaceColor,
               child: ListTile(
                 leading: Icon(Icons.verified_user_outlined, color: blueColor),
-                title: Text('à¦¤à§‹à¦®à¦¾à¦° à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿ à¦¸à§à¦°à¦•à§à¦·à¦¾'),
-                subtitle: Text('à¦‡à¦®à§‡à¦‡à¦² à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨ à¦¨à¦¿à¦¶à§à¦šà¦¿à¦¤ à¦•à¦°à¦¤à§‡ à¦‡à¦®à§‡à¦‡à¦² à¦­à§‡à¦°à¦¿à¦«à¦¿à¦•à§‡à¦¶à¦¨ à¦²à¦¾à¦—à¦¬à§‡à¥¤'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// ETERNAL SPACE - COMPLAINT MODEL
-// ============================================================
-
-class SpaceComplaint {
-  final String id;
-  final String author;
-  final String title;
-  final String details;
-  final String createdAt;
-  final String authorUid;
-  final List<String> readBy;
-
-  const SpaceComplaint({
-    required this.id,
-    required this.author,
-    required this.title,
-    required this.details,
-    required this.createdAt,
-    this.authorUid = '',
-    this.readBy = const [],
-  });
-
-  Map<String, dynamic> toMap() => {
-        'id': id,
-        'author': author,
-        'title': title,
-        'details': details,
-        'createdAt': createdAt,
-        'authorUid': authorUid,
-        'readBy': readBy,
-      };
-
-  factory SpaceComplaint.fromMap(Map<String, dynamic> map) {
-    return SpaceComplaint(
-      id: map['id']?.toString() ?? '',
-      author: map['author']?.toString() ?? '',
-      title: map['title']?.toString() ?? '',
-      details: map['details']?.toString() ?? '',
-      createdAt: map['createdAt']?.toString() ?? '',
-      authorUid: map['authorUid']?.toString() ?? '',
-      readBy: (map['readBy'] is List)
-          ? List<String>.from(map['readBy'])
-          : const [],
-    );
-  }
-}
-
-// ============================================================
-// ETERNAL SPACE - COMPLAINTS PAGE
-// ============================================================
-
-class ComplaintsPage extends StatefulWidget {
-  const ComplaintsPage({super.key});
-
-  @override
-  State<ComplaintsPage> createState() => _ComplaintsPageState();
-}
-
-class _ComplaintsPageState extends State<ComplaintsPage> {
-  List<SpaceComplaint> complaints = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadComplaints();
-    SpaceStore.syncVersion.addListener(_handleSyncVersionChanged);
-  }
-
-  void _loadComplaints() {
-    final data = SpaceStore.readList('spaceComplaints');
-    complaints = data.map(SpaceComplaint.fromMap).toList();
-  }
-
-  void _handleSyncVersionChanged() {
-    if (!mounted) return;
-
-    final data = SpaceStore.readList('spaceComplaints');
-    final latestComplaints = data.map(SpaceComplaint.fromMap).toList();
-
-    setState(() {
-      complaints = latestComplaints;
-    });
-  }
-
-  @override
-  void dispose() {
-    SpaceStore.syncVersion.removeListener(_handleSyncVersionChanged);
-    super.dispose();
-  }
-
-  Future<void> _saveComplaints() async {
-    await SpaceStore.saveList(
-      'spaceComplaints',
-      complaints.map((item) => item.toMap()).toList(),
-    );
-  }
-
-  Future<void> _markComplaintRead(SpaceComplaint complaint) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty || complaint.readBy.contains(uid)) return;
-    final index = complaints.indexWhere((item) => item.id == complaint.id);
-    if (index < 0) return;
-    final updated = SpaceComplaint(
-      id: complaint.id,
-      author: complaint.author,
-      title: complaint.title,
-      details: complaint.details,
-      createdAt: complaint.createdAt,
-      authorUid: complaint.authorUid,
-      readBy: [...complaint.readBy, uid],
-    );
-    setState(() => complaints[index] = updated);
-    await _saveComplaints();
-  }
-
-  Future<void> _deleteComplaint(SpaceComplaint complaint) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: surfaceColor,
-        title: const Text('Delete complaint?'),
-        content: const Text('This complaint will be removed for both partners.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    setState(() => complaints.removeWhere((item) => item.id == complaint.id));
-    await _saveComplaints();
-  }
-
-  Future<void> _editComplaint({SpaceComplaint? existing}) async {
-    final titleController = TextEditingController(text: existing?.title ?? '');
-    final detailsController =
-        TextEditingController(text: existing?.details ?? '');
-    String author = existing?.author ?? 'You';
-
-    final result = await showDialog<SpaceComplaint>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              backgroundColor: surfaceColor,
-              title: Text(
-                existing == null ? 'New Complaint' : 'Edit Complaint',
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'This complaint will be marked as yours automatically.',
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: titleController,
-                      decoration: const InputDecoration(
-                        labelText: 'Complaint title',
-                        hintText: 'What happened?',
-                      ),
-                      maxLength: 80,
-                    ),
-                    TextField(
-                      controller: detailsController,
-                      decoration: const InputDecoration(
-                        labelText: 'Details',
-                        hintText: 'Explain the complaint...',
-                      ),
-                      maxLines: 4,
-                      maxLength: 1000,
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final title = titleController.text.trim();
-                    final details = detailsController.text.trim();
-
-                    if (title.isEmpty || details.isEmpty) return;
-
-                    Navigator.pop(
-                      dialogContext,
-                      SpaceComplaint(
-                        id: existing?.id ??
-                            DateTime.now()
-                                .microsecondsSinceEpoch
-                                .toString(),
-                        author: author,
-                        title: title,
-                        details: details,
-                        createdAt: existing?.createdAt ??
-                            DateTime.now().toIso8601String(),
-                        authorUid: existing?.authorUid ??
-                            FirebaseAuth.instance.currentUser?.uid ?? '',
-                        readBy: existing?.readBy ??
-                            <String>[
-                              if ((FirebaseAuth.instance.currentUser?.uid ?? '').isNotEmpty)
-                                FirebaseAuth.instance.currentUser!.uid,
-                            ],
-                      ),
-                    );
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    titleController.dispose();
-    detailsController.dispose();
-
-    if (result == null) return;
-
-    setState(() {
-      final index = complaints.indexWhere((c) => c.id == result.id);
-      if (index == -1) {
-        complaints.insert(0, result);
-      } else {
-        complaints[index] = result;
-      }
-    });
-
-    await _saveComplaints();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: const Text('Complaints Box'),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editComplaint(),
-        icon: const Icon(Icons.add),
-        label: const Text('New Complaint'),
-      ),
-      body: complaints.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.chat_bubble_outline,
-                      size: 64,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'No complaints yet',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Share what is bothering you and talk it out together.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
-              itemCount: complaints.length,
-              itemBuilder: (context, index) {
-                final complaint = complaints[index];
-
-                final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                final isOwnComplaint = complaint.authorUid.isNotEmpty
-                    ? complaint.authorUid == currentUid
-                    : complaint.author == 'You';
-                final isUnread = currentUid.isNotEmpty &&
-                    !isOwnComplaint &&
-                    !complaint.readBy.contains(currentUid);
-                final displayAuthor = isOwnComplaint ? 'You' : 'Partner';
-
-                return Card(
-                  color: surfaceColor,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: ListTile(
-                    leading: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: const Color(0x33FF5FA2),
-                          child: Icon(
-                            isOwnComplaint
-                                ? Icons.person
-                                : Icons.favorite_outline,
-                            color: pinkColor,
-                          ),
-                        ),
-                        if (isUnread)
-                          const Positioned(
-                            right: -2,
-                            top: -2,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Colors.redAccent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: SizedBox(width: 10, height: 10),
-                            ),
-                          ),
-                      ],
-                    ),
-                    title: Text(
-                      complaint.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      '$displayAuthor â€¢ ${complaint.details}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white54),
-                    ),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (value) {
-                        if (value == 'edit') {
-                          _editComplaint(existing: complaint);
-                        } else if (value == 'delete') {
-                          _deleteComplaint(complaint);
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                        ),
-                      ],
-                    ),
-                    onTap: () async {
-                      await _markComplaintRead(complaint);
-                      showDialog<void>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          backgroundColor: surfaceColor,
-                          title: Text(complaint.title),
-                          content: SingleChildScrollView(
-                            child: Text(
-                              'By: $displayAuthor\n\n'
-                              '${complaint.details}',
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _editComplaint(existing: complaint);
-                              },
-                              child: const Text('Edit'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-// ============================================================
-// FIREBASE COMPLAINT STORAGE
-// ============================================================
-
-class FirebaseComplaintStore {
-  static const String spaceId = 'REPLACE_WITH_SHARED_SPACE_ID';
-
-  static CollectionReference<Map<String, dynamic>> get complaintsRef =>
-      FirebaseFirestore.instance
-          .collection('privateSpaces')
-          .doc(spaceId)
-          .collection('complaints');
-
-  static Future<void> addComplaint(
-    SpaceComplaint complaint,
-  ) async {
-    await complaintsRef.doc(complaint.id).set({
-      ...complaint.toMap(),
-      'createdAt': complaint.createdAt,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  static Future<void> updateComplaint(
-    SpaceComplaint complaint,
-  ) async {
-    await complaintsRef.doc(complaint.id).update({
-      ...complaint.toMap(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  static Future<void> deleteComplaint(String id) async {
-    await complaintsRef.doc(id).delete();
-  }
-
-  static Stream<List<SpaceComplaint>> watchComplaints() {
-    return complaintsRef
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map(
-                (doc) => SpaceComplaint.fromMap({
-                  ...doc.data(),
-                  'id': doc.id,
-                }),
-              )
-              .toList(),
-        );
-  }
-}
-
-// ============================================================
-// TYPING DOTS INDICATOR WIDGET
-// ============================================================
-
-
-class PresenceStatusLabel extends StatefulWidget {
-  const PresenceStatusLabel({
-    super.key,
-    required this.isTyping,
-    required this.isOnline,
-    this.lastSeen,
-  });
-
-  final bool isTyping;
-  final bool isOnline;
-  final dynamic lastSeen;
-
-  @override
-  State<PresenceStatusLabel> createState() => _PresenceStatusLabelState();
-}
-
-class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
-  Timer? _clock;
-
-  @override
-  void initState() {
-    super.initState();
-    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      if (widget.isTyping) {
-        // Messenger-like short typing ticks while the partner is actively typing.
-        unawaited(InteractionFeedbackSettings.playTypingSound());
-      } else if (!widget.isOnline) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant PresenceStatusLabel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isTyping && widget.isTyping) {
-      unawaited(InteractionFeedbackSettings.playTypingSound());
-    }
-    if (oldWidget.lastSeen != widget.lastSeen ||
-        oldWidget.isOnline != widget.isOnline ||
-        oldWidget.isTyping != widget.isTyping) {
-      setState(() {});
-    }
-  }
-
-  @override
-  void dispose() {
-    _clock?.cancel();
-    super.dispose();
-  }
-
-  DateTime? _lastSeenDate() {
-    final value = widget.lastSeen;
-    if (value is Timestamp) return value.toDate().toLocal();
-    if (value is DateTime) return value.toLocal();
-    return DateTime.tryParse('${value ?? ''}')?.toLocal();
-  }
-
-  String _label() {
-    if (widget.isTyping) return 'Typing...';
-    if (widget.isOnline) return 'Active now';
-
-    final lastSeen = _lastSeenDate();
-    if (lastSeen == null) return 'Offline';
-
-    final seconds = DateTime.now().difference(lastSeen).inSeconds;
-    if (seconds < 60) return 'Active ${seconds < 0 ? 0 : seconds} sec ago';
-    final minutes = seconds ~/ 60;
-    if (minutes < 60) return 'Active ${minutes} min ago';
-    final hours = minutes ~/ 60;
-    if (hours < 24) return 'Active ${hours} hr ago';
-    final days = hours ~/ 24;
-    return 'Active ${days} day${days == 1 ? '' : 's'} ago';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      _label(),
-      style: TextStyle(
-        fontSize: 11,
-        color: widget.isTyping
-            ? pinkColor
-            : (widget.isOnline ? Colors.greenAccent : Colors.white54),
-      ),
-    );
-  }
-}
-
-class TypingDotsIndicator extends StatefulWidget {
-  const TypingDotsIndicator({super.key});
-
-  @override
-  State<TypingDotsIndicator> createState() => _TypingDotsIndicatorState();
-}
-
-class _TypingDotsIndicatorState extends State<TypingDotsIndicator>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: surfaceColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: AnimatedBuilder(
-          animation: _controller,
-          child: const SizedBox.shrink(),
-          builder: (context, _) {
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (index) {
-                final phase = _controller.value * 2 * pi - index * (2 * pi / 3);
-                final lift = (sin(phase) + 1) / 2;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Transform.translate(
-                    offset: Offset(0, -4 * lift),
-                    child: Opacity(
-                      opacity: 0.4 + 0.6 * lift,
-                      child: Container(
-                        width: 7,
-                        height: 7,
-                        decoration: const BoxDecoration(
-                          color: pinkColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
+                title: Text(&éİyø§yİË5£~À‹§uçâçw4ÖùSZ6jhß 5£fÀÖÛ{§uçâçbr’À¢7V'F—FÆS¢FW‡B‚n×ŸŠwúãZ7ìˆºw^~)Şvìhİ°5£v ‹§uçâçfüÖÙ£Z5hÙ¤ºw^~)Şw)‡5£~éİyø§yØ¦´Ö›óZ7åMhß¨"éİyø§yÛ¾5£wéİyø§yĞœ¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤°(€€€€€€€€€t°(€€€€€€€€¤°(€€€€€€¤°(€€€€¤ì(€ô)ô((¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(¼¼QI90MA€´=5A1%9P5=0(¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô()±…ÍÌMÁ…•½µÁ±…¥¹Ğì(€™¥¹…°MÑÉ¥¹œ¥ì(€™¥¹…°MÑÉ¥¹œ…ÕÑ¡½Èì(€™¥¹…°MÑÉ¥¹œÑ¥Ñ±”ì(€™¥¹…°MÑÉ¥¹œ‘•Ñ…¥±Ìì(€™¥¹…°MÑÉ¥¹œÉ•…Ñ•‘Ğì(€™¥¹…°MÑÉ¥¹œ…ÕÑ¡½ÉU¥ì(€™¥¹…°1¥ÍĞñMÑÉ¥¹œøÉ•…‘	äì((€½¹ÍĞMÁ…•½µÁ±…¥¹Ğ¡ì(€€€É•ÅÕ¥É•Ñ¡¥Ì¹¥°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹…ÕÑ¡½È°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹Ñ¥Ñ±”°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹‘•Ñ…¥±Ì°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹É•…Ñ•‘Ğ°(€€€Ñ¡¥Ì¹…ÕÑ¡½ÉU¥€ô€œœ°(€€€Ñ¡¥Ì¹É•…‘	ä€ô½¹ÍĞmt°(€ô¤ì((€5…ÀñMÑÉ¥¹œ°‘å¹…µ¥ŒøÑ½5…À ¤€ôøì(€€€€€€€€¥œè¥°(€€€€€€€€…ÕÑ¡½Èœè…ÕÑ¡½È°(€€€€€€€€Ñ¥Ñ±”œèÑ¥Ñ±”°(€€€€€€€€‘•Ñ…¥±Ìœè‘•Ñ…¥±Ì°(€€€€€€€€É•…Ñ•‘ĞœèÉ•…Ñ•‘Ğ°(€€€€€€€€…ÕÑ¡½ÉU¥œè…ÕÑ¡½ÉU¥°(€€€€€€€€É•…‘	äœèÉ•…‘	ä°(€€€€€ôì((€™…Ñ½ÉäMÁ…•½µÁ±…¥¹Ğ¹™É½µ5…À¡5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøµ…À¤ì(€€€É•ÑÕÉ¸MÁ…•½µÁ±…¥¹Ğ (€€€€€¥èµ…Ál¥tü¹Ñ½MÑÉ¥¹œ ¤€üü€œœ°(€€€€€…ÕÑ¡½Èèµ…Ál…ÕÑ¡½Ètü¹Ñ½MÑÉ¥¹œ ¤€üü€œœ°(€€€€€Ñ¥Ñ±”èµ…ÁlÑ¥Ñ±”tü¹Ñ½MÑÉ¥¹œ ¤€üü€œœ°(€€€€€‘•Ñ…¥±Ìèµ…Ál‘•Ñ…¥±Ìtü¹Ñ½MÑÉ¥¹œ ¤€üü€œœ°(€€€€€É•…Ñ•‘Ğèµ…ÁlÉ•…Ñ•‘Ğtü¹Ñ½MÑÉ¥¹œ ¤€üü€œœ°(€€€€€…ÕÑ¡½ÉU¥èµ…Ál…ÕÑ¡½ÉU¥tü¹Ñ½MÑÉ¥¹œ ¤€üü€œœ°(€€€€€É•…‘	äè€¡µ…ÁlÉ•…‘	ät¥Ì1¥ÍĞ¤(€€€€€€€€€€ü1¥ÍĞñMÑÉ¥¹œø¹™É½´¡µ…ÁlÉ•…‘	ät¤(€€€€€€€€€€è½¹ÍĞmt°(€€€€¤ì(€ô)ô((¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(¼¼QI90MA€´=5A1%9QLA(¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô()±…ÍÌ½µÁ±…¥¹ÑÍA…”•áÑ•¹‘ÌMÑ…Ñ•™Õ±]¥‘•Ğì(€½¹ÍĞ½µÁ±…¥¹ÑÍA…”¡íÍÕÁ•È¹­•åô¤ì((€½Ù•ÉÉ¥‘”(€MÑ…Ñ”ñ½µÁ±…¥¹ÑÍA…”øÉ•…Ñ•MÑ…Ñ” ¤€ôø}½µÁ±…¥¹ÑÍA…•MÑ…Ñ” ¤ì)ô()±…ÍÌ}½µÁ±…¥¹ÑÍA…•MÑ…Ñ”•áÑ•¹‘ÌMÑ…Ñ”ñ½µÁ±…¥¹ÑÍA…”øì(€1¥ÍĞñMÁ…•½µÁ±…¥¹Ğø½µÁ±…¥¹ÑÌ€ômtì((€½Ù•ÉÉ¥‘”(€Ù½¥¥¹¥ÑMÑ…Ñ” ¤ì(€€€ÍÕÁ•È¹¥¹¥ÑMÑ…Ñ” ¤ì(€€€}±½…‘½µÁ±…¥¹ÑÌ ¤ì(€€€MÁ…•MÑ½É”¹Íå¹Y•ÉÍ¥½¸¹…‘‘1¥ÍÑ•¹•È¡}¡…¹‘±•Må¹Y•ÉÍ¥½¹¡…¹•¤ì(€ô((€Ù½¥}±½…‘½µÁ±…¥¹ÑÌ ¤ì(€€€™¥¹…°‘…Ñ„€ôMÁ…•MÑ½É”¹É•…‘1¥ÍĞ ÍÁ…•½µÁ±…¥¹ÑÌœ¤ì(€€€½µÁ±…¥¹ÑÌ€ô‘…Ñ„¹µ…À¡MÁ…•½µÁ±…¥¹Ğ¹™É½µ5…À¤¹Ñ½1¥ÍĞ ¤ì(€ô((€Ù½¥}¡…¹‘±•Må¹Y•ÉÍ¥½¹¡…¹• ¤ì(€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì((€€€™¥¹…°‘…Ñ„€ôMÁ…•MÑ½É”¹É•…‘1¥ÍĞ ÍÁ…•½µÁ±…¥¹ÑÌœ¤ì(€€€™¥¹…°±…Ñ•ÍÑ½µÁ±…¥¹ÑÌ€ô‘…Ñ„¹µ…À¡MÁ…•½µÁ±…¥¹Ğ¹™É½µ5…À¤¹Ñ½1¥ÍĞ ¤ì((€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€½µÁ±…¥¹ÑÌ€ô±…Ñ•ÍÑ½µÁ±…¥¹ÑÌì(€€€ô¤ì(€ô((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥ÍÁ½Í” ¤ì(€€€MÁ…•MÑ½É”¹Íå¹Y•ÉÍ¥½¸¹É•µ½Ù•1¥ÍÑ•¹•È¡}¡…¹‘±•Må¹Y•ÉÍ¥½¹¡…¹•¤ì(€€€ÍÕÁ•È¹‘¥ÍÁ½Í” ¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}Í…Ù•½µÁ±…¥¹ÑÌ ¤…Íå¹Œì(€€€…İ…¥ĞMÁ…•MÑ½É”¹Í…Ù•1¥ÍĞ (€€€€€€ÍÁ…•½µÁ±…¥¹ÑÌœ°(€€€€€½µÁ±…¥¹ÑÌ¹µ…À ¡¥Ñ•´¤€ôø¥Ñ•´¹Ñ½5…À ¤¤¹Ñ½1¥ÍĞ ¤°(€€€€¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}µ…É­½µÁ±…¥¹ÑI•…¡MÁ…•½µÁ±…¥¹Ğ½µÁ±…¥¹Ğ¤…Íå¹Œì(€€€™¥¹…°Õ¥€ô¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•Èü¹Õ¥€üü€œœì(€€€¥˜€¡Õ¥¹¥ÍµÁÑäñğ½µÁ±…¥¹Ğ¹É•…‘	ä¹½¹Ñ…¥¹Ì¡Õ¥¤¤É•ÑÕÉ¸ì(€€€™¥¹…°¥¹‘•à€ô½µÁ±…¥¹ÑÌ¹¥¹‘•á]¡•É” ¡¥Ñ•´¤€ôø¥Ñ•´¹¥€ôô½µÁ±…¥¹Ğ¹¥¤ì(€€€¥˜€¡¥¹‘•à€ğ€À¤É•ÑÕÉ¸ì(€€€™¥¹…°ÕÁ‘…Ñ•€ôMÁ…•½µÁ±…¥¹Ğ (€€€€€¥è½µÁ±…¥¹Ğ¹¥°(€€€€€…ÕÑ¡½Èè½µÁ±…¥¹Ğ¹…ÕÑ¡½È°(€€€€€Ñ¥Ñ±”è½µÁ±…¥¹Ğ¹Ñ¥Ñ±”°(€€€€€‘•Ñ…¥±Ìè½µÁ±…¥¹Ğ¹‘•Ñ…¥±Ì°(€€€€€É•…Ñ•‘Ğè½µÁ±…¥¹Ğ¹É•…Ñ•‘Ğ°(€€€€€…ÕÑ¡½ÉU¥è½µÁ±…¥¹Ğ¹…ÕÑ¡½ÉU¥°(€€€€€É•…‘	äèl¸¸¹½µÁ±…¥¹Ğ¹É•…‘	ä°Õ¥‘t°(€€€€¤ì(€€€Í•ÑMÑ…Ñ”  ¤€ôø½µÁ±…¥¹ÑÍm¥¹‘•át€ôÕÁ‘…Ñ•¤ì(€€€…İ…¥Ğ}Í…Ù•½µÁ±…¥¹ÑÌ ¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}‘•±•Ñ•½µÁ±…¥¹Ğ¡MÁ…•½µÁ±…¥¹Ğ½µÁ±…¥¹Ğ¤…Íå¹Œì(€€€™¥¹…°½¹™¥É´€ô…İ…¥ĞÍ¡½İ¥…±½œñ‰½½°ø (€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€‰Õ¥±‘•Èè€¡‘¥…±½½¹Ñ•áĞ¤€ôø±•ÉÑ¥…±½œ (€€€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ •±•Ñ”½µÁ±…¥¹Ğüœ¤°(€€€€€€€½¹Ñ•¹Ğè½¹ÍĞQ•áĞ Q¡¥Ì½µÁ±…¥¹Ğİ¥±°‰”É•µ½Ù•™½È‰½Ñ Á…ÉÑ¹•ÉÌ¸œ¤°(€€€€€€€…Ñ¥½¹Ìèl(€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ°™…±Í”¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ …¹•°œ¤°(€€€€€€€€€€¤°(€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ°ÑÉÕ”¤°(€€€€€€€€€€€ÍÑå±”èQ•áÑ	ÕÑÑ½¸¹ÍÑå±•É½´¡™½É•É½Õ¹‘½±½Èè½±½ÉÌ¹É•‘•¹Ğ¤°(€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ •±•Ñ”œ¤°(€€€€€€€€€€¤°(€€€€€€€t°(€€€€€€¤°(€€€€¤ì(€€€¥˜€¡½¹™¥É´€„ôÑÉÕ”¤É•ÑÕÉ¸ì(€€€Í•ÑMÑ…Ñ”  ¤€ôø½µÁ±…¥¹ÑÌ¹É•µ½Ù•]¡•É” ¡¥Ñ•´¤€ôø¥Ñ•´¹¥€ôô½µÁ±…¥¹Ğ¹¥¤¤ì(€€€…İ…¥Ğ}Í…Ù•½µÁ±…¥¹ÑÌ ¤ì(€ô((€ÕÑÕÉ”ñÙ½¥ø}•‘¥Ñ½µÁ±…¥¹Ğ¡íMÁ…•½µÁ±…¥¹Ğü•á¥ÍÑ¥¹ô¤…Íå¹Œì(€€€™¥¹…°Ñ¥Ñ±•½¹ÑÉ½±±•È€ôQ•áÑ‘¥Ñ¥¹½¹ÑÉ½±±•È¡Ñ•áĞè•á¥ÍÑ¥¹œü¹Ñ¥Ñ±”€üü€œœ¤ì(€€€™¥¹…°‘•Ñ…¥±Í½¹ÑÉ½±±•È€ô(€€€€€€€Q•áÑ‘¥Ñ¥¹½¹ÑÉ½±±•È¡Ñ•áĞè•á¥ÍÑ¥¹œü¹‘•Ñ…¥±Ì€üü€œœ¤ì(€€€MÑÉ¥¹œ…ÕÑ¡½È€ô•á¥ÍÑ¥¹œü¹…ÕÑ¡½È€üü€e½Ôœì((€€€™¥¹…°É•ÍÕ±Ğ€ô…İ…¥ĞÍ¡½İ¥…±½œñMÁ…•½µÁ±…¥¹Ğø (€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€‰Õ¥±‘•Èè€¡‘¥…±½½¹Ñ•áĞ¤ì(€€€€€€€É•ÑÕÉ¸MÑ…Ñ•™Õ±	Õ¥±‘•È (€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°Í•Ñ¥…±½MÑ…Ñ”¤ì(€€€€€€€€€€€É•ÑÕÉ¸±•ÉÑ¥…±½œ (€€€€€€€€€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€€€€€Ñ¥Ñ±”èQ•áĞ (€€€€€€€€€€€€€€€•á¥ÍÑ¥¹œ€ôô¹Õ±°€ü€9•Ü½µÁ±…¥¹Ğœ€è€‘¥Ğ½µÁ±…¥¹Ğœ°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€½¹Ñ•¹ĞèM¥¹±•¡¥±‘MÉ½±±Y¥•Ü (€€€€€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€½¹ÍĞ±¥¸ (€€€€€€€€€€€€€€€€€€€€€…±¥¹µ•¹Ğè±¥¹µ•¹Ğ¹•¹Ñ•É1•™Ğ°(€€€€€€€€€€€€€€€€€€€€€¡¥±èQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€Q¡¥Ì½µÁ±…¥¹Ğİ¥±°‰”µ…É­•…Ìå½ÕÉÌ…ÕÑ½µ…Ñ¥…±±ä¸œ°(€€€€€€€€€€€€€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÔĞ°™½¹ÑM¥é”è€ÄÈ¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÄÈ¤°(€€€€€€€€€€€€€€€€€€€Q•áÑ¥•± (€€€€€€€€€€€€€€€€€€€€€½¹ÑÉ½±±•ÈèÑ¥Ñ±•½¹ÑÉ½±±•È°(€€€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è½¹ÍĞ%¹ÁÕÑ•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€±…‰•±Q•áĞè€½µÁ±…¥¹ĞÑ¥Ñ±”œ°(€€€€€€€€€€€€€€€€€€€€€€€¡¥¹ÑQ•áĞè€]¡…Ğ¡…ÁÁ•¹•üœ°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ è€àÀ°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€Q•áÑ¥•± (€€€€€€€€€€€€€€€€€€€€€½¹ÑÉ½±±•Èè‘•Ñ…¥±Í½¹ÑÉ½±±•È°(€€€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è½¹ÍĞ%¹ÁÕÑ•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€±…‰•±Q•áĞè€•Ñ…¥±Ìœ°(€€€€€€€€€€€€€€€€€€€€€€€¡¥¹ÑQ•áĞè€áÁ±…¥¸Ñ¡”½µÁ±…¥¹Ğ¸¸¸œ°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€µ…á1¥¹•Ìè€Ğ°(€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ è€ÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€…Ñ¥½¹Ìèl(€€€€€€€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡‘¥…±½½¹Ñ•áĞ¤°(€€€€€€€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ …¹•°œ¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€¥±±•‘	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤ì(€€€€€€€€€€€€€€€€€€€™¥¹…°Ñ¥Ñ±”€ôÑ¥Ñ±•½¹ÑÉ½±±•È¹Ñ•áĞ¹ÑÉ¥´ ¤ì(€€€€€€€€€€€€€€€€€€€™¥¹…°‘•Ñ…¥±Ì€ô‘•Ñ…¥±Í½¹ÑÉ½±±•È¹Ñ•áĞ¹ÑÉ¥´ ¤ì((€€€€€€€€€€€€€€€€€€€¥˜€¡Ñ¥Ñ±”¹¥ÍµÁÑäñğ‘•Ñ…¥±Ì¹¥ÍµÁÑä¤É•ÑÕÉ¸ì((€€€€€€€€€€€€€€€€€€€9…Ù¥…Ñ½È¹Á½À (€€€€€€€€€€€€€€€€€€€€€‘¥…±½½¹Ñ•áĞ°(€€€€€€€€€€€€€€€€€€€€€MÁ…•½µÁ±…¥¹Ğ (€€€€€€€€€€€€€€€€€€€€€€€¥è•á¥ÍÑ¥¹œü¹¥€üü(€€€€€€€€€€€€€€€€€€€€€€€€€€€…Ñ•Q¥µ”¹¹½Ü ¤(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¹µ¥É½Í•½¹‘ÍM¥¹•Á½ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¹Ñ½MÑÉ¥¹œ ¤°(€€€€€€€€€€€€€€€€€€€€€€€…ÕÑ¡½Èè…ÕÑ¡½È°(€€€€€€€€€€€€€€€€€€€€€€€Ñ¥Ñ±”èÑ¥Ñ±”°(€€€€€€€€€€€€€€€€€€€€€€€‘•Ñ…¥±Ìè‘•Ñ…¥±Ì°(€€€€€€€€€€€€€€€€€€€€€€€É•…Ñ•‘Ğè•á¥ÍÑ¥¹œü¹É•…Ñ•‘Ğ€üü(€€€€€€€€€€€€€€€€€€€€€€€€€€€…Ñ•Q¥µ”¹¹½Ü ¤¹Ñ½%Í¼àØÀÅMÑÉ¥¹œ ¤°(€€€€€€€€€€€€€€€€€€€€€€€…ÕÑ¡½ÉU¥è•á¥ÍÑ¥¹œü¹…ÕÑ¡½ÉU¥€üü(€€€€€€€€€€€€€€€€€€€€€€€€€€€¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•Èü¹Õ¥€üü€œœ°(€€€€€€€€€€€€€€€€€€€€€€€É•…‘	äè•á¥ÍÑ¥¹œü¹É•…‘	ä€üü(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñMÑÉ¥¹œùl(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¥˜€ ¡¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•Èü¹Õ¥€üü€œœ¤¹¥Í9½ÑµÁÑä¤(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•È„¹Õ¥°(€€€€€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ M…Ù”œ¤°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€t°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô°(€€€€€€€€¤ì(€€€€€ô°(€€€€¤ì((€€€Ñ¥Ñ±•½¹ÑÉ½±±•È¹‘¥ÍÁ½Í” ¤ì(€€€‘•Ñ…¥±Í½¹ÑÉ½±±•È¹‘¥ÍÁ½Í” ¤ì((€€€¥˜€¡É•ÍÕ±Ğ€ôô¹Õ±°¤É•ÑÕÉ¸ì((€€€Í•ÑMÑ…Ñ”  ¤ì(€€€€€™¥¹…°¥¹‘•à€ô½µÁ±…¥¹ÑÌ¹¥¹‘•á]¡•É” ¡Œ¤€ôøŒ¹¥€ôôÉ•ÍÕ±Ğ¹¥¤ì(€€€€€¥˜€¡¥¹‘•à€ôô€´Ä¤ì(€€€€€€€½µÁ±…¥¹ÑÌ¹¥¹Í•ÉĞ À°É•ÍÕ±Ğ¤ì(€€€€€ô•±Í”ì(€€€€€€€½µÁ±…¥¹ÑÍm¥¹‘•át€ôÉ•ÍÕ±Ğì(€€€€€ô(€€€ô¤ì((€€€…İ…¥Ğ}Í…Ù•½µÁ±…¥¹ÑÌ ¤ì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸M…™™½± (€€€€€‰…­É½Õ¹‘½±½Èè‰…­É½Õ¹‘½±½È°(€€€€€…ÁÁ	…ÈèÁÁ	…È (€€€€€€€‰…­É½Õ¹‘½±½Èè‰…­É½Õ¹‘½±½È°(€€€€€€€Ñ¥Ñ±”è½¹ÍĞQ•áĞ ½µÁ±…¥¹ÑÌ	½àœ¤°(€€€€€€¤°(€€€€€™±½…Ñ¥¹Ñ¥½¹	ÕÑÑ½¸è±½…Ñ¥¹Ñ¥½¹	ÕÑÑ½¸¹•áÑ•¹‘• (€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø}•‘¥Ñ½µÁ±…¥¹Ğ ¤°(€€€€€€€¥½¸è½¹ÍĞ%½¸¡%½¹Ì¹…‘¤°(€€€€€€€±…‰•°è½¹ÍĞQ•áĞ 9•Ü½µÁ±…¥¹Ğœ¤°(€€€€€€¤°(€€€€€‰½‘äè½µÁ±…¥¹ÑÌ¹¥ÍµÁÑä(€€€€€€€€€€ü•¹Ñ•È (€€€€€€€€€€€€€¡¥±èA…‘‘¥¹œ (€€€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹…±° ÈĞ¤°(€€€€€€€€€€€€€€€¡¥±è½±Õµ¸ (€€€€€€€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€%½¸ (€€€€€€€€€€€€€€€€€€€€€%½¹Ì¹¡…Ñ}‰Õ‰‰±•}½ÕÑ±¥¹”°(€€€€€€€€€€€€€€€€€€€€€Í¥é”è€ØĞ°(€€€€€€€€€€€€€€€€€€€€€½±½ÈèQ¡•µ”¹½˜¡½¹Ñ•áĞ¤¹½±½ÉM¡•µ”¹ÁÉ¥µ…Éä°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€ÄØ¤°(€€€€€€€€€€€€€€€€€€€½¹ÍĞQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€9¼½µÁ±…¥¹ÑÌå•Ğœ°(€€€€€€€€€€€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±” (€€€€€€€€€€€€€€€€€€€€€€€™½¹ÑM¥é”è€ÈÀ°(€€€€€€€€€€€€€€€€€€€€€€€™½¹Ñ]•¥¡Ğè½¹Ñ]•¥¡Ğ¹‰½±°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€½¹ÍĞM¥é•‘	½à¡¡•¥¡Ğè€à¤°(€€€€€€€€€€€€€€€€€€€½¹ÍĞQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€M¡…É”İ¡…Ğ¥Ì‰½Ñ¡•É¥¹œå½Ô…¹Ñ…±¬¥Ğ½ÕĞÑ½•Ñ¡•È¸œ°(€€€€€€€€€€€€€€€€€€€€€Ñ•áÑ±¥¸èQ•áÑ±¥¸¹•¹Ñ•È°(€€€€€€€€€€€€€€€€€€€€€ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÔĞ¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤(€€€€€€€€€€è1¥ÍÑY¥•Ü¹‰Õ¥±‘•È (€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹™É½µ1QI ÄØ°€ÄÈ°€ÄØ°€äÀ¤°(€€€€€€€€€€€€€¥Ñ•µ½Õ¹Ğè½µÁ±…¥¹ÑÌ¹±•¹Ñ °(€€€€€€€€€€€€€¥Ñ•µ	Õ¥±‘•Èè€¡½¹Ñ•áĞ°¥¹‘•à¤ì(€€€€€€€€€€€€€€€™¥¹…°½µÁ±…¥¹Ğ€ô½µÁ±…¥¹ÑÍm¥¹‘•átì((€€€€€€€€€€€€€€€™¥¹…°ÕÉÉ•¹ÑU¥€ô¥É•‰…Í•ÕÑ ¹¥¹ÍÑ…¹”¹ÕÉÉ•¹ÑUÍ•Èü¹Õ¥€üü€œœì(€€€€€€€€€€€€€€€™¥¹…°¥Í=İ¹½µÁ±…¥¹Ğ€ô½µÁ±…¥¹Ğ¹…ÕÑ¡½ÉU¥¹¥Í9½ÑµÁÑä(€€€€€€€€€€€€€€€€€€€€ü½µÁ±…¥¹Ğ¹…ÕÑ¡½ÉU¥€ôôÕÉÉ•¹ÑU¥(€€€€€€€€€€€€€€€€€€€€è½µÁ±…¥¹Ğ¹…ÕÑ¡½È€ôô€e½Ôœì(€€€€€€€€€€€€€€€™¥¹…°¥ÍU¹É•…€ôÕÉÉ•¹ÑU¥¹¥Í9½ÑµÁÑä€˜˜(€€€€€€€€€€€€€€€€€€€€…¥Í=İ¹½µÁ±…¥¹Ğ€˜˜(€€€€€€€€€€€€€€€€€€€€…½µÁ±…¥¹Ğ¹É•…‘	ä¹½¹Ñ…¥¹Ì¡ÕÉÉ•¹ÑU¥¤ì(€€€€€€€€€€€€€€€™¥¹…°‘¥ÍÁ±…åÕÑ¡½È€ô¥Í=İ¹½µÁ±…¥¹Ğ€ü€e½Ôœ€è€A…ÉÑ¹•Èœì((€€€€€€€€€€€€€€€É•ÑÕÉ¸…É (€€€€€€€€€€€€€€€€€½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€€€€€€€€€µ…É¥¸è½¹ÍĞ‘•%¹Í•ÑÌ¹½¹±ä¡‰½ÑÑ½´è€ÄÈ¤°(€€€€€€€€€€€€€€€€€Í¡…Á”èI½Õ¹‘•‘I•Ñ…¹±•	½É‘•È (€€€€€€€€€€€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È Äà¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€¡¥±è1¥ÍÑQ¥±” (€€€€€€€€€€€€€€€€€€€±•…‘¥¹œèMÑ…¬ (€€€€€€€€€€€€€€€€€€€€€±¥Á	•¡…Ù¥½Èè±¥À¹¹½¹”°(€€€€€€€€€€€€€€€€€€€€€¡¥±‘É•¸èl(€€€€€€€€€€€€€€€€€€€€€€€¥É±•Ù…Ñ…È (€€€€€€€€€€€€€€€€€€€€€€€€€‰…­É½Õ¹‘½±½Èè½¹ÍĞ½±½È ÁàÌÍÕÈ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è%½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€¥Í=İ¹½µÁ±…¥¹Ğ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ü%½¹Ì¹Á•ÉÍ½¸(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€è%½¹Ì¹™…Ù½É¥Ñ•}½ÕÑ±¥¹”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€¥˜€¡¥ÍU¹É•…¤(€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍĞA½Í¥Ñ¥½¹• (€€€€€€€€€€€€€€€€€€€€€€€€€€€É¥¡Ğè€´È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€Ñ½Àè€´È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è•½É…Ñ•‘	½à (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½±½Èè½±½ÉÌ¹É•‘•¹Ğ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Í¡…Á”è	½áM¡…Á”¹¥É±”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±èM¥é•‘	½à¡İ¥‘Ñ è€ÄÀ°¡•¥¡Ğè€ÄÀ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€Ñ¥Ñ±”èQ•áĞ (€€€€€€€€€€€€€€€€€€€€€½µÁ±…¥¹Ğ¹Ñ¥Ñ±”°(€€€€€€€€€€€€€€€€€€€€€µ…á1¥¹•Ìè€È°(€€€€€€€€€€€€€€€€€€€€€½Ù•É™±½ÜèQ•áÑ=Ù•É™±½Ü¹•±±¥ÁÍ¥Ì°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€ÍÕ‰Ñ¥Ñ±”èQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€œ‘‘¥ÍÁ±…åÕÑ¡½È‚éİyø§yØ€‘í½µÁ±…¥¹Ğ¹‘•Ñ…¥±Íôœ°(€€€€€€€€€€€€€€€€€€€€€µ…á1¥¹•Ìè€È°(€€€€€€€€€€€€€€€€€€€€€½Ù•É™±½ÜèQ•áÑ=Ù•É™±½Ü¹•±±¥ÁÍ¥Ì°(€€€€€€€€€€€€€€€€€€€€€ÍÑå±”è½¹ÍĞQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÔĞ¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€ÑÉ…¥±¥¹œèA½ÁÕÁ5•¹Õ	ÕÑÑ½¸ñMÑÉ¥¹œø (€€€€€€€€€€€€€€€€€€€€€½¹M•±•Ñ•è€¡Ù…±Õ”¤ì(€€€€€€€€€€€€€€€€€€€€€€€¥˜€¡Ù…±Õ”€ôô€•‘¥Ğœ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€}•‘¥Ñ½µÁ±…¥¹Ğ¡•á¥ÍÑ¥¹œè½µÁ±…¥¹Ğ¤ì(€€€€€€€€€€€€€€€€€€€€€€€ô•±Í”¥˜€¡Ù…±Õ”€ôô€‘•±•Ñ”œ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€}‘•±•Ñ•½µÁ±…¥¹Ğ¡½µÁ±…¥¹Ğ¤ì(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€¥Ñ•µ	Õ¥±‘•Èè€¡|¤€ôø½¹ÍĞl(€€€€€€€€€€€€€€€€€€€€€€€A½ÁÕÁ5•¹Õ%Ñ•´¡Ù…±Õ”è€•‘¥Ğœ°¡¥±èQ•áĞ ‘¥Ğœ¤¤°(€€€€€€€€€€€€€€€€€€€€€€€A½ÁÕÁ5•¹Õ%Ñ•´ (€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”è€‘•±•Ñ”œ°(€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±èQ•áĞ •±•Ñ”œ°ÍÑå±”èQ•áÑMÑå±”¡½±½Èè½±½ÉÌ¹É•‘•¹Ğ¤¤°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€½¹Q…Àè€ ¤…Íå¹Œì(€€€€€€€€€€€€€€€€€€€€€…İ…¥Ğ}µ…É­½µÁ±…¥¹ÑI•…¡½µÁ±…¥¹Ğ¤ì(€€€€€€€€€€€€€€€€€€€€€Í¡½İ¥…±½œñÙ½¥ø (€€€€€€€€€€€€€€€€€€€€€€€½¹Ñ•áĞè½¹Ñ•áĞ°(€€€€€€€€€€€€€€€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ¤€ôø±•ÉÑ¥…±½œ (€€€€€€€€€€€€€€€€€€€€€€€€€‰…­É½Õ¹‘½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€Ñ¥Ñ±”èQ•áĞ¡½µÁ±…¥¹Ğ¹Ñ¥Ñ±”¤°(€€€€€€€€€€€€€€€€€€€€€€€€€½¹Ñ•¹ĞèM¥¹±•¡¥±‘MÉ½±±Y¥•Ü (€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±èQ•áĞ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€	äè€‘‘¥ÍÁ±…åÕÑ¡½Éq¹q¸œ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€œ‘í½µÁ±…¥¹Ğ¹‘•Ñ…¥±Íôœ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€…Ñ¥½¹Ìèl(€€€€€€€€€€€€€€€€€€€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤€ôø9…Ù¥…Ñ½È¹Á½À¡½¹Ñ•áĞ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ ±½Í”œ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€Q•áÑ	ÕÑÑ½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹AÉ•ÍÍ•è€ ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€9…Ù¥…Ñ½È¹Á½À¡½¹Ñ•áĞ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€}•‘¥Ñ½µÁ±…¥¹Ğ¡•á¥ÍÑ¥¹œè½µÁ±…¥¹Ğ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¡¥±è½¹ÍĞQ•áĞ ‘¥Ğœ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€ô°(€€€€€€€€€€€€¤°(€€€€¤ì(€ô)ô((¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(¼¼%I	M=5A1%9PMQ=I(¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô()±…ÍÌ¥É•‰…Í•½µÁ±…¥¹ÑMÑ½É”ì(€ÍÑ…Ñ¥Œ½¹ÍĞMÑÉ¥¹œÍÁ…•%€ô€IA1}]%Q!}M!I}MA}%œì((€ÍÑ…Ñ¥Œ½±±•Ñ¥½¹I•™•É•¹”ñ5…ÀñMÑÉ¥¹œ°‘å¹…µ¥Œøø•Ğ½µÁ±…¥¹ÑÍI•˜€ôø(€€€€€¥É•‰…Í•¥É•ÍÑ½É”¹¥¹ÍÑ…¹”(€€€€€€€€€€¹½±±•Ñ¥½¸ ÁÉ¥Ù…Ñ•MÁ…•Ìœ¤(€€€€€€€€€€¹‘½Œ¡ÍÁ…•%¤(€€€€€€€€€€¹½±±•Ñ¥½¸ ½µÁ±…¥¹ÑÌœ¤ì((€ÍÑ…Ñ¥ŒÕÑÕÉ”ñÙ½¥ø…‘‘½µÁ±…¥¹Ğ (€€€MÁ…•½µÁ±…¥¹Ğ½µÁ±…¥¹Ğ°(€€¤…Íå¹Œì(€€€…İ…¥Ğ½µÁ±…¥¹ÑÍI•˜¹‘½Œ¡½µÁ±…¥¹Ğ¹¥¤¹Í•Ğ¡ì(€€€€€€¸¸¹½µÁ±…¥¹Ğ¹Ñ½5…À ¤°(€€€€€€É•…Ñ•‘Ğœè½µÁ±…¥¹Ğ¹É•…Ñ•‘Ğ°(€€€€€€ÕÁ‘…Ñ•‘Ğœè¥•±‘Y…±Õ”¹Í•ÉÙ•ÉQ¥µ•ÍÑ…µÀ ¤°(€€€ô¤ì(€ô((€ÍÑ…Ñ¥ŒÕÑÕÉ”ñÙ½¥øÕÁ‘…Ñ•½µÁ±…¥¹Ğ (€€€MÁ…•½µÁ±…¥¹Ğ½µÁ±…¥¹Ğ°(€€¤…Íå¹Œì(€€€…İ…¥Ğ½µÁ±…¥¹ÑÍI•˜¹‘½Œ¡½µÁ±…¥¹Ğ¹¥¤¹ÕÁ‘…Ñ”¡ì(€€€€€€¸¸¹½µÁ±…¥¹Ğ¹Ñ½5…À ¤°(€€€€€€ÕÁ‘…Ñ•‘Ğœè¥•±‘Y…±Õ”¹Í•ÉÙ•ÉQ¥µ•ÍÑ…µÀ ¤°(€€€ô¤ì(€ô((€ÍÑ…Ñ¥ŒÕÑÕÉ”ñÙ½¥ø‘•±•Ñ•½µÁ±…¥¹Ğ¡MÑÉ¥¹œ¥¤…Íå¹Œì(€€€…İ…¥Ğ½µÁ±…¥¹ÑÍI•˜¹‘½Œ¡¥¤¹‘•±•Ñ” ¤ì(€ô((€ÍÑ…Ñ¥ŒMÑÉ•…´ñ1¥ÍĞñMÁ…•½µÁ±…¥¹Ğøøİ…Ñ¡½µÁ±…¥¹ÑÌ ¤ì(€€€É•ÑÕÉ¸½µÁ±…¥¹ÑÍI•˜(€€€€€€€€¹½É‘•É	ä É•…Ñ•‘Ğœ°‘•Í•¹‘¥¹œèÑÉÕ”¤(€€€€€€€€¹Í¹…ÁÍ¡½ÑÌ ¤(€€€€€€€€¹µ…À (€€€€€€€€€€¡Í¹…ÁÍ¡½Ğ¤€ôøÍ¹…ÁÍ¡½Ğ¹‘½Ì(€€€€€€€€€€€€€€¹µ…À (€€€€€€€€€€€€€€€€¡‘½Œ¤€ôøMÁ…•½µÁ±…¥¹Ğ¹™É½µ5…À¡ì(€€€€€€€€€€€€€€€€€€¸¸¹‘½Œ¹‘…Ñ„ ¤°(€€€€€€€€€€€€€€€€€€¥œè‘½Œ¹¥°(€€€€€€€€€€€€€€€ô¤°(€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€¹Ñ½1¥ÍĞ ¤°(€€€€€€€€¤ì(€ô)ô((¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(¼¼QeA%9=QL%9%Q=H]%P(¼¼€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô(()±…ÍÌAÉ•Í•¹•MÑ…ÑÕÍ1…‰•°•áÑ•¹‘ÌMÑ…Ñ•™Õ±]¥‘•Ğì(€½¹ÍĞAÉ•Í•¹•MÑ…ÑÕÍ1…‰•°¡ì(€€€ÍÕÁ•È¹­•ä°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹¥ÍQåÁ¥¹œ°(€€€É•ÅÕ¥É•Ñ¡¥Ì¹¥Í=¹±¥¹”°(€€€Ñ¡¥Ì¹±…ÍÑM••¸°(€ô¤ì((€™¥¹…°‰½½°¥ÍQåÁ¥¹œì(€™¥¹…°‰½½°¥Í=¹±¥¹”ì(€™¥¹…°‘å¹…µ¥Œ±…ÍÑM••¸ì((€½Ù•ÉÉ¥‘”(€MÑ…Ñ”ñAÉ•Í•¹•MÑ…ÑÕÍ1…‰•°øÉ•…Ñ•MÑ…Ñ” ¤€ôø}AÉ•Í•¹•MÑ…ÑÕÍ1…‰•±MÑ…Ñ” ¤ì)ô()±…ÍÌ}AÉ•Í•¹•MÑ…ÑÕÍ1…‰•±MÑ…Ñ”•áÑ•¹‘ÌMÑ…Ñ”ñAÉ•Í•¹•MÑ…ÑÕÍ1…‰•°øì(€Q¥µ•Èü}±½¬ì((€½Ù•ÉÉ¥‘”(€Ù½¥¥¹¥ÑMÑ…Ñ” ¤ì(€€€ÍÕÁ•È¹¥¹¥ÑMÑ…Ñ” ¤ì(€€€}±½¬€ôQ¥µ•È¹Á•É¥½‘¥Œ¡½¹ÍĞÕÉ…Ñ¥½¸¡Í•½¹‘Ìè€Ä¤°€¡|¤ì(€€€€€¥˜€ …µ½Õ¹Ñ•¤É•ÑÕÉ¸ì(€€€€€¥˜€¡İ¥‘•Ğ¹¥ÍQåÁ¥¹œ¤ì(€€€€€€€€¼¼5•ÍÍ•¹•Èµ±¥­”Í¡½ÉĞÑåÁ¥¹œÑ¥­Ìİ¡¥±”Ñ¡”Á…ÉÑ¹•È¥Ì…Ñ¥Ù•±äÑåÁ¥¹œ¸(€€€€€€€Õ¹…İ…¥Ñ•¡%¹Ñ•É…Ñ¥½¹••‘‰…­M•ÑÑ¥¹Ì¹Á±…åQåÁ¥¹M½Õ¹ ¤¤ì(€€€€€ô•±Í”¥˜€ …İ¥‘•Ğ¹¥Í=¹±¥¹”¤ì(€€€€€€€Í•ÑMÑ…Ñ”  ¤íô¤ì(€€€€€ô(€€€ô¤ì(€ô((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥‘UÁ‘…Ñ•]¥‘•Ğ¡½Ù…É¥…¹ĞAÉ•Í•¹•MÑ…ÑÕÍ1…‰•°½±‘]¥‘•Ğ¤ì(€€€ÍÕÁ•È¹‘¥‘UÁ‘…Ñ•]¥‘•Ğ¡½±‘]¥‘•Ğ¤ì(€€€¥˜€ …½±‘]¥‘•Ğ¹¥ÍQåÁ¥¹œ€˜˜İ¥‘•Ğ¹¥ÍQåÁ¥¹œ¤ì(€€€€€Õ¹…İ…¥Ñ•¡%¹Ñ•É…Ñ¥½¹••‘‰…­M•ÑÑ¥¹Ì¹Á±…åQåÁ¥¹M½Õ¹ ¤¤ì(€€€ô(€€€¥˜€¡½±‘]¥‘•Ğ¹±…ÍÑM••¸€„ôİ¥‘•Ğ¹±…ÍÑM••¸ñğ(€€€€€€€½±‘]¥‘•Ğ¹¥Í=¹±¥¹”€„ôİ¥‘•Ğ¹¥Í=¹±¥¹”ñğ(€€€€€€€½±‘]¥‘•Ğ¹¥ÍQåÁ¥¹œ€„ôİ¥‘•Ğ¹¥ÍQåÁ¥¹œ¤ì(€€€€€Í•ÑMÑ…Ñ”  ¤íô¤ì(€€€ô(€ô((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥ÍÁ½Í” ¤ì(€€€}±½¬ü¹…¹•° ¤ì(€€€ÍÕÁ•È¹‘¥ÍÁ½Í” ¤ì(€ô((€…Ñ•Q¥µ”ü}±…ÍÑM••¹…Ñ” ¤ì(€€€™¥¹…°Ù…±Õ”€ôİ¥‘•Ğ¹±…ÍÑM••¸ì(€€€¥˜€¡Ù…±Õ”¥ÌQ¥µ•ÍÑ…µÀ¤É•ÑÕÉ¸Ù…±Õ”¹Ñ½…Ñ” ¤¹Ñ½1½…° ¤ì(€€€¥˜€¡Ù…±Õ”¥Ì…Ñ•Q¥µ”¤É•ÑÕÉ¸Ù…±Õ”¹Ñ½1½…° ¤ì(€€€É•ÑÕÉ¸…Ñ•Q¥µ”¹ÑÉåA…ÉÍ” œ‘íÙ…±Õ”€üü€œôœ¤ü¹Ñ½1½…° ¤ì(€ô((€MÑÉ¥¹œ}±…‰•° ¤ì(€€€¥˜€¡İ¥‘•Ğ¹¥ÍQåÁ¥¹œ¤É•ÑÕÉ¸€QåÁ¥¹œ¸¸¸œì(€€€¥˜€¡İ¥‘•Ğ¹¥Í=¹±¥¹”¤É•ÑÕÉ¸€Ñ¥Ù”¹½Üœì((€€€™¥¹…°±…ÍÑM••¸€ô}±…ÍÑM••¹…Ñ” ¤ì(€€€¥˜€¡±…ÍÑM••¸€ôô¹Õ±°¤É•ÑÕÉ¸€=™™±¥¹”œì((€€€™¥¹…°Í•½¹‘Ì€ô…Ñ•Q¥µ”¹¹½Ü ¤¹‘¥™™•É•¹”¡±…ÍÑM••¸¤¹¥¹M•½¹‘Ìì(€€€¥˜€¡Í•½¹‘Ì€ğ€ØÀ¤É•ÑÕÉ¸€Ñ¥Ù”€‘íÍ•½¹‘Ì€ğ€À€ü€À€èÍ•½¹‘ÍôÍ•Œ…¼œì(€€€™¥¹…°µ¥¹ÕÑ•Ì€ôÍ•½¹‘Ìø¼€ØÀì(€€€¥˜€¡µ¥¹ÕÑ•Ì€ğ€ØÀ¤É•ÑÕÉ¸€Ñ¥Ù”€‘íµ¥¹ÕÑ•Íôµ¥¸…¼œì(€€€™¥¹…°¡½ÕÉÌ€ôµ¥¹ÕÑ•Ìø¼€ØÀì(€€€¥˜€¡¡½ÕÉÌ€ğ€ÈĞ¤É•ÑÕÉ¸€Ñ¥Ù”€‘í¡½ÕÉÍô¡È…¼œì(€€€™¥¹…°‘…åÌ€ô¡½ÕÉÌø¼€ÈĞì(€€€É•ÑÕÉ¸€Ñ¥Ù”€‘í‘…åÍô‘…ä‘í‘…åÌ€ôô€Ä€ü€œœ€è€Ìô…¼œì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸Q•áĞ (€€€€€}±…‰•° ¤°(€€€€€ÍÑå±”èQ•áÑMÑå±” (€€€€€€€™½¹ÑM¥é”è€ÄÄ°(€€€€€€€½±½Èèİ¥‘•Ğ¹¥ÍQåÁ¥¹œ(€€€€€€€€€€€€üÁ¥¹­½±½È(€€€€€€€€€€€€è€¡İ¥‘•Ğ¹¥Í=¹±¥¹”€ü½±½ÉÌ¹É••¹•¹Ğ€è½±½ÉÌ¹İ¡¥Ñ”ÔĞ¤°(€€€€€€¤°(€€€€¤ì(€ô)ô()±…ÍÌQåÁ¥¹½ÑÍ%¹‘¥…Ñ½È•áÑ•¹‘ÌMÑ…Ñ•™Õ±]¥‘•Ğì(€½¹ÍĞQåÁ¥¹½ÑÍ%¹‘¥…Ñ½È¡íÍÕÁ•È¹­•åô¤ì((€½Ù•ÉÉ¥‘”(€MÑ…Ñ”ñQåÁ¥¹½ÑÍ%¹‘¥…Ñ½ÈøÉ•…Ñ•MÑ…Ñ” ¤€ôø}QåÁ¥¹½ÑÍ%¹‘¥…Ñ½ÉMÑ…Ñ” ¤ì)ô()±…ÍÌ}QåÁ¥¹½ÑÍ%¹‘¥…Ñ½ÉMÑ…Ñ”•áÑ•¹‘ÌMÑ…Ñ”ñQåÁ¥¹½ÑÍ%¹‘¥…Ñ½Èø(€€€İ¥Ñ M¥¹±•Q¥­•ÉAÉ½Ù¥‘•ÉMÑ…Ñ•5¥á¥¸ì(€±…Ñ”™¥¹…°¹¥µ…Ñ¥½¹½¹ÑÉ½±±•È}½¹ÑÉ½±±•Èì((€½Ù•ÉÉ¥‘”(€Ù½¥¥¹¥ÑMÑ…Ñ” ¤ì(€€€ÍÕÁ•È¹¥¹¥ÑMÑ…Ñ” ¤ì(€€€}½¹ÑÉ½±±•È€ô¹¥µ…Ñ¥½¹½¹ÑÉ½±±•È (€€€€€ÙÍå¹ŒèÑ¡¥Ì°(€€€€€‘ÕÉ…Ñ¥½¸è½¹ÍĞÕÉ…Ñ¥½¸¡µ¥±±¥Í•½¹‘Ìè€äÀÀ¤°(€€€€¤¸¹É•Á•…Ğ ¤ì(€ô((€½Ù•ÉÉ¥‘”(€Ù½¥‘¥ÍÁ½Í” ¤ì(€€€}½¹ÑÉ½±±•È¹‘¥ÍÁ½Í” ¤ì(€€€ÍÕÁ•È¹‘¥ÍÁ½Í” ¤ì(€ô((€½Ù•ÉÉ¥‘”(€]¥‘•Ğ‰Õ¥±¡	Õ¥±‘½¹Ñ•áĞ½¹Ñ•áĞ¤ì(€€€É•ÑÕÉ¸I•Á…¥¹Ñ	½Õ¹‘…Éä (€€€€€¡¥±è½¹Ñ…¥¹•È (€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ¡¡½É¥é½¹Ñ…°è€ÄĞ°Ù•ÉÑ¥…°è€ÄÀ¤°(€€€€€€€‘•½É…Ñ¥½¸è	½á•½É…Ñ¥½¸ (€€€€€€€€€½±½ÈèÍÕÉ™…•½±½È°(€€€€€€€€€‰½É‘•ÉI…‘¥ÕÌè	½É‘•ÉI…‘¥ÕÌ¹¥ÉÕ±…È Äà¤°(€€€€€€€€€‰½É‘•Èè	½É‘•È¹…±°¡½±½Èè½±½ÉÌ¹İ¡¥Ñ”ÄÀ¤°(€€€€€€€€¤°(€€€€€€€¡¥±è¹¥µ…Ñ•‘	Õ¥±‘•È (€€€€€€€€€…¹¥µ…Ñ¥½¸è}½¹ÑÉ½±±•È°(€€€€€€€€€¡¥±è½¹ÍĞM¥é•‘	½à¹Í¡É¥¹¬ ¤°(€€€€€€€€€‰Õ¥±‘•Èè€¡½¹Ñ•áĞ°|¤ì(€€€€€€€€€€€É•ÑÕÉ¸I½Ü (€€€€€€€€€€€€€µ…¥¹á¥ÍM¥é”è5…¥¹á¥ÍM¥é”¹µ¥¸°(€€€€€€€€€€€€€¡¥±‘É•¸è1¥ÍĞ¹•¹•É…Ñ” Ì°€¡¥¹‘•à¤ì(€€€€€€€€€€€€€€€™¥¹…°Á¡…Í”€ô}½¹ÑÉ½±±•È¹Ù…±Õ”€¨€È€¨Á¤€´¥¹‘•à€¨€ È€¨Á¤€¼€Ì¤ì(€€€€€€€€€€€€€€€™¥¹…°±¥™Ğ€ô€¡Í¥¸¡Á¡…Í”¤€¬€Ä¤€¼€Èì(€€€€€€€€€€€€€€€É•ÑÕÉ¸A…‘‘¥¹œ (€€€€€€€€€€€€€€€€€Á…‘‘¥¹œè½¹ÍĞ‘•%¹Í•ÑÌ¹Íåµµ•ÑÉ¥Œ¡¡½É¥é½¹Ñ…°è€Ì¤°(€€€€€€€€€€€€€€€€€¡¥±èQÉ…¹Í™½É´¹ÑÉ…¹Í±…Ñ” (€€€€€€€€€€€€€€€€€€€½™™Í•Ğè=™™Í•Ğ À°€´Ğ€¨±¥™Ğ¤°(€€€€€€€€€€€€€€€€€€€¡¥±è=Á…¥Ñä (€€€€€€€€€€€€€€€€€€€€€½Á…¥Ñäè€À¸Ğ€¬€À¸Ø€¨±¥™Ğ°(€€€€€€€€€€€€€€€€€€€€€¡¥±è½¹Ñ…¥¹•È (€€€€€€€€€€€€€€€€€€€€€€€İ¥‘Ñ è€Ü°(€€€€€€€€€€€€€€€€€€€€€€€¡•¥¡Ğè€Ü°(€€€€€€€€€€€€€€€€€€€€€€€‘•½É…Ñ¥½¸è½¹ÍĞ	½á•½É…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€€€€€€½±½ÈèÁ¥¹­½±½È°(€€€€€€€€€€€€€€€€€€€€€€€€€Í¡…Á”è	½áM¡…Á”¹¥É±”°(€€€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€ô¤°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô°(€€€€€€€€¤°(€€€€€€¤°(€€€€¤ì(€ô)
