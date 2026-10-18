@@ -9160,6 +9160,22 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         const SizedBox(height: 20),
+        Card(
+          color: surfaceColor,
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: purpleColor,
+              child: Icon(Icons.info_outline_rounded, color: Colors.white),
+            ),
+            title: const Text('App information'),
+            subtitle: const Text('অ্যাপের ব্যবহার ও সমস্যা সমাধান'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AppInformationPage()),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'Data & downloads'),
         const SizedBox(height: 10),
         ValueListenableBuilder<bool>(
