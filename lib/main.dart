@@ -2841,6 +2841,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
+  Timer? _typingSoundTimer;
   Timer? _typingIdleTimer;
   Timer? _draftSaveTimer;
   Map<String, dynamic>? _replyToMessage;
@@ -3036,6 +3037,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (shouldType) {
       if (!_isTypingSent) {
         _isTypingSent = true;
+        unawaited(InteractionFeedbackSettings.playTypingSound());
+        _typingSoundTimer?.cancel();
+        _typingSoundTimer = Timer.periodic(const Duration(milliseconds: 650), (_) {
+          if (!mounted || !_appIsResumed || controller.text.trim().isEmpty || _typingIdleTimer == null) return;
+          unawaited(InteractionFeedbackSettings.playTypingSound());
+        });
         unawaited(ChatSyncService.setTyping(isTyping: true).catchError(
           (Object error) {
             debugPrint('Typing status update failed: $error');
@@ -4296,7 +4303,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     Icons.delete_outline_rounded,
                     color: Colors.redAccent,
                   ),
-                  title: const Text('সবার জন্য Unsend'),
+                  title: const Text('Unsend'),
                   onTap: () async {
                     Navigator.pop(sheetContext);
 
@@ -8933,26 +8940,7 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         const SizedBox(height: 20),
-        const SectionHeading(title: 'Chat feedback'),
-        const SizedBox(height: 10),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(Icons.vibration_rounded, color: pinkColor),
-            title: Text('Chat vibration'),
-            subtitle: Text('চালু আছে — ভয়েস ও রিপ্লাই স্লাইডে হালকা ভাইব্রেশন'),
-            trailing: Icon(Icons.check_circle, color: pinkColor),
-          ),
-        ),
-        const Card(
-          color: surfaceColor,
-          child: ListTile(
-            leading: Icon(Icons.volume_up_outlined, color: pinkColor),
-            title: Text('Typing and Seen sound'),
-            subtitle: Text('চালু আছে — সাউন্ড বন্ধ করা যাবে না'),
-            trailing: Icon(Icons.check_circle, color: pinkColor),
-          ),
-        ),
+
         const SizedBox(height: 20),
         const SectionHeading(title: 'Notifications'),
         const SizedBox(height: 10),
