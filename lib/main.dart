@@ -2035,6 +2035,62 @@ class _MainScreenState extends State<MainScreen>
   }
 }
 
+
+class AppInformationPage extends StatelessWidget {
+  const AppInformationPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      appBar: AppBar(title: const Text('App information'), backgroundColor: surfaceColor),
+      body: GlowBackground(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: const [
+            Icon(Icons.favorite_rounded, color: pinkColor, size: 48),
+            SizedBox(height: 10),
+            Center(child: Text('Orbit Two', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
+            SizedBox(height: 8),
+            Center(child: Text('দুজনের ব্যক্তিগত যোগাযোগ ও স্মৃতির জন্য', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
+            SizedBox(height: 24),
+            _AppInfoSection(icon: Icons.apps_rounded, title: 'অ্যাপটি কী কাজে লাগে', body: 'Orbit Two হলো দুজনের জন্য তৈরি একটি ব্যক্তিগত স্পেস। এখানে পার্টনারের সঙ্গে চ্যাট, ছবি ও ভিডিও শেয়ার, ভয়েস মেসেজ এবং সম্পর্কের গুরুত্বপূর্ণ স্মৃতি এক জায়গায় রাখা যায়।'),
+            _AppInfoSection(icon: Icons.touch_app_rounded, title: 'ব্যবহার শুরু করবেন যেভাবে', body: '১. নিজের অ্যাকাউন্টে প্রবেশ করুন।\n২. Partner Connection থেকে সংযোগ তৈরি করুন বা পাওয়া কোড দিয়ে যুক্ত হন।\n৩. Chat-এ মেসেজ ও ভয়েস মেসেজ পাঠান।\n৪. Gallery-তে ছবি ও ভিডিও শেয়ার করুন।\n৫. Settings থেকে প্রোফাইল, নোটিফিকেশন ও Data Saver নিয়ন্ত্রণ করুন।'),
+            _AppInfoSection(icon: Icons.sync_rounded, title: 'সমস্যা সমাধান', body: 'মেসেজ বা তথ্য আপডেট না হলে ইন্টারনেট সংযোগ পরীক্ষা করে অ্যাপটি আবার খুলুন। ছবি বা ভিডিও আপলোড না হলে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।'),
+            _AppInfoSection(icon: Icons.speed_rounded, title: 'কম ক্ষমতার ফোনে অ্যাপ ধীর হলে', body: 'ব্যাকগ্রাউন্ডে থাকা অপ্রয়োজনীয় অ্যাপ বন্ধ করুন। তাতেও ধীর চললে: Settings → Apps → Orbit Two → Storage & cache → Clear cache। ফোনভেদে মেনুর নাম আলাদা হতে পারে। শুধু Clear cache নির্বাচন করুন। Clear storage বা Clear data নির্বাচন করবেন না, এতে স্থানীয় তথ্য মুছে যেতে পারে.'),
+            _AppInfoSection(icon: Icons.notifications_outlined, title: 'নোটিফিকেশন না এলে', body: 'ফোনের Settings থেকে Orbit Two-এর Notifications অনুমোদিত আছে কি না দেখুন। Battery Saver বা ব্যাকগ্রাউন্ড সীমাবদ্ধতার কারণে নোটিফিকেশন দেরি হতে পারে।'),
+            _AppInfoSection(icon: Icons.lock_outline_rounded, title: 'অ্যাকাউন্ট ও নিরাপত্তা', body: 'নিজের অ্যাকাউন্টের তথ্য নিরাপদে রাখুন এবং পাসওয়ার্ড কারও সঙ্গে শেয়ার করবেন না। অ্যাকাউন্ট বা প্রোফাইলের সেটিংসের জন্য Settings-এর Privacy & account অপশন ব্যবহার করুন।'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AppInfoSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+  const _AppInfoSection({required this.icon, required this.title, required this.body});
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: surfaceColor.withValues(alpha: 0.94),
+    margin: const EdgeInsets.only(bottom: 14),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [Icon(icon, color: pinkColor), const SizedBox(width: 10), Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)))]),
+          const SizedBox(height: 10),
+          Text(body, style: const TextStyle(color: Colors.white70, height: 1.55)),
+        ],
+      ),
+    ),
+  );
+}
+
 // ============================================================
 // PROFILE AVATAR WIDGET
 // ============================================================
