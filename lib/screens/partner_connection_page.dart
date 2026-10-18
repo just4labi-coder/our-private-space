@@ -169,7 +169,7 @@ class _PartnerConnectionPageState
 
     if (raw.contains('permission-denied') ||
         raw.contains('permission denied')) {
-      return 'Firebase অনুমতি দেয়নি। Firestore Rules পরীক্ষা করো।';
+      return 'অনুরোধটি সম্পন্ন করা যায়নি। অনুগ্রহ করে পরে আবার চেষ্টা করুন।';
     }
 
     if (raw.contains('invite code') ||
@@ -179,8 +179,8 @@ class _PartnerConnectionPageState
     }
 
     return creating
-        ? 'Private Space তৈরি হয়নি।\n$error'
-        : 'Space-এ যুক্ত হওয়া যায়নি।\n$error';
+        ? 'ব্যক্তিগত স্পেস তৈরি করা যায়নি। আবার চেষ্টা করুন।'
+        : 'স্পেসে যুক্ত হওয়া যায়নি। কোডটি যাচাই করে আবার চেষ্টা করুন।';
   }
 
   Future<void> _runDisconnectionAction({
@@ -273,7 +273,7 @@ class _PartnerConnectionPageState
       }
     } catch (e) {
       _showMessage(
-        'অনুরোধ সম্পন্ন হয়নি। Firebase Rules পরীক্ষা করো।\n$e',
+        'অনুরোধটি সম্পন্ন করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।',
         isError: true,
       );
     } finally {
@@ -336,7 +336,7 @@ class _PartnerConnectionPageState
       }
     } catch (e) {
       _showMessage(
-        'পুনঃসংযোগ সম্পন্ন হয়নি।\n$e',
+        'পুনঃসংযোগ সম্পন্ন করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।',
         isError: true,
       );
     } finally {
