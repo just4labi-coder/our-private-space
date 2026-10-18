@@ -214,7 +214,7 @@ async function sendFcm(accessToken, token, title, body, details) {
             priority: "HIGH",
             ttl: "86400s",
             notification: {
-              channel_id: "orbit_partner_updates_v2",
+              channel_id: "orbit_partner_updates_v6",
               sound: "default",
               visibility: "PRIVATE",
             },
@@ -329,7 +329,9 @@ export default {
         cleanText(senderProfile?.name, 80) ||
         cleanText(user.email?.split("@")[0], 80) || "Your partner";
       const type = cleanText(message.type, 20) || "text";
-      const messageText = cleanText(message.text, 180);
+      // Media message text can contain a private local file path. Never expose it
+      // in a lock-screen notification; only text messages use their text as preview.
+      const messageText = type === "text" ? cleanText(message.text, 180) : "";
       const preview = messageText || (
         type === "voice" ? "Sent a voice message" :
         type === "image" ? "Sent a photo" :
