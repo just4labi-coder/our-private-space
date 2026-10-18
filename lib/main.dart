@@ -60,7 +60,7 @@ Future<File> _makeCompatibleVideo(File source) async {
 
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
-const String orbitNotificationChannelId = 'orbit_partner_updates_v5';
+const String orbitNotificationChannelId = 'orbit_partner_updates_v6';
 const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
 const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
 const int orbitMessageSummaryNotificationId = 7000;
@@ -5468,6 +5468,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           _buildReplyQuote(message),
                           _messageContent(message),
                         ],
+                      ),
+                    ),
+                  if (message['pinned'] == true)
+                    Positioned(
+                      top: -5,
+                      right: -5,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: surfaceColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.push_pin_rounded, size: 13, color: pinkColor),
                       ),
                     ),
                   if (expanded && message['unsent'] != true)
