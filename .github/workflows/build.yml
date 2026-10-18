@@ -290,6 +290,19 @@ jobs:
       - name: Check Cloudflare Worker JavaScript syntax
         run: node --check cloudflare-worker/src/index.js
 
+      - name: Deploy notification Worker
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-worker
+          command: deploy
+
+      - name: Explain skipped Worker deployment
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN == '' || secrets.CLOUDFLARE_ACCOUNT_ID == '' }}
+        run: echo "::warning::Worker source is updated in GitHub, but deployment was skipped because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
+
       - name: Analyze project
         run: flutter analyze
 
