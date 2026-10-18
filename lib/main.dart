@@ -9584,7 +9584,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
       _showMessage(AuthService.friendlyError(error));
     } catch (error) {
       if (!mounted) return;
-      _showMessage('রিসেট ইমেইল পাঠানো যায়নি। Firebase Authentication ও ইন্টারনেট পরীক্ষা করো।');
+      _showMessage('রিসেট ইমেইল পাঠানো যায়নি। ইমেইল ঠিকানা ও ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।');
     }
   }
 
