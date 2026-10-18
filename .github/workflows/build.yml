@@ -244,6 +244,36 @@ jobs:
           print("Generated verified transparent white Android notification icon.")
           PY
 
+      - name: Generate dedicated Sent confirmation sound
+        run: |
+          mkdir -p assets/sounds
+          python - <<'PY'
+          import math
+          import struct
+          import wave
+          from pathlib import Path
+
+          path = Path("assets/sounds/orbit_sent.wav")
+          rate = 22050
+          samples = []
+          # A short two-note rising chime, distinct from the Seen sound.
+          for frequency, duration in ((660, 0.075), (990, 0.105)):
+              count = int(rate * duration)
+              for i in range(count):
+                  envelope = min(1.0, i / max(1, int(rate * 0.008)))
+                  envelope *= max(0.0, 1.0 - i / count)
+                  value = int(10500 * envelope * math.sin(2 * math.pi * frequency * i / rate))
+                  samples.append(struct.pack("<h", value))
+          with wave.open(str(path), "wb") as audio:
+              audio.setnchannels(1)
+              audio.setsampwidth(2)
+              audio.setframerate(rate)
+              audio.writeframes(b"".join(samples))
+          with wave.open(str(path), "rb") as audio:
+              assert audio.getnframes() > 0 and audio.getframerate() == rate
+          print(f"Generated dedicated Sent sound: {path}")
+          PY
+
       - name: Generate custom launcher icon from the cleaned Orbit Two logo
         run: |
           dart run flutter_launcher_icons
