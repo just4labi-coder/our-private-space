@@ -118,6 +118,12 @@ Future<void> main() async {
     debugPrint('Interaction feedback settings load failed: $error');
   }
 
+  try {
+    await ActiveStatusSettings.load();
+  } catch (error) {
+    debugPrint('Active Status settings load failed: $error');
+  }
+
   // Message push notification delivery is disabled; chat sync remains active.
   // Local notifications are used only for user-created Special Dates reminders.
   try {
@@ -158,6 +164,28 @@ class DataSaverSettings {
 
     await prefs.setBool(_key, value);
     enabled.value = value;
+  }
+}
+
+class ActiveStatusSettings {
+  ActiveStatusSettings._();
+
+  static const String _key = 'activeStatusEnabled';
+  static final ValueNotifier<bool> enabled = ValueNotifier<bool>(true);
+
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    enabled.value = prefs.getBool(_key) ?? true;
+  }
+
+  static Future<void> setEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+    enabled.value = value;
+
+    // Save locally first; lifecycle presence updates retry cloud sync later
+    // if the device is temporarily offline.
+    await ChatSyncService.setActiveStatusEnabled(value);
   }
 }
 
@@ -1595,7 +1623,10 @@ class _MainScreenState extends State<MainScreen>
 
   Future<void> _updatePresence(bool online) async {
     try {
-      await ChatSyncService.setPresence(isOnline: online);
+      await ChatSyncService.setPresence(
+        isOnline: online,
+        activeStatusEnabled: ActiveStatusSettings.enabled.value,
+      );
     } catch (_) {}
   }
 
@@ -5768,29 +5799,49 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           }
         }
         if (partnerUid.isEmpty) {
-          return _chatHeaderContent(
-            name: 'Partner',
-            photoBase64: '',
-            isOnline: false,
-            isTyping: false,
-            lastSeen: null,
+          return ValueListenableBuilder<bool>(
+            valueListenable: ActiveStatusSettings.enabled,
+            builder: (context, ownStatusEnabled, _) {
+              return _chatHeaderContent(
+                name: 'Partner',
+                photoBase64: '',
+                isOnline: false,
+                isTyping: false,
+                lastSeen: null,
+                ownStatusOff: !ownStatusEnabled,
+                partnerStatusOff: false,
+              );
+            },
           );
         }
         return StreamBuilder<Map<String, dynamic>?>(
           stream: ChatSyncService.watchPresence(partnerUid),
           builder: (context, presenceSnapshot) {
             final presence = presenceSnapshot.data;
-            final isOnline = presence?['isOnline'] == true;
-            return StreamBuilder<Map<String, dynamic>?>(
-              stream: ChatSyncService.watchMemberTyping(partnerUid),
-              builder: (context, typingSnapshot) {
-                final isTyping = typingSnapshot.data?['isTyping'] == true;
-                return _chatHeaderContent(
-                  name: _profileNameForUid(partnerUid, 'Partner'),
-                  photoBase64: _photoBase64ForUid(partnerUid),
-                  isOnline: isOnline,
-                  isTyping: isTyping,
-                  lastSeen: presence?['lastSeen'],
+            final partnerStatusOff = presence?['activeStatusEnabled'] == false;
+            final partnerIsOnline = presence?['isOnline'] == true;
+            return ValueListenableBuilder<bool>(
+              valueListenable: ActiveStatusSettings.enabled,
+              builder: (context, ownStatusEnabled, _) {
+                final ownStatusOff = !ownStatusEnabled;
+                return StreamBuilder<Map<String, dynamic>?>(
+                  stream: ChatSyncService.watchMemberTyping(partnerUid),
+                  builder: (context, typingSnapshot) {
+                    final isTyping = !ownStatusOff &&
+                        !partnerStatusOff &&
+                        typingSnapshot.data?['isTyping'] == true;
+                    return _chatHeaderContent(
+                      name: _profileNameForUid(partnerUid, 'Partner'),
+                      photoBase64: _photoBase64ForUid(partnerUid),
+                      isOnline: !ownStatusOff &&
+                          !partnerStatusOff &&
+                          partnerIsOnline,
+                      isTyping: isTyping,
+                      lastSeen: presence?['lastSeen'],
+                      ownStatusOff: ownStatusOff,
+                      partnerStatusOff: partnerStatusOff,
+                    );
+                  },
                 );
               },
             );
@@ -5805,8 +5856,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     required String photoBase64,
     required bool isOnline,
     required bool isTyping,
+    required bool ownStatusOff,
+    required bool partnerStatusOff,
     dynamic lastSeen,
   }) {
+    final statusOff = ownStatusOff || partnerStatusOff;
     final avatar = ProfileAvatar(
       name: name,
       photoBase64: photoBase64,
@@ -5829,9 +5883,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   width: 12,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: isOnline
-                        ? Colors.greenAccent
-                        : Colors.grey,
+                    color: statusOff
+                        ? Colors.redAccent
+                        : (isOnline ? Colors.greenAccent : Colors.grey),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: backgroundColor,
@@ -5861,6 +5915,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   isTyping: isTyping,
                   isOnline: isOnline,
                   lastSeen: lastSeen,
+                  ownStatusOff: ownStatusOff,
+                  partnerStatusOff: partnerStatusOff,
                 ),
               ],
             ),
@@ -9191,6 +9247,45 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         const SizedBox(height: 20),
+        const SectionHeading(title: 'Privacy'),
+        const SizedBox(height: 10),
+        ValueListenableBuilder<bool>(
+          valueListenable: ActiveStatusSettings.enabled,
+          builder: (context, enabled, _) {
+            return Card(
+              color: surfaceColor,
+              child: SwitchListTile(
+                secondary: Icon(
+                  enabled ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  color: pinkColor,
+                ),
+                title: const Text('Active Status'),
+                subtitle: Text(
+                  enabled
+                      ? 'অপরজন তোমার অনলাইন/শেষ সক্রিয় থাকার অবস্থা দেখতে পারবে'
+                      : 'অপরজনের কাছে Active Status বন্ধ দেখাবে',
+                ),
+                value: enabled,
+                activeColor: pinkColor,
+                onChanged: (value) async {
+                  try {
+                    await ActiveStatusSettings.setEnabled(value);
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'সেটিং ফোনে সংরক্ষিত হয়েছে, তবে অনলাইনে সিঙ্ক হয়নি। ইন্টারনেট এলে আবার চেষ্টা হবে।',
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'Data & downloads'),
         const SizedBox(height: 10),
         ValueListenableBuilder<bool>(
@@ -10117,11 +10212,15 @@ class PresenceStatusLabel extends StatefulWidget {
     required this.isTyping,
     required this.isOnline,
     this.lastSeen,
+    this.ownStatusOff = false,
+    this.partnerStatusOff = false,
   });
 
   final bool isTyping;
   final bool isOnline;
   final dynamic lastSeen;
+  final bool ownStatusOff;
+  final bool partnerStatusOff;
 
   @override
   State<PresenceStatusLabel> createState() => _PresenceStatusLabelState();
@@ -10135,7 +10234,9 @@ class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
     super.initState();
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      if (widget.isTyping) {
+      if (!widget.ownStatusOff &&
+          !widget.partnerStatusOff &&
+          widget.isTyping) {
         // Messenger-like short typing ticks while the partner is actively typing.
         unawaited(InteractionFeedbackSettings.playTypingSound());
       } else if (!widget.isOnline) {
@@ -10147,12 +10248,17 @@ class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
   @override
   void didUpdateWidget(covariant PresenceStatusLabel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isTyping && widget.isTyping) {
+    if (!oldWidget.isTyping &&
+        widget.isTyping &&
+        !widget.ownStatusOff &&
+        !widget.partnerStatusOff) {
       unawaited(InteractionFeedbackSettings.playTypingSound());
     }
     if (oldWidget.lastSeen != widget.lastSeen ||
         oldWidget.isOnline != widget.isOnline ||
-        oldWidget.isTyping != widget.isTyping) {
+        oldWidget.isTyping != widget.isTyping ||
+        oldWidget.ownStatusOff != widget.ownStatusOff ||
+        oldWidget.partnerStatusOff != widget.partnerStatusOff) {
       setState(() {});
     }
   }
@@ -10171,6 +10277,8 @@ class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
   }
 
   String _label() {
+    if (widget.ownStatusOff) return 'your active status is off';
+    if (widget.partnerStatusOff) return 'active status is off';
     if (widget.isTyping) return 'Typing...';
     if (widget.isOnline) return 'Active now';
 
@@ -10193,9 +10301,11 @@ class _PresenceStatusLabelState extends State<PresenceStatusLabel> {
       _label(),
       style: TextStyle(
         fontSize: 11,
-        color: widget.isTyping
-            ? pinkColor
-            : (widget.isOnline ? Colors.greenAccent : Colors.white54),
+        color: widget.ownStatusOff || widget.partnerStatusOff
+            ? Colors.redAccent
+            : (widget.isTyping
+                ? pinkColor
+                : (widget.isOnline ? Colors.greenAccent : Colors.white54)),
       ),
     );
   }
