@@ -88,50 +88,30 @@ Route<T> _orbitAnimatedRoute<T>(WidgetBuilder builder) {
 
 class InAppLinkViewerPage extends StatefulWidget {
   const InAppLinkViewerPage({super.key, required this.url});
-
   final Uri url;
-
   @override
   State<InAppLinkViewerPage> createState() => _InAppLinkViewerPageState();
 }
-
 class _InAppLinkViewerPageState extends State<InAppLinkViewerPage> {
   late final WebViewController _controller;
   int _progress = 0;
   bool _loadFailed = false;
-
   @override
   void initState() {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(backgroundColor)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (progress) {
-            if (mounted) setState(() => _progress = progress);
-          },
-          onPageStarted: (_) {
-            if (mounted) {
-              setState(() {
-                _loadFailed = false;
-                _progress = 0;
-              });
-            }
-          },
-          onPageFinished: (_) {
-            if (mounted) setState(() => _progress = 100);
-          },
-          onWebResourceError: (error) {
-            if (error.isForMainFrame == true && mounted) {
-              setState(() => _loadFailed = true);
-            }
-          },
-        ),
-      )
+      ..setBackgroundColor(const Color(0xFF070513))
+      ..setNavigationDelegate(NavigationDelegate(
+        onProgress: (progress) { if (mounted) setState(() => _progress = progress); },
+        onPageStarted: (_) { if (mounted) setState(() { _loadFailed = false; _progress = 0; }); },
+        onPageFinished: (_) { if (mounted) setState(() => _progress = 100); },
+        onWebResourceError: (error) {
+          if (error.isForMainFrame == true && mounted) setState(() => _loadFailed = true);
+        },
+      ))
       ..loadRequest(widget.url);
   }
-
   Future<void> _openOriginal() async {
     try {
       await launchUrl(widget.url, mode: LaunchMode.externalApplication);
@@ -143,82 +123,45 @@ class _InAppLinkViewerPageState extends State<InAppLinkViewerPage> {
       );
     }
   }
-
   Future<void> _reload() async {
-    setState(() {
-      _loadFailed = false;
-      _progress = 0;
-    });
+    setState(() { _loadFailed = false; _progress = 0; });
     await _controller.reload();
   }
-
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        title: const Text('ভিডিও / লিংক'),
-        actions: [
-          IconButton(
-            tooltip: 'মূল অ্যাপে খুলুন',
-            onPressed: _openOriginal,
-            icon: const Icon(Icons.open_in_new_rounded),
-          ),
-          IconButton(
-            tooltip: 'রিফ্রেশ',
-            onPressed: _reload,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-        bottom: _progress < 100
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(2),
-                child: LinearProgressIndicator(
-                  value: _progress == 0 ? null : _progress / 100,
-                  minHeight: 2,
-                  backgroundColor: Colors.white10,
-                  color: pinkColor,
-                ),
-              )
-            : null,
-      ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_loadFailed)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.play_circle_outline_rounded,
-                        size: 56, color: pinkColor),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'এই প্ল্যাটফর্মটি অ্যাপের ভেতরে ভিডিও চালাতে বাধা দিতে পারে।',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _openOriginal,
-                      icon: const Icon(Icons.open_in_new_rounded),
-                      label: const Text('মূল অ্যাপ / ব্রাউজারে খুলুন'),
-                    ),
-                    TextButton(
-                      onPressed: _reload,
-                      child: const Text('আবার চেষ্টা করুন'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xFF070513),
+    appBar: AppBar(
+      backgroundColor: const Color(0xFF070513),
+      title: const Text('ভিডিও / লিংক'),
+      actions: [
+        IconButton(tooltip: 'মূল অ্যাপে খুলুন', onPressed: _openOriginal, icon: const Icon(Icons.open_in_new_rounded)),
+        IconButton(tooltip: 'রিফ্রেশ', onPressed: _reload, icon: const Icon(Icons.refresh_rounded)),
+      ],
+      bottom: _progress < 100 ? PreferredSize(
+        preferredSize: const Size.fromHeight(2),
+        child: LinearProgressIndicator(
+          value: _progress == 0 ? null : _progress / 100,
+          minHeight: 2, backgroundColor: Colors.white10, color: const Color(0xFFFF2E93),
+        ),
+      ) : null,
+    ),
+    body: Stack(children: [
+      WebViewWidget(controller: _controller),
+      if (_loadFailed) Center(child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.play_circle_outline_rounded, size: 56, color: Color(0xFFFF2E93)),
+          const SizedBox(height: 12),
+          const Text('এই প্ল্যাটফর্মটি অ্যাপের ভেতরে ভিডিও চালাতে বাধা দিতে পারে.',
+            textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+          const SizedBox(height: 16),
+          FilledButton.icon(onPressed: _openOriginal, icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('মূল অ্যাপ / ব্রাউজারে খুলুন')),
+          TextButton(onPressed: _reload, child: const Text('আবার চেষ্টা করুন')),
+        ]),
+      )),
+    ]),
+  );
 }
 
 bool orbitChatVisible = false;
@@ -5177,35 +5120,32 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   onTap: () {
                     _mediaPathFutures.remove(mediaKey);
                     setState(() {
-                      _requestedMediaDownloads.adfinal linkRegex = RegExp(r'(https?://\S+|www\.\S+)', caseSensitive: false);
-    final spans = <InlineSpan>[];
-    var last = 0;
-    for (final match in linkRegex.allMatches(path)) {
-      if (match.start > last) spans.add(TextSpan(text: path.substring(last, match.start)));
-      final rawUrl = match.group(0)!;
-      final url = Uri.tryParse(rawUrl.startsWith('www.') ? 'https://$rawUrl' : rawUrl);
-      if (url != null && (url.scheme == 'http' || url.scheme == 'https') && url.host.isNotEmpty) {
-        spans.add(TextSpan(
-          text: rawUrl,
-          style: const TextStyle(
-            color: Color(0xFF80CFFF),
-            decoration: TextDecoration.underline,
-          ),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () {
-              Navigator.of(context).push(
-                _orbitAnimatedRoute<void>(
-                  (context) => InAppLinkViewerPage(url: url),
-                ),
-              );
-            },
-        ));
-      } else {
-        spans.add(TextSpan(text: rawUrl));
-      }
-      last = match.end;
-    }
-      durationMs: int.tryParse('${message['durationMs'] ?? ''}'),
+                      _requestedMediaDownloads.add(mediaKey);
+                    });
+                  },
+                  child: Container(
+                    width: 210,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.refresh_rounded, color: pinkColor, size: 32),
+                        SizedBox(height: 8),
+                        Text('ডাউনলোড হয়নি — আবার চেষ্টা করো'),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              if (type == 'voice') {
+                return ChatVoicePlayer(
+                  path: resolvedPath,
+                  durationMs: int.tryParse('${message['durationMs'] ?? ''}'),
                 );
               }
 
@@ -5284,11 +5224,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       final rawUrl = match.group(0)!;
       final url = Uri.tryParse(rawUrl.startsWith('www.') ? 'https://$rawUrl' : rawUrl);
       if (url != null && (url.scheme == 'http' || url.scheme == 'https') && url.host.isNotEmpty) {
-        spans.add(TextSpan(text: rawUrl, style: const TextStyle(color: Color(0xFF80CFFF), decoration: TextDecoration.underline), recognizer: TapGestureRecognizer()..onTap = () async {
-          try { await launchUrl(url, mode: LaunchMode.externalApplication); }
-          catch (error) { debugPrint('Could not open chat link: $error'); }
-        }));
-      } else { spans.add(TextSpan(text: rawUrl)); }
+        spans.add(TextSpan(
+          text: rawUrl,
+          style: const TextStyle(color: Color(0xFF80CFFF), decoration: TextDecoration.underline),
+          recognizer: TapGestureRecognizer()..onTap = () {
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => InAppLinkViewerPage(url: url),
+            ));
+          },
+        ));
+      } else {
+        spans.add(TextSpan(text: rawUrl));
+      }
       last = match.end;
     }
     if (last < path.length) spans.add(TextSpan(text: path.substring(last)));
