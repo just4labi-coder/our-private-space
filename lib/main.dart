@@ -8015,12 +8015,17 @@ class _GalleryMediaViewerPageState
     extends State<GalleryMediaViewerPage> {
   late final PageController _pageController;
   late int currentIndex;
+  double _imageRotation = 0;
 
   @override
   void initState() {
     super.initState();
     currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: currentIndex);
+    unawaited(SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
+    ]));
   }
 
   int? _previousVideoIndex(int from) {
@@ -8050,6 +8055,7 @@ class _GalleryMediaViewerPageState
   @override
   void dispose() {
     _pageController.dispose();
+    unawaited(SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]));
     super.dispose();
   }
 
@@ -8120,7 +8126,10 @@ class _GalleryMediaViewerPageState
         controller: _pageController,
         itemCount: widget.items.length,
         onPageChanged: (index) {
-          setState(() => currentIndex = index);
+          setState(() {
+            currentIndex = index;
+            _imageRotation = 0;
+          });
         },
         itemBuilder: (context, index) {
           final item = widget.items[index];
@@ -8147,19 +8156,30 @@ class _GalleryMediaViewerPageState
               }
 
               if (!isVideo) {
-                return Center(
-                  child: InteractiveViewer(
-                    minScale: 0.5,
-                    maxScale: 5,
-                    child: Image.file(
-                      File(path),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) {
-                        return const Text('ছবিটি খোলা যাচ্ছে না।');
-                      },
-                    ),
+                return Stack(fit: StackFit.expand, children: [
+                  InteractiveViewer(
+                    minScale: 0.65,
+                    maxScale: 7,
+                    boundaryMargin: const EdgeInsets.all(120),
+                    clipBehavior: Clip.none,
+                    child: Center(child: Transform.rotate(
+                      angle: _imageRotation,
+                      child: Image.file(File(path), fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (_, __, ___) => const Text('ছবিটি খোলা যাচ্ছে না。'),
+                      ),
+                    )),
                   ),
-                );
+                  Positioned(right: 12, bottom: 20, child: Material(
+                    color: Colors.black.withValues(alpha: 0.68),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: 'ছবি ৯০° ঘোরাও',
+                      onPressed: () => setState(() => _imageRotation += 1.5707963267948966),
+                      icon: const Icon(Icons.rotate_right_rounded, color: Colors.white),
+                    ),
+                  )),
+                ]);
               }
 
               return _GalleryVideoPlayer(
@@ -8202,7 +8222,16 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
   String? _optimizedPath;
   bool _isOptimizing = false;
   bool _hasAttemptedOptimization = false;
-  bool _showControls = false;
+  bool _showControls = true;
+
+  String _formatVideoDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
 
   @override
   void initState() {
@@ -8239,6 +8268,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
         return;
       }
 
+      video.addListener(_handleVideoValueChanged);
       setState(() {});
       await video.setVolume(widget.isActive ? 1.0 : 0.0);
       if (widget.isActive) await video.play();
@@ -8318,19 +8348,43 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
     }
   }
 
+  void _handleVideoValueChanged() {
+    final video = _controller;
+    if (!mounted || video == null || !video.value.isInitialized) return;
+    if (video.value.isCompleted && !_showControls) setState(() => _showControls = true);
+  }
+
   Future<void> _togglePlayback() async {
     final video = _controller;
     if (!widget.isActive || video == null || !video.value.isInitialized) return;
-
-    if (video.value.isPlaying) {
+    if (video.value.isCompleted) {
+      await video.seekTo(Duration.zero);
+      await video.play();
+      if (mounted) setState(() => _showControls = true);
+    } else if (video.value.isPlaying) {
       await video.pause();
     } else {
       await video.play();
     }
   }
 
+  Future<void> _openFullscreen() async {
+    final video = _controller;
+    if (video == null || !video.value.isInitialized) return;
+    final wasPlaying = video.value.isPlaying;
+    await video.pause();
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+      builder: (_) => _GalleryFullscreenVideoPage(controller: video, formatDuration: _formatVideoDuration),
+    ));
+    if (!mounted) return;
+    setState(() => _showControls = true);
+    if (wasPlaying && widget.isActive && !video.value.isCompleted) await video.play();
+  }
+
   @override
   void dispose() {
+    _controller?.removeListener(_handleVideoValueChanged);
     _controller?.dispose();
     super.dispose();
   }
@@ -8338,106 +8392,58 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
   @override
   Widget build(BuildContext context) {
     final video = _controller;
-
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.video_file_outlined, size: 42, color: pinkColor),
-              const SizedBox(height: 10),
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 14),
-              FilledButton.icon(
-                onPressed: _isOptimizing ? null : () => _tryOptimizeAndPlay(force: true),
-                icon: _isOptimizing
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.auto_fix_high_rounded),
-                label: Text(_isOptimizing ? 'ভিডিও অপটিমাইজ হচ্ছে…' : 'অপটিমাইজ করে আবার চালাও'),
-              ),
-            ],
-          ),
+    if (_error != null) return Center(child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.video_file_outlined, size: 42, color: pinkColor),
+        const SizedBox(height: 10), Text(_error!, textAlign: TextAlign.center),
+        const SizedBox(height: 14),
+        FilledButton.icon(
+          onPressed: _isOptimizing ? null : () => _tryOptimizeAndPlay(force: true),
+          icon: _isOptimizing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_fix_high_rounded),
+          label: Text(_isOptimizing ? 'ভিডিও অপটিমাইজ হচ্ছে…' : 'অপটিমাইজ করে আবার চালাও'),
         ),
-      );
-    }
-
-    if (video == null || !video.value.isInitialized) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    return Center(
-      child: AspectRatio(
-        aspectRatio: video.value.aspectRatio,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _showControls = !_showControls),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              VideoPlayer(video),
-              if (_showControls) Center(child: IconButton(onPressed: _togglePlayback, iconSize: 44, color: Colors.white, icon: Icon(video.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded))),
-              if (_showControls) Positioned(
-              left: 8,
-              right: 8,
-              bottom: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      tooltip: 'আগের ভিডিও',
-                      onPressed: widget.onPrevious,
-                      icon: const Icon(Icons.skip_previous_rounded),
-                    ),
-                    Expanded(
-                      child: VideoProgressIndicator(
-                        video,
-                        allowScrubbing: true,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 4,
-                        ),
-                      ),
-                    ),
-                    ValueListenableBuilder<VideoPlayerValue>(
-                      valueListenable: video,
-                      builder: (context, value, child) {
-                        return IconButton(
-                          tooltip: value.isPlaying ? 'Pause' : 'Play',
-                          onPressed: _togglePlayback,
-                          icon: Icon(
-                            value.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                          ),
-                        );
-                      },
-                    ),
-                    IconButton(
-                      tooltip: 'পরের ভিডিও',
-                      onPressed: widget.onNext,
-                      icon: const Icon(Icons.skip_next_rounded),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        ),
+      ]),
+    ));
+    if (video == null || !video.value.isInitialized) return const Center(child: CircularProgressIndicator());
+    return Center(child: AspectRatio(
+      aspectRatio: video.value.aspectRatio,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _showControls = !_showControls),
+        child: Stack(alignment: Alignment.center, children: [
+          VideoPlayer(video),
+          if (_showControls) Center(child: IconButton(
+            onPressed: _togglePlayback, iconSize: 48, color: Colors.white,
+            icon: Icon(video.value.isCompleted ? Icons.replay_circle_filled_rounded : video.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+          )),
+          if (_showControls) Positioned(left: 8, right: 8, bottom: 8, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.76), borderRadius: BorderRadius.circular(14)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Row(children: [
+                Text(_formatVideoDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                const Spacer(),
+                Text(_formatVideoDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ])),
+              VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2)),
+              Row(children: [
+                IconButton(tooltip: 'আগের ভিডিও', onPressed: widget.onPrevious, icon: const Icon(Icons.skip_previous_rounded)),
+                const Spacer(),
+                ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
+                  tooltip: value.isCompleted ? 'আবার চালাও' : value.isPlaying ? 'Pause' : 'Play',
+                  onPressed: _togglePlayback,
+                  icon: Icon(value.isCompleted ? Icons.replay_rounded : value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                )),
+                IconButton(tooltip: 'ফুলস্ক্রিন', onPressed: _openFullscreen, icon: const Icon(Icons.fullscreen_rounded)),
+                const Spacer(),
+                IconButton(tooltip: 'পরের ভিডিও', onPressed: widget.onNext, icon: const Icon(Icons.skip_next_rounded)),
+              ]),
+            ]),
+          )),
+        ]),
       ),
-    );
+    ));
   }
 }
 
@@ -8458,7 +8464,63 @@ class ChatVoicePlayer extends StatefulWidget {
 
 class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   AudioPlayer? _player;
-  StreamSubscription<PlayerState>? _stateSubscription;
+  StreamSubscription<
+
+
+class _GalleryFullscreenVideoPage extends StatefulWidget {
+  final VideoPlayerController controller;
+  final String Function(Duration) formatDuration;
+  const _GalleryFullscreenVideoPage({required this.controller, required this.formatDuration});
+  @override
+  State<_GalleryFullscreenVideoPage> createState() => _GalleryFullscreenVideoPageState();
+}
+class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage> {
+  VideoPlayerController get video => widget.controller;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
+    unawaited(SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
+    ]));
+  }
+  Future<void> _togglePlayback() async {
+    if (video.value.isCompleted) { await video.seekTo(Duration.zero); await video.play(); }
+    else if (video.value.isPlaying) { await video.pause(); }
+    else { await video.play(); }
+    if (mounted) setState(() {});
+  }
+  @override
+  void dispose() {
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    super.dispose();
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    body: Stack(alignment: Alignment.center, children: [
+      Center(child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video))),
+      ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Center(child: IconButton(
+        iconSize: 60, color: Colors.white, onPressed: _togglePlayback,
+        icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+      ))),
+      Positioned(top: 12, left: 8, child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () => Navigator.of(context).pop(), color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30))),
+      Positioned(left: 12, right: 12, bottom: 12, child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(12)),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            Text(widget.formatDuration(video.value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+            const Spacer(),
+            Text(widget.formatDuration(video.value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+          ]),
+          VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
+        ]),
+      )),
+    ]),
+  );
+}PlayerState>? _stateSubscription;
   StreamSubscription<Duration>? _durationSubscription;
   StreamSubscription<Duration>? _positionSubscription;
   bool _isPlaying = false;
