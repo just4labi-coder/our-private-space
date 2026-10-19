@@ -1041,7 +1041,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   ],
                 ),
                 child: Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
+                  'assets/branding/orbit_two_logo_artwork.png',
                   width: 220,
                   height: 147,
                   fit: BoxFit.contain,
@@ -1158,7 +1158,7 @@ class _GlowBackgroundState extends State<GlowBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 30),
+    duration: const Duration(seconds: 36),
   )..repeat(reverse: true);
 
   @override
@@ -1602,6 +1602,7 @@ class _MainScreenState extends State<MainScreen>
     orbitSharedText.value = shared;
     setState(() {
       selectedIndex = 1;
+      orbitChatVisible = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
       hasUnreadChat = false;
     });
   }
@@ -2043,11 +2044,13 @@ class _MainScreenState extends State<MainScreen>
         onDestinationSelected: (index) {
           setState(() {
             selectedIndex = index;
-            orbitChatVisible = index == 1;
+            orbitChatVisible = index == 1 &&
+                WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
             if (index == 1) hasUnreadChat = false;
           });
           if (index == 1) {
             unawaited(NotificationPrivacySettings.clearMessageNotifications());
+            unawaited(_markMessagesSeenOnChatOpen());
           }
         },
         destinations: [
