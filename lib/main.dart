@@ -7202,60 +7202,75 @@ class _GalleryPageState extends State<GalleryPage> {
             final folder = folders[index];
             final count = _itemsForFolder('${folder['id']}').length;
 
-            return Material(
-              color: surfaceColor,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
+            return TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: Duration(milliseconds: 300 + (index % 5) * 45),
+              curve: Curves.easeOutCubic,
+              builder: (context, progress, child) => Opacity(
+                opacity: progress,
+                child: Transform.translate(
+                  offset: Offset(0, 14 * (1 - progress)),
+                  child: Transform.scale(
+                    scale: 0.97 + (0.03 * progress),
+                    child: child,
+                  ),
+                ),
+              ),
+              child: Material(
+                color: surfaceColor,
                 borderRadius: BorderRadius.circular(20),
-                onTap: () => _openFolder(folder),
-                onLongPress: () => _showFolderMenu(folder),
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.folder_rounded,
-                            size: 42,
-                            color: purpleColor,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '${folder['name']}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => _openFolder(folder),
+                  onLongPress: () => _showFolderMenu(folder),
+                  child: Stack(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.folder_rounded,
+                              size: 42,
+                              color: purpleColor,
                             ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            '$count items',
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 11,
+                            const SizedBox(height: 12),
+                            Text(
+                              '${folder['name']}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      top: 2,
-                      right: 2,
-                      child: IconButton(
-                        tooltip: 'Folder options',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _showFolderMenu(folder),
-                        icon: const Icon(
-                          Icons.more_vert_rounded,
-                          color: Colors.white70,
+                            const SizedBox(height: 5),
+                            Text(
+                              '$count items',
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: IconButton(
+                          tooltip: 'Folder options',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _showFolderMenu(folder),
+                          icon: const Icon(
+                            Icons.more_vert_rounded,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
