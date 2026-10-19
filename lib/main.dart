@@ -101,6 +101,7 @@ class _InAppLinkViewerPageState extends State<InAppLinkViewerPage> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent('Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36')
       ..setBackgroundColor(const Color(0xFF070513))
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (progress) { if (mounted) setState(() => _progress = progress); },
@@ -3023,7 +3024,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _userHasScrolledAwayFromBottom = false;
   bool _userIsScrolling = false;
   int _scrollRequestToken = 0;
-  int _cachedLastOwnMessageIndex = -1;
+  String? _lastOwnMessageId;
 
   bool _isTypingSent = false;
   Timer? _typingHeartbeatTimer;
@@ -3329,7 +3330,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
           // Compute this once per Firestore snapshot instead of rescanning the
           // complete message list while each visible row is being built.
-          var nextLastOwnMessageIndex = -1;
+          String? nextLastOwnMessageId;
           final currentUid = _currentUid;
           for (var i = latestMessages.length - 1; i >= 0; i--) {
             final item = latestMessages[i];
@@ -3338,7 +3339,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 ? senderUid == currentUid
                 : item['mine'] == true;
             if (mine && item['unsent'] != true) {
-              nextLastOwnMessageIndex = i;
+              nextLastOwnMessageId = '${item['id'] ?? ''}';
               break;
             }
           }
@@ -3379,7 +3380,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
           setState(() {
             messages = latestMessages.where((item) => !_locallyDeletedMessageIds.contains('${item['id'] ?? ''}')).toList();
-            _cachedLastOwnMessageIndex = nextLastOwnMessageIndex;
+            _lastOwnMessageId = nextLastOwnMessageId;
           });
           _hasLoadedInitialMessages = true;
 
@@ -3474,8 +3475,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       (entry) => '${entry.key}' != _currentUid && entry.value == true,
     );
   }
-
-  int get _lastOwnMessageIndex => _cachedLastOwnMessageIndex;
 
   Future<void> _sendText() async {
     final text = controller.text.trim();
@@ -5716,7 +5715,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       )
                     : const SizedBox.shrink(),
               ),
-              if (mine && index == _lastOwnMessageIndex)
+              if (mine && '${message['id'] ?? ''}' == _lastOwnMessageId)
                 Padding(
                   padding: const EdgeInsets.only(top: 3, right: 2),
                   child: Builder(
