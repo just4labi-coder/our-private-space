@@ -8466,63 +8466,7 @@ class _ChatVoicePlayerState extends State<ChatVoicePlayer> {
   StreamSubscription<
 
 
-class _GalleryFullscreenVideoPage extends StatefulWidget {
-  final VideoPlayerController controller;
-  final String Function(Duration) formatDuration;
-  const _GalleryFullscreenVideoPage({required this.controller, required this.formatDuration});
-  @override
-  State<_GalleryFullscreenVideoPage> createState() => _GalleryFullscreenVideoPageState();
-}
-class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage> {
-  VideoPlayerController get video => widget.controller;
-  @override
-  void initState() {
-    super.initState();
-    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
-    unawaited(SystemChrome.setPreferredOrientations(const [
-      DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
-    ]));
-  }
-  Future<void> _togglePlayback() async {
-    if (video.value.isCompleted) { await video.seekTo(Duration.zero); await video.play(); }
-    else if (video.value.isPlaying) { await video.pause(); }
-    else { await video.play(); }
-    if (mounted) setState(() {});
-  }
-  @override
-  void dispose() {
-    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-    super.dispose();
-  }
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.black,
-    body: Stack(alignment: Alignment.center, children: [
-      Center(child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video))),
-      ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Center(child: IconButton(
-        iconSize: 60, color: Colors.white, onPressed: _togglePlayback,
-        icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
-      ))),
-      Positioned(top: 12, left: 8, child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () => Navigator.of(context).pop(), color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30))),
-      Positioned(left: 12, right: 12, bottom: 12, child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(12)),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ValueListenableBuilder<VideoPlayerValue>(
-            valueListenable: video,
-            builder: (context, value, child) => Row(children: [
-              Text(widget.formatDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
-              const Spacer(),
-              Text(widget.formatDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
-            ]),
-          ),
-          VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
-        ]),
-      )),
-    ]),
-  );
-}PlayerState>? _stateSubscription;
+PlayerState>? _stateSubscription;
   StreamSubscription<Duration>? _durationSubscription;
   StreamSubscription<Duration>? _positionSubscription;
   bool _isPlaying = false;
@@ -8794,6 +8738,64 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
       ),
     );
   }
+}
+
+class _GalleryFullscreenVideoPage extends StatefulWidget {
+  final VideoPlayerController controller;
+  final String Function(Duration) formatDuration;
+  const _GalleryFullscreenVideoPage({required this.controller, required this.formatDuration});
+  @override
+  State<_GalleryFullscreenVideoPage> createState() => _GalleryFullscreenVideoPageState();
+}
+class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage> {
+  VideoPlayerController get video => widget.controller;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
+    unawaited(SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
+    ]));
+  }
+  Future<void> _togglePlayback() async {
+    if (video.value.isCompleted) { await video.seekTo(Duration.zero); await video.play(); }
+    else if (video.value.isPlaying) { await video.pause(); }
+    else { await video.play(); }
+    if (mounted) setState(() {});
+  }
+  @override
+  void dispose() {
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    super.dispose();
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    body: Stack(alignment: Alignment.center, children: [
+      Center(child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video))),
+      ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Center(child: IconButton(
+        iconSize: 60, color: Colors.white, onPressed: _togglePlayback,
+        icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+      ))),
+      Positioned(top: 12, left: 8, child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () => Navigator.of(context).pop(), color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30))),
+      Positioned(left: 12, right: 12, bottom: 12, child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(12)),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: video,
+            builder: (context, value, child) => Row(children: [
+              Text(widget.formatDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+              const Spacer(),
+              Text(widget.formatDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+            ]),
+          ),
+          VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
+        ]),
+      )),
+    ]),
+  );
 }
 
 class _VoiceWaveformPainter extends CustomPainter {
