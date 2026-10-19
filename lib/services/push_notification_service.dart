@@ -27,11 +27,23 @@ class PushNotificationService {
     _hideDetails = prefs.getBool(_privacyKey) ?? false;
     _notificationsEnabled = prefs.getBool(_notificationsKey) ?? true;
 
-    // Ask on the first run only. The system may not show another prompt after
-    // denial; users can re-enable permission in Android App info settings.
+    // Register the device token before showing the Android permission prompt.
+    // A permission dialog can pause startup, but token registration must not wait
+    // for the user to dismiss it.
+    _authSubscription ??= FirebaseAuth.instance.authStateChanges().listen(
+      (user) {
+        if (user != null) unawaited(_registerCurrentToken());
+      },
+    );
+    _tokenSubscription ??= _messaging.onTokenRefresh.listen((token) {
+      unawaited(_saveToken(token));
+    });
+    await _registerCurrentToken();
+
     try {
       var settings = await _messaging.getNotificationSettings();
-      final needsPermission = settings.authorizationStatus != AuthorizationStatus.authorized &&
+      final needsPermission =
+          settings.authorizationStatus != AuthorizationStatus.authorized &&
           settings.authorizationStatus != AuthorizationStatus.provisional;
       final permissionAsked = prefs.getBool(_permissionAskedKey) ?? false;
       if (needsPermission && !permissionAsked) {
@@ -41,34 +53,22 @@ class PushNotificationService {
           sound: true,
           provisional: false,
         );
-        // Don't mark denied permission as completed. Android may still require
-        // manually enabling notifications in App info after a denial.
         await prefs.setBool(
           _permissionAskedKey,
           settings.authorizationStatus == AuthorizationStatus.authorized ||
               settings.authorizationStatus == AuthorizationStatus.provisional,
         );
       }
-      final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
       await androidPlugin?.requestNotificationsPermission();
     } catch (error) {
       debugPrint('Notification permission request failed: $error');
     }
 
-    _authSubscription ??= FirebaseAuth.instance.authStateChanges().listen(
-      (user) {
-        if (user == null) {
-          return;
-        }
-        unawaited(_registerCurrentToken());
-      },
-    );
-
-    _tokenSubscription ??= _messaging.onTokenRefresh.listen((token) {
-      unawaited(_saveToken(token));
-    });
-
+    // Refresh after permission handling as some Android builds rotate the token
+    // while notification services are being enabled.
     await _registerCurrentToken();
   }
 
