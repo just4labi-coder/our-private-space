@@ -1880,7 +1880,7 @@ class _MainScreenState extends State<MainScreen>
         if (!mounted) return;
 
         setState(() {
-          hasUnreadChat = orbitChatVisible ? false : unread;
+          hasUnreadChat = unread && !orbitChatVisible;
         });
       },
       onError: (_) {},
@@ -3206,7 +3206,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       // অ্যাপ Recents/background থেকে ফিরলে ব্যর্থ মিডিয়া FutureBuilder-গুলো
       // আবার চেষ্টা করতে পারবে; চলমান ডাউনলোড সার্ভিসে deduplicate হয়।
       if (mounted) setState(() {});
-      if (messages.isNotEmpty) {
+      if (messages.isNotEmpty && orbitChatVisible) {
         unawaited(ChatSyncService.markMessagesSeen(messages).catchError(
           (Object error) {
             debugPrint('Mark seen after resume skipped: $error');
@@ -3359,9 +3359,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           } else {
             for (final item in latestMessages) {
               final id = '${item['id'] ?? ''}';
+              final senderUid = '${item['senderUid'] ?? ''}';
+              final seenBy = item['seenBy'];
+              final partnerHasSeen = seenBy is Map &&
+                  seenBy.entries.any(
+                    (entry) =>
+                        '${entry.key}' != _currentUid &&
+                        entry.value == true,
+                  );
+              // Play the read receipt only on the original sender's device.
               if (id.isNotEmpty &&
-                  _isMine(item) &&
-                  _isSeenByPartner(item) &&
+                  _currentUid.isNotEmpty &&
+                  senderUid == _currentUid &&
+                  partnerHasSeen &&
                   !previouslySeenIds.contains(id) &&
                   _seenSoundPlayedFor.add(id)) {
                 unawaited(InteractionFeedbackSettings.playSeenSound());
@@ -3375,7 +3385,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           });
           _hasLoadedInitialMessages = true;
 
-          if (_appIsResumed) {
+          if (_appIsResumed && orbitChatVisible) {
             unawaited(
               ChatSyncService.markMessagesSeen(latestMessages).catchError(
                 (Object error) {
