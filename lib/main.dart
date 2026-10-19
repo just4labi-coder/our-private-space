@@ -2309,9 +2309,9 @@ class HomePage extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: ColoredBox(
-                  color: const Color(0xFF070513),
+                  color: Colors.transparent,
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
+                    'assets/branding/orbit_two_logo_artwork.png',
                     width: 64,
                     height: 64,
                     fit: BoxFit.contain,
