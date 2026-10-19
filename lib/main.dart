@@ -8711,16 +8711,26 @@ class ImageViewerPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(backgroundColor: Colors.black),
-      body: Center(
-        child: InteractiveViewer(
-          minScale: 0.5,
-          maxScale: 5,
-          child: Image.file(
-            File(path),
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) {
-              return const Text('ছবিটি পাওয়া যাচ্ছে না।');
-            },
+      body: LayoutBuilder(
+        builder: (context, constraints) => Center(
+          child: ClipRect(
+            child: InteractiveViewer(
+              clipBehavior: Clip.hardEdge,
+              minScale: 1,
+              maxScale: 5,
+              child: Image.file(
+                File(path),
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, __, ___) {
+                  return const Center(
+                    child: Text('ছবিটি পাওয়া যাচ্ছে না।'),
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),
