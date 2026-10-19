@@ -81,10 +81,6 @@ Route<T> _orbitAnimatedRoute<T>(WidgetBuilder builder) {
   );
 }
 
-const String orbitNotificationChannelId = 'orbit_partner_updates_v7';
-const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
-const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
-const int orbitMessageSummaryNotificationId = 7000;
 bool orbitChatVisible = false;
 
 final GlobalKey<NavigatorState> rootNavigatorKey =
@@ -94,12 +90,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? startupError;
-  var firebaseReady = false;
 
   // Firebase failure must not leave the app stuck on a blank white screen.
   try {
     await Firebase.initializeApp();
-    firebaseReady = true;
   } catch (error, stackTrace) {
     startupError = error.toString();
     debugPrint('Firebase initialization failed: $error\n$stackTrace');
