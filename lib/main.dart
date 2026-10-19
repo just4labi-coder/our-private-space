@@ -493,7 +493,7 @@ class StartupErrorScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
-                  'assets/branding/orbit_two_logo_artwork.png',
+                  'assets/branding/orbit_two_logo.jpg',
                   width: 100,
                   height: 100,
                   fit: BoxFit.contain,
@@ -1041,7 +1041,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   ],
                 ),
                 child: Image.asset(
-                  'assets/branding/orbit_two_logo_artwork.png',
+                  'assets/branding/orbit_two_logo.jpg',
                   width: 220,
                   height: 147,
                   fit: BoxFit.contain,
