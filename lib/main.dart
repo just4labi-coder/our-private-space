@@ -7531,7 +7531,7 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
       // Keep Videos in sync with All Memories; this is a virtual filter,
       // not a real folderId stored on each media item.
       updatedItems = latestMedia
-          .where((item) => '\${item['type']}'.toLowerCase() == 'video')
+          .where((item) => '${item['type']}'.toLowerCase() == 'video')
           .toList();
     } else {
       updatedItems = latestMedia
