@@ -7527,6 +7527,12 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
           .where((item) =>
               item['favorite'] == true || item['folderId'] == 'favorites')
           .toList();
+    } else if (widget.folderId == 'videos') {
+      // Keep Videos in sync with All Memories; this is a virtual filter,
+      // not a real folderId stored on each media item.
+      updatedItems = latestMedia
+          .where((item) => '\${item['type']}'.toLowerCase() == 'video')
+          .toList();
     } else {
       updatedItems = latestMedia
           .where((item) => item['folderId'] == widget.folderId)
