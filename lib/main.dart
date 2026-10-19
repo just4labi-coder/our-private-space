@@ -493,7 +493,7 @@ class StartupErrorScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
+                  'assets/branding/orbit_two_logo_artwork.png',
                   width: 100,
                   height: 100,
                   fit: BoxFit.contain,
@@ -1033,7 +1033,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 height: 152,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.black,
+                  color: Colors.transparent,
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: [
                     BoxShadow(color: pinkColor.withValues(alpha: 0.20), blurRadius: 24, spreadRadius: 1),
@@ -1741,9 +1741,12 @@ class _MainScreenState extends State<MainScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      orbitChatVisible = selectedIndex == 1;
       _updatePresence(true);
       _startConnectionWatcher();
+      if (selectedIndex == 1) unawaited(_markMessagesSeenOnChatOpen());
     } else {
+      orbitChatVisible = false;
       _updatePresence(false);
     }
   }
@@ -1818,6 +1821,22 @@ class _MainScreenState extends State<MainScreen>
       );
     } catch (error) {
       debugPrint('Start connection watcher error: $error');
+    }
+  }
+
+  Future<void> _markMessagesSeenOnChatOpen() async {
+    if (!mounted || selectedIndex != 1 || !orbitChatVisible ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    try {
+      final latest = await ChatSyncService.watchMessages()
+          .first
+          .timeout(const Duration(seconds: 8));
+      if (!mounted || selectedIndex != 1 || !orbitChatVisible) return;
+      await ChatSyncService.markMessagesSeen(latest);
+    } catch (error) {
+      debugPrint('Mark seen when opening Chat failed: $error');
     }
   }
 
@@ -1941,11 +1960,13 @@ class _MainScreenState extends State<MainScreen>
         onNavigate: (index) {
           setState(() {
             selectedIndex = index;
-            orbitChatVisible = index == 1;
+            orbitChatVisible = index == 1 &&
+                WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
             if (index == 1) hasUnreadChat = false;
           });
           if (index == 1) {
             unawaited(NotificationPrivacySettings.clearMessageNotifications());
+            unawaited(_markMessagesSeenOnChatOpen());
           }
         },
         onOpenPartnerConnection: () async {
@@ -3092,7 +3113,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    orbitChatVisible = true;
+    // MainScreen owns visibility; IndexedStack creates ChatPage even when hidden.
     unawaited(NotificationPrivacySettings.clearMessageNotifications());
     WidgetsBinding.instance.addObserver(this);
     scrollController.addListener(_updateChatScrollPosition);
@@ -5165,10 +5186,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     borderRadius: BorderRadius.circular(12),
                     child: Image.file(
                       File(resolvedPath),
-                      width: 210,
-                      height: 210,
-                      cacheWidth: (210 * MediaQuery.devicePixelRatioOf(context)).round(),
-                      cacheHeight: (210 * MediaQuery.devicePixelRatioOf(context)).round(),
+                      width: 230,
+                      height: 230,
+                      cacheWidth: (230 * MediaQuery.devicePixelRatioOf(context)).round(),
+                      cacheHeight: (230 * MediaQuery.devicePixelRatioOf(context)).round(),
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => const SizedBox(
                         width: 210,
