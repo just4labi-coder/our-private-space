@@ -387,17 +387,34 @@ class ChatSyncService {
   /// অ্যাপ সক্রিয়/নিষ্ক্রিয় হওয়ার অবস্থা সংরক্ষণ করে।
   static Future<void> setPresence({
     required bool isOnline,
+    bool? activeStatusEnabled,
   }) async {
     final user = _auth.currentUser;
 
     if (user == null) return;
 
     final ref = await _presenceRef();
-
-    await ref.doc(user.uid).set({
+    final data = <String, dynamic>{
       'uid': user.uid,
       'isOnline': isOnline,
       'lastSeen': FieldValue.serverTimestamp(),
+    };
+    if (activeStatusEnabled != null) {
+      data['activeStatusEnabled'] = activeStatusEnabled;
+    }
+
+    await ref.doc(user.uid).set(data, SetOptions(merge: true));
+  }
+
+  /// Active Status-এর গোপনীয়তা পছন্দটি অপর ফোনে রিয়েল-টাইমে প্রকাশ করে।
+  static Future<void> setActiveStatusEnabled(bool enabled) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final ref = await _presenceRef();
+    await ref.doc(user.uid).set({
+      'uid': user.uid,
+      'activeStatusEnabled': enabled,
     }, SetOptions(merge: true));
   }
 
