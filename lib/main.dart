@@ -8165,7 +8165,7 @@ class _GalleryMediaViewerPageState
                       angle: _imageRotation,
                       child: Image.file(File(path), fit: BoxFit.contain,
                         filterQuality: FilterQuality.medium,
-                        errorBuilder: (_, __, ___) => const Text('ছবিটি খোলা যাচ্ছে না。'),
+                        errorBuilder: (_, __, ___) => const Text('ছবিটি খোলা যাচ্ছে না।'),
                       ),
                     )),
                   ),
@@ -8509,11 +8509,14 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(12)),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            Text(widget.formatDuration(video.value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
-            const Spacer(),
-            Text(widget.formatDuration(video.value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
-          ]),
+          ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: video,
+            builder: (context, value, child) => Row(children: [
+              Text(widget.formatDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+              const Spacer(),
+              Text(widget.formatDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+            ]),
+          ),
           VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
         ]),
       )),
