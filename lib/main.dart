@@ -9,6 +9,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter/gestures.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -83,6 +86,10 @@ Route<T> _orbitAnimatedRoute<T>(WidgetBuilder builder) {
 
 bool orbitChatVisible = false;
 
+// Retain local reminders for Special Dates without restoring message push notifications.
+final FlutterLocalNotificationsPlugin notifications =
+    FlutterLocalNotificationsPlugin();
+
 final GlobalKey<NavigatorState> rootNavigatorKey =
     GlobalKey<NavigatorState>();
 
@@ -112,6 +119,17 @@ Future<void> main() async {
   }
 
   // Message push notification delivery is disabled; chat sync remains active.
+  // Local notifications are used only for user-created Special Dates reminders.
+  try {
+    tz_data.initializeTimeZones();
+    await notifications.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
+  } catch (error) {
+    debugPrint('Special date reminder initialization failed: $error');
+  }
 
   try {
     await SpaceStore.init();
