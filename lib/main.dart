@@ -62,13 +62,13 @@ const Color purpleColor = Color(0xFF8B5CF6);
 Route<T> _orbitAnimatedRoute<T>(WidgetBuilder builder) {
   return PageRouteBuilder<T>(
     pageBuilder: (context, animation, secondaryAnimation) => builder(context),
-    transitionDuration: const Duration(milliseconds: 300),
-    reverseTransitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: const Duration(milliseconds: 340),
+    reverseTransitionDuration: const Duration(milliseconds: 280),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+        curve: Curves.easeInOutCubic,
+        reverseCurve: Curves.easeInOutCubic,
       );
       return FadeTransition(
         opacity: curved,
@@ -1065,29 +1065,44 @@ class _GlowBackgroundState extends State<GlowBackground>
                 children: [
                   // Each glow follows a different full-screen orbital path.
                   Positioned(
-                    left: width * 0.02 + cos(phase) * width * 0.24,
-                    top: height * 0.04 + sin(phase) * height * 0.24,
-                    child: _glow(340, const Color(0xFF8B1D62).withValues(alpha: 0.34)),
+                    left: width * 0.02,
+                    top: height * 0.04,
+                    child: Transform.translate(
+                      offset: Offset(cos(phase) * width * 0.24, sin(phase) * height * 0.24),
+                      child: _glow(340, const Color(0xFF8B1D62).withValues(alpha: 0.34)),
+                    ),
                   ),
                   Positioned(
-                    right: width * 0.01 + sin(phase) * width * 0.22,
-                    bottom: height * 0.02 + cos(phase) * height * 0.25,
-                    child: _glow(370, const Color(0xFF6826A8).withValues(alpha: 0.34)),
+                    right: width * 0.01,
+                    bottom: height * 0.02,
+                    child: Transform.translate(
+                      offset: Offset(-sin(phase) * width * 0.22, -cos(phase) * height * 0.25),
+                      child: _glow(370, const Color(0xFF6826A8).withValues(alpha: 0.34)),
+                    ),
                   ),
                   Positioned(
-                    left: width * 0.28 + cos(phase * 1.35 + 1.2) * width * 0.28,
-                    top: height * 0.30 + sin(phase * 1.35 + 1.2) * height * 0.30,
-                    child: _glow(310, const Color(0xFFB51E72).withValues(alpha: 0.22)),
+                    left: width * 0.28,
+                    top: height * 0.30,
+                    child: Transform.translate(
+                      offset: Offset(cos(phase * 1.35 + 1.2) * width * 0.28, sin(phase * 1.35 + 1.2) * height * 0.30),
+                      child: _glow(310, const Color(0xFFB51E72).withValues(alpha: 0.22)),
+                    ),
                   ),
                   Positioned(
-                    right: width * 0.18 + sin(phase * 1.5 + 2.4) * width * 0.26,
-                    top: height * 0.18 + cos(phase * 1.5 + 2.4) * height * 0.32,
-                    child: _glow(300, const Color(0xFF5424B8).withValues(alpha: 0.24)),
+                    right: width * 0.18,
+                    top: height * 0.18,
+                    child: Transform.translate(
+                      offset: Offset(-sin(phase * 1.5 + 2.4) * width * 0.26, cos(phase * 1.5 + 2.4) * height * 0.32),
+                      child: _glow(300, const Color(0xFF5424B8).withValues(alpha: 0.24)),
+                    ),
                   ),
                   Positioned(
-                    left: width * 0.12 + sin(phase * 1.8 + 0.7) * width * 0.34,
-                    top: height * 0.50 + cos(phase * 1.8 + 0.7) * height * 0.34,
-                    child: _glow(250, const Color(0xFF3B82F6).withValues(alpha: 0.15)),
+                    left: width * 0.12,
+                    top: height * 0.50,
+                    child: Transform.translate(
+                      offset: Offset(sin(phase * 1.8 + 0.7) * width * 0.34, cos(phase * 1.8 + 0.7) * height * 0.34),
+                      child: _glow(250, const Color(0xFF3B82F6).withValues(alpha: 0.15)),
+                    ),
                   ),
                   if (child != null) Positioned.fill(child: child),
                 ],
@@ -1764,7 +1779,7 @@ class _MainScreenState extends State<MainScreen>
             child: AnimatedScale(
               scale: hasUnreadChat ? 1 : 0,
               duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutBack,
+              curve: Curves.easeOutCubic,
               child: AnimatedOpacity(
                 opacity: hasUnreadChat ? 1 : 0,
                 duration: const Duration(milliseconds: 140),
