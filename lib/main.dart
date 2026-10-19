@@ -60,6 +60,32 @@ Future<File> _makeCompatibleVideo(File source) async {
 
 const Color pinkColor = Color(0xFFFF2E93);
 const Color purpleColor = Color(0xFF8B5CF6);
+/// Subtle, consistent page motion used by gallery folders and media previews.
+Route<T> _orbitAnimatedRoute<T>(WidgetBuilder builder) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+    transitionDuration: const Duration(milliseconds: 300),
+    reverseTransitionDuration: const Duration(milliseconds: 220),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.035, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
 const String orbitNotificationChannelId = 'orbit_partner_updates_v7';
 const String orbitMessageNotificationGroup = 'com.privatespace.ourspace.MESSAGE_GROUP';
 const String orbitUpdateNotificationGroup = 'com.privatespace.ourspace.UPDATE_GROUP';
@@ -1959,6 +1985,7 @@ class _MainScreenState extends State<MainScreen>
         partnerOne: partnerOne,
         partnerTwo: partnerTwo,
         onNavigate: (index) {
+          if (index != 1) FocusManager.instance.primaryFocus?.unfocus();
           setState(() {
             selectedIndex = index;
             orbitChatVisible = index == 1 &&
@@ -2013,6 +2040,7 @@ class _MainScreenState extends State<MainScreen>
       canPop: selectedIndex == 0,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop || selectedIndex == 0 || !mounted) return;
+        FocusManager.instance.primaryFocus?.unfocus();
         setState(() {
           selectedIndex = 0;
           orbitChatVisible = false;
@@ -2042,6 +2070,7 @@ class _MainScreenState extends State<MainScreen>
         indicatorColor: blueColor.withValues(alpha: 0.25),
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
+          if (index != 1) FocusManager.instance.primaryFocus?.unfocus();
           setState(() {
             selectedIndex = index;
             orbitChatVisible = index == 1 &&
@@ -7079,10 +7108,12 @@ class _GalleryPageState extends State<GalleryPage> {
   Future<void> _openFolder(Map<String, dynamic> folder) async {
     final id = '${folder['id']}';
 
+    // Do not let a previous text field keep the keyboard alive under the gallery.
+    FocusManager.instance.primaryFocus?.unfocus();
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => GalleryFolderPage(
+      _orbitAnimatedRoute<void>(
+        (_) => GalleryFolderPage(
           title: '${folder['name']}',
           folderId: id,
           initialItems: _itemsForFolder(id),
@@ -7100,7 +7131,9 @@ class _GalleryPageState extends State<GalleryPage> {
       ),
     );
 
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {});
   }
 
   List<Map<String, dynamic>> _itemsForFolder(String id) {
@@ -7789,10 +7822,11 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                           return;
                         }
 
+                        FocusManager.instance.primaryFocus?.unfocus();
                         await Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) => GalleryMediaViewerPage(
+                          _orbitAnimatedRoute<void>(
+                            (_) => GalleryMediaViewerPage(
                               items: List<Map<String, dynamic>>.from(items),
                               initialIndex: index,
                               resolvePath: _resolveLocalPath,
@@ -7802,6 +7836,9 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                             ),
                           ),
                         );
+                        if (mounted) {
+                          FocusManager.instance.primaryFocus?.unfocus();
+                        }
                       },
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(14),
