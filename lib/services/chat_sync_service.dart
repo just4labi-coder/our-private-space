@@ -485,7 +485,7 @@ class ChatSyncService {
     await ref.doc(user.uid).set({
       'uid': user.uid,
       'isTyping': isTyping,
-      'typingUpdatedAt': FieldValue.serverTimestamp(),
+      'typingUpdatedAt': Timestamp.now(),
     }, SetOptions(merge: true));
   }
 
