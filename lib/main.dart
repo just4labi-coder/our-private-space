@@ -60,8 +60,8 @@ Future<List<Color>> _sampleVideoControlColors(String path, int timeMs) async {
         final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
         if (data == null) return const [Colors.white, Colors.white, Colors.white];
         Color sample(double x, double y) {
-          final px = (image.width * x).round().clamp(0, image.width - 1);
-          final py = (image.height * y).round().clamp(0, image.height - 1);
+          final px = (image.width * x).round().clamp(0, image.width - 1).toInt();
+          final py = (image.height * y).round().clamp(0, image.height - 1).toInt();
           final offset = (py * image.width + px) * 4;
           final r = data.getUint8(offset);
           final g = data.getUint8(offset + 1);
