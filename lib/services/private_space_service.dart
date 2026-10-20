@@ -190,7 +190,7 @@ class PrivateSpaceService {
     }
 
     if (user == null) {
-      throw Exception('Firebase sign-in ব্যর্থ হয়েছে।');
+      throw Exception('অ্যাকাউন্ট যাচাই করা যায়নি। আবার চেষ্টা করুন।');
     }
 
     return user;
