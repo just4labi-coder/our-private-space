@@ -8779,7 +8779,7 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
         iconSize: 60, color: Colors.white, onPressed: _togglePlayback,
         icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
       ))),
-      Positioned(top: 12, left: 8, child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () => Navigator.of(context).pop(), color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30))),
+      Positioned(top: 12, left: 8, child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () async { await SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]); await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); if (context.mounted) Navigator.of(context).pop(); }, color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30))),
       Positioned(left: 12, right: 12, bottom: 12, child: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(12)),
