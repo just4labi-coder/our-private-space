@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -38,6 +39,50 @@ const MethodChannel orbitShareChannel = MethodChannel('com.privatespace.ourspace
 const Color backgroundColor = Color(0xFF070513);
 const Color surfaceColor = Color(0xFF111026);
 const Color blueColor = Color(0xFF172554);
+
+/// Samples a few local points from a tiny video frame at a low frequency.
+/// This avoids doing image work on every playback frame.
+Future<List<Color>> _sampleVideoControlColors(String path, int timeMs) async {
+  try {
+    final bytes = await VideoThumbnail.thumbnailData(
+      video: path,
+      imageFormat: ImageFormat.JPEG,
+      maxWidth: 160,
+      quality: 25,
+      timeMs: timeMs,
+    );
+    if (bytes == null || bytes.isEmpty) return const [Colors.white, Colors.white, Colors.white];
+    final codec = await ui.instantiateImageCodec(bytes);
+    try {
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (data == null) return const [Colors.white, Colors.white, Colors.white];
+        Color sample(double x, double y) {
+          final px = (image.width * x).round().clamp(0, image.width - 1);
+          final py = (image.height * y).round().clamp(0, image.height - 1);
+          final offset = (py * image.width + px) * 4;
+          final r = data.getUint8(offset);
+          final g = data.getUint8(offset + 1);
+          final b = data.getUint8(offset + 2);
+          final luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          return luminance > 145 ? Colors.black : Colors.white;
+        }
+        return [sample(0.5, 0.5), sample(0.5, 0.88), sample(0.06, 0.12)];
+      } finally {
+        image.dispose();
+      }
+    } finally {
+      codec.dispose();
+    }
+  } catch (error) {
+    debugPrint('Video control contrast sampling skipped: $error');
+    return const [Colors.white, Colors.white, Colors.white];
+  }
+}
+
+
 Future<File> _makeCompatibleVideo(File source) async {
   if (!await source.exists() || await source.length() <= 0) {
     throw Exception('ভিডিও ফাইলটি পাওয়া যায়নি।');
@@ -8224,6 +8269,39 @@ class _GalleryVideoPlayer extends StatefulWidget {
 }
 
 class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
+  Timer? _contrastTimer;
+  bool _samplingContrast = false;
+  Color _centerControlColor = Colors.white;
+  Color _bottomControlColor = Colors.white;
+
+  void _startContrastSampling() {
+    _contrastTimer?.cancel();
+    _contrastTimer = Timer.periodic(const Duration(milliseconds: 2200), (_) {
+      unawaited(_refreshControlContrast());
+    });
+    unawaited(_refreshControlContrast());
+  }
+
+  Future<void> _refreshControlContrast() async {
+    final video = _controller;
+    if (!mounted || _samplingContrast || video == null || !video.value.isInitialized) return;
+    _samplingContrast = true;
+    try {
+      final colors = await _sampleVideoControlColors(
+        _optimizedPath ?? widget.path,
+        video.value.position.inMilliseconds,
+      );
+      if (mounted && colors.length >= 2) {
+        setState(() {
+          _centerControlColor = colors[0];
+          _bottomControlColor = colors[1];
+        });
+      }
+    } finally {
+      _samplingContrast = false;
+    }
+  }
+
   VideoPlayerController? _controller;
   String? _error;
   String? _optimizedPath;
@@ -8290,6 +8368,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
 
       video.addListener(_handleVideoValueChanged);
       setState(() {});
+      _startContrastSampling();
       await video.setVolume(widget.isActive ? 1.0 : 0.0);
       if (widget.isActive) await video.play();
     } catch (error) {
@@ -8404,6 +8483,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
 
   @override
   void dispose() {
+    _contrastTimer?.cancel();
     _controller?.removeListener(_handleVideoValueChanged);
     _controller?.dispose();
     super.dispose();
@@ -8445,7 +8525,7 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
               boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 12, spreadRadius: 2)],
             ),
             child: ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
-              onPressed: _togglePlayback, iconSize: 48, color: Colors.white,
+              onPressed: _togglePlayback, iconSize: 48, color: _centerControlColor,
               icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
             )),
           )),
@@ -8454,18 +8534,18 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
             decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.82), borderRadius: BorderRadius.circular(14)),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Row(children: [
-                Text(_formatVideoDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                Text(_formatVideoDuration(value.position), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
                 const Spacer(),
-                Text(_formatVideoDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                Text(_formatVideoDuration(value.duration), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
               ])),
               ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) {
                 final durationMs = value.duration.inMilliseconds;
                 final positionMs = value.position.inMilliseconds.clamp(0, durationMs > 0 ? durationMs : 0);
                 return SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: Colors.white,
-                    inactiveTrackColor: Colors.white38,
-                    thumbColor: Colors.white,
+                    activeTrackColor: _bottomControlColor,
+                    inactiveTrackColor: _bottomControlColor.withValues(alpha: 0.38),
+                    thumbColor: _bottomControlColor,
                     overlayColor: Colors.white24,
                   ),
                   child: Slider(
@@ -8477,18 +8557,18 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
                 );
               }),
               Row(children: [
-                if (widget.onPrevious != null) IconButton(tooltip: 'আগের ভিডিও', onPressed: widget.onPrevious, icon: const Icon(Icons.skip_previous_rounded, color: Colors.white)),
-                IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), icon: const Icon(Icons.replay_10_rounded, color: Colors.white)),
+                if (widget.onPrevious != null) IconButton(tooltip: 'আগের ভিডিও', onPressed: widget.onPrevious, icon: const Icon(Icons.skip_previous_rounded, color: _bottomControlColor)),
+                IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), icon: const Icon(Icons.replay_10_rounded, color: _bottomControlColor)),
                 const Spacer(),
                 ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
                   tooltip: value.isCompleted ? 'আবার চালাও' : value.isPlaying ? 'Pause' : 'Play',
                   onPressed: _togglePlayback,
-                  icon: Icon(value.isCompleted ? Icons.replay_rounded : value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white),
+                  icon: Icon(value.isCompleted ? Icons.replay_rounded : value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: _bottomControlColor),
                 )),
-                IconButton(tooltip: 'ফুলস্ক্রিন', onPressed: _openFullscreen, icon: const Icon(Icons.fullscreen_rounded, color: Colors.white)),
+                IconButton(tooltip: 'ফুলস্ক্রিন', onPressed: _openFullscreen, icon: const Icon(Icons.fullscreen_rounded, color: _bottomControlColor)),
                 const Spacer(),
-                IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), icon: const Icon(Icons.forward_10_rounded, color: Colors.white)),
-                if (widget.onNext != null) IconButton(tooltip: 'পরের ভিডিও', onPressed: widget.onNext, icon: const Icon(Icons.skip_next_rounded, color: Colors.white)),
+                IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), icon: const Icon(Icons.forward_10_rounded, color: _bottomControlColor)),
+                if (widget.onNext != null) IconButton(tooltip: 'পরের ভিডিও', onPressed: widget.onNext, icon: const Icon(Icons.skip_next_rounded, color: _bottomControlColor)),
               ]),
             ]),
           )),
@@ -8800,6 +8880,40 @@ class _GalleryFullscreenVideoPage extends StatefulWidget {
   State<_GalleryFullscreenVideoPage> createState() => _GalleryFullscreenVideoPageState();
 }
 class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage> {
+  Timer? _contrastTimer;
+  bool _samplingContrast = false;
+  Color _centerControlColor = Colors.white;
+  Color _bottomControlColor = Colors.white;
+  Color _topControlColor = Colors.white;
+
+  void _startContrastSampling() {
+    _contrastTimer?.cancel();
+    _contrastTimer = Timer.periodic(const Duration(milliseconds: 2200), (_) {
+      unawaited(_refreshControlContrast());
+    });
+    unawaited(_refreshControlContrast());
+  }
+
+  Future<void> _refreshControlContrast() async {
+    if (!mounted || _samplingContrast || !video.value.isInitialized) return;
+    _samplingContrast = true;
+    try {
+      final colors = await _sampleVideoControlColors(
+        video.dataSource,
+        video.value.position.inMilliseconds,
+      );
+      if (mounted && colors.length >= 3) {
+        setState(() {
+          _centerControlColor = colors[0];
+          _bottomControlColor = colors[1];
+          _topControlColor = colors[2];
+        });
+      }
+    } finally {
+      _samplingContrast = false;
+    }
+  }
+
   VideoPlayerController get video => widget.controller;
   bool _doubleTapForward = true;
   bool _showControls = true;
@@ -8816,6 +8930,7 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
   @override
   void initState() {
     super.initState();
+    _startContrastSampling();
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
     unawaited(SystemChrome.setPreferredOrientations(const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]));
   }
@@ -8827,6 +8942,7 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
   }
   @override
   void dispose() {
+    _contrastTimer?.cancel();
     unawaited(SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -8856,13 +8972,13 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
             boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 14, spreadRadius: 2)],
           ),
           child: ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
-            iconSize: 60, color: Colors.white, onPressed: _togglePlayback,
+            iconSize: 60, color: _centerControlColor, onPressed: _togglePlayback,
             icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
           )),
         )),
         if (_showControls) Positioned(top: 12, left: 8, child: Container(
           decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle, boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8)]),
-          child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () async { await SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]); await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); if (context.mounted) Navigator.of(context).pop(); }, color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30)),
+          child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () async { await SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]); await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); if (context.mounted) Navigator.of(context).pop(); }, color: _topControlColor, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30)),
         )),
         if (_showControls) Positioned(left: 12, right: 12, bottom: 12, child: Container(
           padding: const EdgeInsets.all(8),
@@ -8871,9 +8987,9 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
             ValueListenableBuilder<VideoPlayerValue>(
               valueListenable: video,
               builder: (context, value, child) => Row(children: [
-                Text(widget.formatDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                Text(widget.formatDuration(value.position), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
                 const Spacer(),
-                Text(widget.formatDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                Text(widget.formatDuration(value.duration), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
               ]),
             ),
             ValueListenableBuilder<VideoPlayerValue>(
@@ -8883,8 +8999,8 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
                 final positionMs = value.position.inMilliseconds.clamp(0, durationMs > 0 ? durationMs : 0);
                 return SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: Colors.white, inactiveTrackColor: Colors.white38,
-                    thumbColor: Colors.white, overlayColor: Colors.white24,
+                    activeTrackColor: _bottomControlColor, inactiveTrackColor: _bottomControlColor.withValues(alpha: 0.38),
+                    thumbColor: _bottomControlColor, overlayColor: Colors.white24,
                   ),
                   child: Slider(
                     min: 0, max: durationMs > 0 ? durationMs.toDouble() : 1,
@@ -8895,9 +9011,9 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
               },
             ),
             Row(children: [
-              IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), color: Colors.white, icon: const Icon(Icons.replay_10_rounded)),
+              IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), color: _bottomControlColor, icon: const Icon(Icons.replay_10_rounded)),
               const Spacer(),
-              IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), color: Colors.white, icon: const Icon(Icons.forward_10_rounded)),
+              IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), color: _bottomControlColor, icon: const Icon(Icons.forward_10_rounded)),
             ]),
           ]),
         )),
