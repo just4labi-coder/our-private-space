@@ -395,13 +395,14 @@ class PrivateSpaceService {
 
         if (samePair &&
             (oldStatus == 'disconnected' || wasReconnectedByFreshInvite)) {
-          final originalInviteCode = '${oldData['inviteCode'] ?? ''}';
+          final originalInviteCode = code;
 
           // Reactivate the canonical original document instead of copying
           // selected fields. Its existing subcollections (messages, notes,
           // gallery records, trash, presence/member data) remain intact.
           await candidate.reference.update({
             'connectionStatus': 'connected',
+            'inviteCode': code,
             'disconnectionApprovals': <String, bool>{},
             'reconnectionApprovals': <String, bool>{},
             'reconnectedAt': FieldValue.serverTimestamp(),
