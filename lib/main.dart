@@ -8793,6 +8793,28 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
             ]),
           ),
           VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
+          Row(children: [
+            IconButton(
+              tooltip: '১০ সেকেন্ড পেছনে',
+              onPressed: () {
+                final target = video.value.position - const Duration(seconds: 10);
+                video.seekTo(target < Duration.zero ? Duration.zero : target);
+              },
+              color: Colors.white,
+              icon: const Icon(Icons.replay_10_rounded),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: '১০ সেকেন্ড সামনে',
+              onPressed: () {
+                final target = video.value.position + const Duration(seconds: 10);
+                final duration = video.value.duration;
+                video.seekTo(target > duration ? duration : target);
+              },
+              color: Colors.white,
+              icon: const Icon(Icons.forward_10_rounded),
+            ),
+          ]),
         ]),
       )),
     ]),
