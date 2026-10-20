@@ -13,7 +13,7 @@ class DisconnectionService {
   static String get _uid {
     final user = _auth.currentUser;
     if (user == null) {
-      throw Exception('আগে Firebase-এ সাইন ইন করতে হবে।');
+      throw Exception('আগে অ্যাকাউন্টে সাইন ইন করতে হবে।');
     }
     return user.uid;
   }
