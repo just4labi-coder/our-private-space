@@ -177,7 +177,7 @@ class _PartnerConnectionPageState
           style: TextStyle(color: Colors.white),
         ),
         content: const Text(
-          'এই ফোনের পুরোনো সংযোগ সরিয়ে নতুন Invite Code তৈরি হবে। পুরোনো Space-এর ক্লাউড ডেটা মুছে যাবে না। একই সঙ্গী পরে নতুন কোড দিয়ে যুক্ত হলে পুরোনো Space ফিরিয়ে আনার চেষ্টা হবে।',
+          'এই ফোনে নতুন Private Space তৈরি হবে। পুরোনো Space-এর ক্লাউড ডেটা মুছে ফেলা হবে না, তবে এই অ্যাপে আর স্বয়ংক্রিয়ভাবে ফিরিয়ে আনা হবে না। নতুন কোড দিয়ে যুক্ত হলে নতুন ডেটা-স্পেস ব্যবহার হবে।',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -518,31 +518,6 @@ class _PartnerConnectionPageState
     final status = data['connectionStatus'] ?? 'connected';
 
     if (status == 'disconnected') {
-      final rawReconnect = data['reconnectionApprovals'];
-      final reconnectApprovals = rawReconnect is Map
-          ? Map<String, dynamic>.from(rawReconnect)
-          : <String, dynamic>{};
-
-      if (members.length != 2) {
-        return _panelContainer(
-          color: const Color(0xFF35131F),
-          borderColor: const Color(0xFFFF7185),
-          child: const Text(
-            'পুনঃসংযোগের জন্য দুই সদস্যের তথ্য প্রয়োজন।',
-            style: TextStyle(color: Colors.white),
-          ),
-        );
-      }
-
-      final otherUid = members.firstWhere(
-        (member) => member != uid,
-      );
-
-      final ownApproved = reconnectApprovals[uid] == true;
-      final otherApproved = reconnectApprovals[otherUid] == true;
-      final canApprove = otherApproved && !ownApproved;
-      final waiting = ownApproved && !otherApproved;
-
       return _panelContainer(
         color: const Color(0xFF35131F),
         borderColor: const Color(0xFFFF7185),
@@ -555,58 +530,28 @@ class _PartnerConnectionPageState
             ),
             const SizedBox(height: 8),
             const Text(
-              'Private Space বিচ্ছিন্ন',
+              'Private Space স্থায়ীভাবে বিচ্ছিন্ন',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              waiting
-                  ? 'তোমার সম্মতি দেওয়া হয়েছে। অন্য সদস্যের অপেক্ষায় আছ।'
-                  : canApprove
-                      ? 'অন্য সদস্য পুনঃসংযোগ চেয়েছে। সম্মতি দাও।'
-                      : 'Space আবার যুক্ত করতে দুজনের সম্মতি প্রয়োজন।',
+            const Text(
+              'এখন নতুনের মতো Create Private Space অথবা Invite Code দিয়ে Join করতে পারবে। পুরোনো Space-এর ডেটা মুছে ফেলা হয়নি, কিন্তু পুনঃসংযোগ বন্ধ।',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white70,
-                height: 1.5,
-              ),
+              style: TextStyle(color: Colors.white70, height: 1.5),
             ),
-            if (!waiting) ...[
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: _working
-                      ? null
-                      : () => _runReconnectionAction(
-                            spaceId: spaceId,
-                            approve: canApprove,
-                          ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _pink,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: Text(
-                    canApprove
-                        ? 'পুনঃসংযোগে সম্মতি দাও'
-                        : 'পুনঃসংযোগের অনুরোধ',
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _working ? null : () => _createSpace(forceNew: true),
+              child: FilledButton.icon(
+                onPressed: _working ? null : _createFreshSpace,
                 icon: const Icon(Icons.add_link_rounded),
-                label: const Text('নতুন কোড তৈরি করে অন্য কারো সাথে যুক্ত হও'),
-                style: OutlinedButton.styleFrom(
+                label: const Text('নতুন Invite Code তৈরি করো'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _pink,
                   foregroundColor: Colors.white,
-                  side: BorderSide(color: _purple.withValues(alpha: 0.8)),
                 ),
               ),
             ),
