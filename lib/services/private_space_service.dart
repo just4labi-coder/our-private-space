@@ -363,10 +363,31 @@ class PrivateSpaceService {
       },
     );
 
-    // If a fresh invite connects the same two Firebase accounts that
-    // previously shared a disconnected Space, restore that original Space.
+    // Reusing a temporary invite that already redirects to an original
+    // Space must keep using the original Space and its original invite code.
     final joinedSnapshot = await _spaces.doc(spaceId).get();
     final joinedData = joinedSnapshot.data();
+    final redirectId = joinedData?['redirectSpaceId'];
+    if (redirectId is String && redirectId.isNotEmpty) {
+      final original = await _spaces.doc(redirectId).get();
+      final originalData = original.data();
+      final originalMembers = List<String>.from(
+        originalData?['memberUids'] ?? const [],
+      );
+      if (original.exists &&
+          originalMembers.length == 2 &&
+          originalMembers.contains(user.uid) &&
+          (originalData?['connectionStatus'] ?? 'connected') == 'connected') {
+        await _saveConnection(
+          redirectId,
+          '${originalData?['inviteCode'] ?? ''}',
+        );
+        return;
+      }
+    }
+
+    // If a fresh invite connects the same two Firebase accounts that
+    // previously shared a disconnected Space, restore that original Space.
     final joinedMembers = List<String>.from(
       joinedData?['memberUids'] ?? const [],
     );
