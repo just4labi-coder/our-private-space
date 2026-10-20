@@ -272,54 +272,6 @@ class _PartnerConnectionPageState
     }
   }
 
-  Future<void> _resetStuckConnection() async {
-    if (_working) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text('আটকে থাকা সংযোগ রিসেট করবে?'),
-        content: const Text(
-          'এতে শুধু এই ফোনের সংযোগ নির্বাচন রিসেট হবে। পুরোনো Space-এর ক্লাউড ডেটা মুছে যাবে না। এরপর একই কোড দিয়ে আবার চেষ্টা করতে পারবে, অথবা নতুন Space তৈরি করতে পারবে।',
-          style: TextStyle(color: Colors.white70, height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('এখন নয়'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('রিসেট করো'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    setState(() {
-      _working = true;
-      _message = null;
-    });
-    try {
-      await PrivateSpaceService.clearSavedConnection();
-      await _spaceStatusSubscription?.cancel();
-      if (!mounted) return;
-      setState(() {
-        _spaceId = null;
-        _savedCode = null;
-        _codeController.clear();
-      });
-      _showMessage(
-        'এই ফোনের সংযোগ রিসেট হয়েছে। একই কোড দিয়ে আবার Join করতে পারো, অথবা নতুন Space তৈরি করো।',
-        isError: false,
-      );
-    } catch (_) {
-      _showMessage('সংযোগ রিসেট করা যায়নি। আবার চেষ্টা করো।', isError: true);
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
   String _friendlyError(
     Object error, {
     required bool creating,
@@ -913,17 +865,6 @@ class _PartnerConnectionPageState
                   ),
                 ],
                 if (_message != null) _statusCard(),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _working ? null : _resetStuckConnection,
-                  icon: const Icon(Icons.restart_alt_rounded),
-                  label: const Text('আটকে থাকা সংযোগ রিসেট করো'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Colors.white24),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                ),
                 const SizedBox(height: 20),
                 const Text(
                   'Space-এ যুক্ত হওয়া আর Chat, Gallery বা Notes সিঙ্ক হওয়া আলাদা কাজ।',
