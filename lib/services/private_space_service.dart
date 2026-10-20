@@ -65,8 +65,15 @@ class PrivateSpaceService {
           final originalMembers = List<String>.from(
             originalData?['memberUids'] ?? const [],
           );
-          if (original.exists &&
+          final temporaryMembers = List<String>.from(
+            data?['memberUids'] ?? const [],
+          );
+          final samePair = temporaryMembers.length == 2 &&
               originalMembers.length == 2 &&
+              temporaryMembers.toSet().containsAll(originalMembers) &&
+              originalMembers.toSet().containsAll(temporaryMembers);
+          if (original.exists &&
+              samePair &&
               originalMembers.contains(user.uid) &&
               (originalData?['connectionStatus'] ?? 'connected') ==
                   'connected') {
