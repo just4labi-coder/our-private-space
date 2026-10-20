@@ -8534,9 +8534,9 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
             decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.82), borderRadius: BorderRadius.circular(14)),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Row(children: [
-                Text(_formatVideoDuration(value.position), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
+                Text(_formatVideoDuration(value.position), style: TextStyle(color: _bottomControlColor, fontSize: 12)),
                 const Spacer(),
-                Text(_formatVideoDuration(value.duration), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
+                Text(_formatVideoDuration(value.duration), style: TextStyle(color: _bottomControlColor, fontSize: 12)),
               ])),
               ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) {
                 final durationMs = value.duration.inMilliseconds;
@@ -8557,18 +8557,18 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
                 );
               }),
               Row(children: [
-                if (widget.onPrevious != null) IconButton(tooltip: 'আগের ভিডিও', onPressed: widget.onPrevious, icon: const Icon(Icons.skip_previous_rounded, color: _bottomControlColor)),
-                IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), icon: const Icon(Icons.replay_10_rounded, color: _bottomControlColor)),
+                if (widget.onPrevious != null) IconButton(tooltip: 'আগের ভিডিও', onPressed: widget.onPrevious, icon: Icon(Icons.skip_previous_rounded, color: _bottomControlColor)),
+                IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), icon: Icon(Icons.replay_10_rounded, color: _bottomControlColor)),
                 const Spacer(),
                 ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
                   tooltip: value.isCompleted ? 'আবার চালাও' : value.isPlaying ? 'Pause' : 'Play',
                   onPressed: _togglePlayback,
                   icon: Icon(value.isCompleted ? Icons.replay_rounded : value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: _bottomControlColor),
                 )),
-                IconButton(tooltip: 'ফুলস্ক্রিন', onPressed: _openFullscreen, icon: const Icon(Icons.fullscreen_rounded, color: _bottomControlColor)),
+                IconButton(tooltip: 'ফুলস্ক্রিন', onPressed: _openFullscreen, icon: Icon(Icons.fullscreen_rounded, color: _bottomControlColor)),
                 const Spacer(),
-                IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), icon: const Icon(Icons.forward_10_rounded, color: _bottomControlColor)),
-                if (widget.onNext != null) IconButton(tooltip: 'পরের ভিডিও', onPressed: widget.onNext, icon: const Icon(Icons.skip_next_rounded, color: _bottomControlColor)),
+                IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), icon: Icon(Icons.forward_10_rounded, color: _bottomControlColor)),
+                if (widget.onNext != null) IconButton(tooltip: 'পরের ভিডিও', onPressed: widget.onNext, icon: Icon(Icons.skip_next_rounded, color: _bottomControlColor)),
               ]),
             ]),
           )),
@@ -8987,9 +8987,9 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
             ValueListenableBuilder<VideoPlayerValue>(
               valueListenable: video,
               builder: (context, value, child) => Row(children: [
-                Text(widget.formatDuration(value.position), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
+                Text(widget.formatDuration(value.position), style: TextStyle(color: _bottomControlColor, fontSize: 12)),
                 const Spacer(),
-                Text(widget.formatDuration(value.duration), style: const TextStyle(color: _bottomControlColor, fontSize: 12)),
+                Text(widget.formatDuration(value.duration), style: TextStyle(color: _bottomControlColor, fontSize: 12)),
               ]),
             ),
             ValueListenableBuilder<VideoPlayerValue>(
