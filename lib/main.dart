@@ -8230,6 +8230,19 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
   bool _isOptimizing = false;
   bool _hasAttemptedOptimization = false;
   bool _showControls = true;
+  bool _doubleTapForward = true;
+
+  Future<void> _seekBy(Duration offset) async {
+    final video = _controller;
+    if (video == null || !video.value.isInitialized) return;
+    final duration = video.value.duration;
+    final target = video.value.position + offset;
+    final clamped = target < Duration.zero
+        ? Duration.zero
+        : (target > duration ? duration : target);
+    await video.seekTo(clamped);
+    if (mounted) setState(() => _showControls = true);
+  }
 
   String _formatVideoDuration(Duration duration) {
     final totalSeconds = duration.inSeconds;
@@ -8415,41 +8428,72 @@ class _GalleryVideoPlayerState extends State<_GalleryVideoPlayer> {
     if (video == null || !video.value.isInitialized) return const Center(child: CircularProgressIndicator());
     return Center(child: AspectRatio(
       aspectRatio: video.value.aspectRatio,
-      child: GestureDetector(
+      child: LayoutBuilder(builder: (context, constraints) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => _showControls = !_showControls),
+        onDoubleTapDown: (details) {
+          _doubleTapForward = details.localPosition.dx >= constraints.maxWidth / 2;
+        },
+        onDoubleTap: () => _seekBy(const Duration(seconds: 10) * (_doubleTapForward ? 1 : -1)),
         child: Stack(alignment: Alignment.center, children: [
           VideoPlayer(video),
-          if (_showControls) Center(child: IconButton(
-            onPressed: _togglePlayback, iconSize: 48, color: Colors.white,
-            icon: Icon(video.value.isCompleted ? Icons.replay_circle_filled_rounded : video.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+          if (_showControls) Center(child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.58),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
+              boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 12, spreadRadius: 2)],
+            ),
+            child: ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
+              onPressed: _togglePlayback, iconSize: 48, color: Colors.white,
+              icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+            )),
           )),
           if (_showControls) Positioned(left: 8, right: 8, bottom: 8, child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.76), borderRadius: BorderRadius.circular(14)),
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.82), borderRadius: BorderRadius.circular(14)),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Row(children: [
                 Text(_formatVideoDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
                 const Spacer(),
                 Text(_formatVideoDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
               ])),
-              VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2)),
+              ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) {
+                final durationMs = value.duration.inMilliseconds;
+                final positionMs = value.position.inMilliseconds.clamp(0, durationMs > 0 ? durationMs : 0);
+                return SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: Colors.white,
+                    inactiveTrackColor: Colors.white38,
+                    thumbColor: Colors.white,
+                    overlayColor: Colors.white24,
+                  ),
+                  child: Slider(
+                    min: 0,
+                    max: durationMs > 0 ? durationMs.toDouble() : 1,
+                    value: durationMs > 0 ? positionMs.toDouble() : 0,
+                    onChanged: durationMs <= 0 ? null : (ms) => video.seekTo(Duration(milliseconds: ms.round())),
+                  ),
+                );
+              }),
               Row(children: [
-                IconButton(tooltip: 'আগের ভিডিও', onPressed: widget.onPrevious, icon: const Icon(Icons.skip_previous_rounded)),
+                if (widget.onPrevious != null) IconButton(tooltip: 'আগের ভিডিও', onPressed: widget.onPrevious, icon: const Icon(Icons.skip_previous_rounded, color: Colors.white)),
+                IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), icon: const Icon(Icons.replay_10_rounded, color: Colors.white)),
                 const Spacer(),
                 ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
                   tooltip: value.isCompleted ? 'আবার চালাও' : value.isPlaying ? 'Pause' : 'Play',
                   onPressed: _togglePlayback,
-                  icon: Icon(value.isCompleted ? Icons.replay_rounded : value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                  icon: Icon(value.isCompleted ? Icons.replay_rounded : value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white),
                 )),
-                IconButton(tooltip: 'ফুলস্ক্রিন', onPressed: _openFullscreen, icon: const Icon(Icons.fullscreen_rounded)),
+                IconButton(tooltip: 'ফুলস্ক্রিন', onPressed: _openFullscreen, icon: const Icon(Icons.fullscreen_rounded, color: Colors.white)),
                 const Spacer(),
-                IconButton(tooltip: 'পরের ভিডিও', onPressed: widget.onNext, icon: const Icon(Icons.skip_next_rounded)),
+                IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), icon: const Icon(Icons.forward_10_rounded, color: Colors.white)),
+                if (widget.onNext != null) IconButton(tooltip: 'পরের ভিডিও', onPressed: widget.onNext, icon: const Icon(Icons.skip_next_rounded, color: Colors.white)),
               ]),
             ]),
           )),
         ]),
-      ),
+      )),
     ));
   }
 }
@@ -8757,6 +8801,18 @@ class _GalleryFullscreenVideoPage extends StatefulWidget {
 }
 class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage> {
   VideoPlayerController get video => widget.controller;
+  bool _doubleTapForward = true;
+  bool _showControls = true;
+
+  Future<void> _seekBy(Duration offset) async {
+    if (!video.value.isInitialized) return;
+    final duration = video.value.duration;
+    final target = video.value.position + offset;
+    await video.seekTo(target < Duration.zero
+        ? Duration.zero
+        : (target > duration ? duration : target));
+    if (mounted) setState(() => _showControls = true);
+  }
   @override
   void initState() {
     super.initState();
@@ -8783,65 +8839,70 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
-    body: Stack(alignment: Alignment.center, children: [
-      Center(child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video))),
-      ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => Center(child: IconButton(
-        iconSize: 60, color: Colors.white, onPressed: _togglePlayback,
-        icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
-      ))),
-      Positioned(top: 12, left: 8, child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () async { await SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]); await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); if (context.mounted) Navigator.of(context).pop(); }, color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30))),
-      Positioned(left: 12, right: 12, bottom: 12, child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(12)),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ValueListenableBuilder<VideoPlayerValue>(
-            valueListenable: video,
-            builder: (context, value, child) => Row(children: [
-              Text(widget.formatDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+    body: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _showControls = !_showControls),
+      onDoubleTapDown: (details) {
+        _doubleTapForward = details.localPosition.dx >= MediaQuery.of(context).size.width / 2;
+      },
+      onDoubleTap: () => _seekBy(Duration(seconds: _doubleTapForward ? 10 : -10)),
+      child: Stack(alignment: Alignment.center, children: [
+        Center(child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video))),
+        if (_showControls) Center(child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.58),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
+            boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 14, spreadRadius: 2)],
+          ),
+          child: ValueListenableBuilder<VideoPlayerValue>(valueListenable: video, builder: (context, value, child) => IconButton(
+            iconSize: 60, color: Colors.white, onPressed: _togglePlayback,
+            icon: Icon(value.isCompleted ? Icons.replay_circle_filled_rounded : value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+          )),
+        )),
+        if (_showControls) Positioned(top: 12, left: 8, child: Container(
+          decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle, boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8)]),
+          child: IconButton(tooltip: 'ফুলস্ক্রিন বন্ধ', onPressed: () async { await SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]); await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); if (context.mounted) Navigator.of(context).pop(); }, color: Colors.white, icon: const Icon(Icons.fullscreen_exit_rounded, size: 30)),
+        )),
+        if (_showControls) Positioned(left: 12, right: 12, bottom: 12, child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.84), borderRadius: BorderRadius.circular(12)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: video,
+              builder: (context, value, child) => Row(children: [
+                Text(widget.formatDuration(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                const Spacer(),
+                Text(widget.formatDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ]),
+            ),
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: video,
+              builder: (context, value, child) {
+                final durationMs = value.duration.inMilliseconds;
+                final positionMs = value.position.inMilliseconds.clamp(0, durationMs > 0 ? durationMs : 0);
+                return SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: Colors.white, inactiveTrackColor: Colors.white38,
+                    thumbColor: Colors.white, overlayColor: Colors.white24,
+                  ),
+                  child: Slider(
+                    min: 0, max: durationMs > 0 ? durationMs.toDouble() : 1,
+                    value: durationMs > 0 ? positionMs.toDouble() : 0,
+                    onChanged: durationMs <= 0 ? null : (ms) => video.seekTo(Duration(milliseconds: ms.round())),
+                  ),
+                );
+              },
+            ),
+            Row(children: [
+              IconButton(tooltip: '১০ সেকেন্ড পেছনে', onPressed: () => _seekBy(const Duration(seconds: -10)), color: Colors.white, icon: const Icon(Icons.replay_10_rounded)),
               const Spacer(),
-              Text(widget.formatDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+              IconButton(tooltip: '১০ সেকেন্ড সামনে', onPressed: () => _seekBy(const Duration(seconds: 10)), color: Colors.white, icon: const Icon(Icons.forward_10_rounded)),
             ]),
-          ),
-          ValueListenableBuilder<VideoPlayerValue>(
-            valueListenable: video,
-            builder: (context, value, child) {
-              final durationMs = value.duration.inMilliseconds;
-              final positionMs = value.position.inMilliseconds.clamp(0, durationMs > 0 ? durationMs : 0);
-              return Slider(
-                min: 0,
-                max: durationMs > 0 ? durationMs.toDouble() : 1,
-                value: durationMs > 0 ? positionMs.toDouble() : 0,
-                onChanged: durationMs <= 0 ? null : (ms) {
-                  video.seekTo(Duration(milliseconds: ms.round()));
-                },
-              );
-            },
-          ),
-          Row(children: [
-            IconButton(
-              tooltip: '১০ সেকেন্ড পেছনে',
-              onPressed: () {
-                final target = video.value.position - const Duration(seconds: 10);
-                video.seekTo(target < Duration.zero ? Duration.zero : target);
-              },
-              color: Colors.white,
-              icon: const Icon(Icons.replay_10_rounded),
-            ),
-            const Spacer(),
-            IconButton(
-              tooltip: '১০ সেকেন্ড সামনে',
-              onPressed: () {
-                final target = video.value.position + const Duration(seconds: 10);
-                final duration = video.value.duration;
-                video.seekTo(target > duration ? duration : target);
-              },
-              color: Colors.white,
-              icon: const Icon(Icons.forward_10_rounded),
-            ),
           ]),
-        ]),
-      )),
-    ]),
+        )),
+      ]),
+    ),
   );
 }
 
