@@ -500,11 +500,7 @@ class StartupErrorScreen extends StatelessWidget {
                   style: TextStyle(color: Colors.white70),
                 ),
                 const SizedBox(height: 12),
-                SelectableText(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
+                
               ],
             ),
           ),
@@ -4484,6 +4480,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: surfaceColor,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(22),
@@ -4491,8 +4488,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ),
       builder: (sheetContext) {
         return SafeArea(
-          child: Wrap(
-            children: [
+          child: SingleChildScrollView(
+            child: Wrap(
+              children: [
               if (!unsent)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -4652,7 +4650,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     }
                   },
                 ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -8223,7 +8222,7 @@ class _GalleryMediaViewerPageState
               if (path == null) {
                 return const Center(
                   child: Text(
-                    'ফাইল পাওয়া যায়নি। ইন্টারনেট ও Drive পরীক্ষা করো।',
+                    'ফাইলটি পাওয়া যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।',
                     textAlign: TextAlign.center,
                   ),
                 );
