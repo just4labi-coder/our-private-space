@@ -59,9 +59,9 @@ class _PartnerConnectionPageState
           _cacheClearedForDisconnectedSpace = null;
           return;
         }
-        // The old invite Space may now point to the original Space after
-        // both accounts use a fresh invite. Resolve the active ID first so
-        // this stale listener cannot erase restored data.
+        // After an explicit fresh-invite reconnection, the temporary invite Space
+        // points to the original Space. Resolve the active ID first so this
+        // stale listener cannot erase the restored local data.
         final activeSpaceId = await PrivateSpaceService.getSavedSpaceId();
         if (activeSpaceId != spaceId) {
           if (mounted) {
@@ -177,7 +177,7 @@ class _PartnerConnectionPageState
           style: TextStyle(color: Colors.white),
         ),
         content: const Text(
-          'এই ফোনে নতুন Private Space তৈরি হবে। পুরোনো Space-এর ক্লাউড ডেটা মুছে ফেলা হবে না, তবে এই অ্যাপে আর স্বয়ংক্রিয়ভাবে ফিরিয়ে আনা হবে না। নতুন কোড দিয়ে যুক্ত হলে নতুন ডেটা-স্পেস ব্যবহার হবে।',
+          'এই ফোনে নতুন Invite Code তৈরি হবে। পুরোনো Space-এর ক্লাউড ডেটা মুছে যাবে না। একই দুটি অ্যাকাউন্ট নতুন কোড দিয়ে আবার যুক্ত হলে আগের ছবি, মেসেজ ও অন্যান্য ডেটা ফিরবে; অন্য সঙ্গীর সঙ্গে আলাদা Space থাকবে।',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -365,7 +365,7 @@ class _PartnerConnectionPageState
         content: const Text(
           'দুজন সম্মতি দিলে Space-এর শেয়ার করা তথ্য অ্যাপ থেকে '
           'অ্যাক্সেস করা যাবে না। ডেটা মুছে ফেলা হবে না। '
-          'পুনঃসংযোগের সুবিধা চালু করা হয়েছে।',
+          'একই দুটি অ্যাকাউন্ট পরে নতুন Invite Code দিয়ে আবার যুক্ত হলে আগের Space-এর ডেটা ফিরবে। অন্য সঙ্গীর ডেটা আলাদা থাকবে।',
           style: TextStyle(
             color: Colors.white70,
             height: 1.5,
