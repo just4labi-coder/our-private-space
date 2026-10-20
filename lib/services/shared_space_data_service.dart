@@ -30,7 +30,7 @@ class SharedSpaceDataService {
     final user = _auth.currentUser;
 
     if (user == null) {
-      throw StateError('আগে Firebase-এ সাইন ইন করতে হবে।');
+      throw StateError('আগে নিজের অ্যাকাউন্টে প্রবেশ করুন।');
     }
 
     return _db.collection('users').doc(user.uid);
@@ -49,7 +49,7 @@ class SharedSpaceDataService {
     final user = _auth.currentUser;
 
     if (user == null) {
-      throw StateError('Firebase ব্যবহারকারী পাওয়া যায়নি।');
+      throw StateError('অ্যাকাউন্টের তথ্য পাওয়া যায়নি। আবার প্রবেশ করুন।');
     }
 
     await myProfileRef.set({
