@@ -4488,9 +4488,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ),
       builder: (sheetContext) {
         return SafeArea(
-          child: SingleChildScrollView(
-            child: Wrap(
-              children: [
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.82,
+            ),
+            child: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: Wrap(
+                children: [
               if (!unsent)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -4650,7 +4655,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     }
                   },
                 ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -10018,7 +10024,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
               ? 'এই ইমেইলটি অন্য অ্যাকাউন্টে ব্যবহৃত হচ্ছে।'
               : error.code == 'invalid-email'
                   ? 'সঠিক ইমেইল ঠিকানা দাও।'
-                  : 'ইমেইল পরিবর্তনের অনুরোধ পাঠানো যায়নি: ${error.message ?? error.code}';
+                  : 'ইমেইল পরিবর্তনের অনুরোধ পাঠানো যায়নি। কিছুক্ষণ পর আবার চেষ্টা করুন।';
       _showMessage(message);
     } catch (error) {
       if (!mounted) return;
