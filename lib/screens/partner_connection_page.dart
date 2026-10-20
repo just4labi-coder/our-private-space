@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -28,6 +30,8 @@ class _PartnerConnectionPageState
   bool _messageIsError = false;
   bool _loading = true;
   bool _working = false;
+  StreamSubscription<Map<String, dynamic>?>? _spaceStatusSubscription;
+  String? _cacheClearedForDisconnectedSpace;
 
   @override
   void initState() {
@@ -37,8 +41,34 @@ class _PartnerConnectionPageState
 
   @override
   void dispose() {
+    _spaceStatusSubscription?.cancel();
     _codeController.dispose();
     super.dispose();
+  }
+
+  void _watchSpaceStatus(String? spaceId) {
+    _spaceStatusSubscription?.cancel();
+    _cacheClearedForDisconnectedSpace = null;
+    if (spaceId == null || spaceId.isEmpty) return;
+
+    _spaceStatusSubscription = PrivateSpaceService.watchSpace(spaceId).listen(
+      (data) async {
+        if (data == null) return;
+        final status = data['connectionStatus'] ?? 'connected';
+        if (status != 'disconnected') {
+          _cacheClearedForDisconnectedSpace = null;
+          return;
+        }
+        if (_cacheClearedForDisconnectedSpace == spaceId) return;
+        _cacheClearedForDisconnectedSpace = spaceId;
+        // Both phones clear their local copy when Firestore confirms the
+        // shared disconnection, even if this phone did not press the button.
+        await PrivateSpaceService.clearCachedSpaceData();
+      },
+      onError: (Object error) {
+        debugPrint('Private Space status listener error: $error');
+      },
+    );
   }
 
   Future<void> _loadConnection() async {
@@ -53,6 +83,7 @@ class _PartnerConnectionPageState
         _savedCode = code;
         _loading = false;
       });
+      _watchSpaceStatus(id);
     } catch (_) {
       if (!mounted) return;
 
@@ -94,6 +125,7 @@ class _PartnerConnectionPageState
         _savedCode = code;
         _spaceId = id;
       });
+      _watchSpaceStatus(id);
 
       _showMessage(
         'Private Space তৈরি হয়েছে! ❤️\nInvite Code-টি সঙ্গীকে দাও।',
@@ -140,6 +172,7 @@ class _PartnerConnectionPageState
         _spaceId = id;
         _savedCode = savedCode;
       });
+      _watchSpaceStatus(id);
 
       _showMessage(
         'সফলভাবে Partner Space-এ যুক্ত হয়েছ! 💕',
@@ -256,20 +289,12 @@ class _PartnerConnectionPageState
         );
       }
 
-      // Once both partners have approved, clear this device's cached Space
-      // data immediately. The cloud copy remains so the same accounts can
-      // reconnect later and restore their previous shared data.
+      // Keep this Space ID and its original code so the same two accounts
+      // can reconnect later. The status listener clears local shared data on
+      // both phones as soon as Firestore confirms the disconnection.
       final latestSpace = await PrivateSpaceService.watchSpace(spaceId).first;
       if (latestSpace?['connectionStatus'] == 'disconnected') {
         await PrivateSpaceService.clearCachedSpaceData();
-        await PrivateSpaceService.clearSavedConnection();
-        if (mounted) {
-          setState(() {
-            _spaceId = null;
-            _savedCode = null;
-            _codeController.clear();
-          });
-        }
       }
     } catch (e) {
       _showMessage(
@@ -442,6 +467,19 @@ class _PartnerConnectionPageState
                 ),
               ),
             ],
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _working ? null : _createSpace,
+                icon: const Icon(Icons.add_link_rounded),
+                label: const Text('নতুন কোড তৈরি করে অন্য কারো সাথে যুক্ত হও'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: _purple.withValues(alpha: 0.8)),
+                ),
+              ),
+            ),
           ],
         ),
       );
