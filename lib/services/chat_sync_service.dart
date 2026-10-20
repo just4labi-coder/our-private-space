@@ -257,9 +257,46 @@ class ChatSyncService {
 
     if (name.isEmpty) return;
 
+    // Keep a user's own photo across different Spaces. First use the global
+    // profile, then the current Space, then recover a photo from a prior
+    // Space where this same Firebase UID was a member.
+    String photoBase64 = '';
+    final globalProfile = await _db.collection('users').doc(user.uid).get();
+    photoBase64 = '${globalProfile.data()?['photoBase64'] ?? ''}'.trim();
+
+    final currentMembers = await _membersRef();
+    final currentProfile = await currentMembers.doc(user.uid).get();
+    if (photoBase64.isEmpty) {
+      photoBase64 = '${currentProfile.data()?['photoBase64'] ?? ''}'.trim();
+    }
+
+    if (photoBase64.isEmpty) {
+      try {
+        final previousSpaces = await _db
+            .collection('privateSpaces')
+            .where('memberUids', arrayContains: user.uid)
+            .get();
+        for (final previousSpace in previousSpaces.docs) {
+          if (previousSpace.id == spaceId) continue;
+          final previousProfile = await previousSpace.reference
+              .collection('members')
+              .doc(user.uid)
+              .get();
+          final candidate = '${previousProfile.data()?['photoBase64'] ?? ''}'.trim();
+          if (candidate.isNotEmpty) {
+            photoBase64 = candidate;
+            break;
+          }
+        }
+      } catch (error) {
+        // Profile restoration is best-effort; do not block chat startup.
+      }
+    }
+
     await saveMyProfile(
       name: name,
       photoUrl: user.photoURL,
+      photoBase64: photoBase64.isEmpty ? null : photoBase64,
     );
   }
 
@@ -379,6 +416,13 @@ class ChatSyncService {
     }
 
     await ref.doc(user.uid).set(
+      profile,
+      SetOptions(merge: true),
+    );
+
+    // Store the same user-owned profile outside any single partner Space so
+    // the avatar remains available when the user connects to a new Space.
+    await _db.collection('users').doc(user.uid).set(
       profile,
       SetOptions(merge: true),
     );
