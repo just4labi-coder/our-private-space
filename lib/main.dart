@@ -438,7 +438,7 @@ class StartupErrorScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
+                  'assets/branding/orbit_two_logo_artwork.png',
                   width: 100,
                   height: 100,
                   fit: BoxFit.contain,
@@ -994,7 +994,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     0.333, 0.333, 0.333, 0, 0,
                   ]),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
+                    'assets/branding/orbit_two_logo_artwork.png',
                     width: 220,
                     height: 147,
                     fit: BoxFit.contain,
@@ -1112,8 +1112,8 @@ class _GlowBackgroundState extends State<GlowBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 36),
-  )..repeat(reverse: true);
+    duration: const Duration(seconds: 60),
+  )..repeat();
 
   @override
   void dispose() {
@@ -2073,14 +2073,14 @@ class AppInformationPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: const [
-            Icon(Icons.favorite_rounded, color: pinkColor, size: 48),
+            Image(image: AssetImage('assets/branding/orbit_two_logo_artwork.png'), width: 104, height: 82, fit: BoxFit.contain),
             SizedBox(height: 10),
             Center(child: Text('Orbit Two', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
             SizedBox(height: 8),
             Center(child: Text('দুজনের ব্যক্তিগত যোগাযোগ ও স্মৃতির জন্য', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
             SizedBox(height: 24),
             _AppInfoSection(icon: Icons.apps_rounded, title: 'অ্যাপটি কী কাজে লাগে', body: 'Orbit Two হলো দুজনের জন্য তৈরি একটি ব্যক্তিগত স্পেস। এখানে পার্টনারের সঙ্গে চ্যাট, ছবি ও ভিডিও শেয়ার, ভয়েস মেসেজ এবং সম্পর্কের গুরুত্বপূর্ণ স্মৃতি এক জায়গায় রাখা যায়।'),
-            _AppInfoSection(icon: Icons.touch_app_rounded, title: 'ব্যবহার শুরু করবেন যেভাবে', body: '১. নিজের অ্যাকাউন্টে প্রবেশ করুন।\n২. Partner Connection থেকে সংযোগ তৈরি করুন বা পাওয়া কোড দিয়ে যুক্ত হন।\n৩. Chat-এ মেসেজ ও ভয়েস মেসেজ পাঠান।\n৪. Gallery-তে ছবি ও ভিডিও শেয়ার করুন।\n৫. Settings থেকে প্রোফাইল, নোটিফিকেশন ও Data Saver নিয়ন্ত্রণ করুন।'),
+            _AppInfoSection(icon: Icons.touch_app_rounded, title: 'ব্যবহার শুরু করবেন যেভাবে', body: '১. নিজের অ্যাকাউন্টে প্রবেশ করুন।\n২. Partner Connection থেকে সংযোগ তৈরি করুন বা পাওয়া কোড দিয়ে যুক্ত হন।\n৩. Chat-এ মেসেজ ও ভয়েস মেসেজ পাঠান।\n৪. Gallery-তে ছবি ও ভিডিও শেয়ার করুন।\n৫. Settings থেকে প্রোফাইল, Data Saver নিয়ন্ত্রণ করুন।'),
             _AppInfoSection(icon: Icons.sync_rounded, title: 'সমস্যা সমাধান', body: 'মেসেজ বা তথ্য আপডেট না হলে ইন্টারনেট সংযোগ পরীক্ষা করে অ্যাপটি আবার খুলুন। ছবি বা ভিডিও আপলোড না হলে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।'),
             _AppInfoSection(icon: Icons.speed_rounded, title: 'কম ক্ষমতার ফোনে অ্যাপ ধীর হলে', body: 'ব্যাকগ্রাউন্ডে থাকা অপ্রয়োজনীয় অ্যাপ বন্ধ করুন। তাতেও ধীর চললে: Settings → Apps → Orbit Two → Storage & cache → Clear cache। ফোনভেদে মেনুর নাম আলাদা হতে পারে। শুধু Clear cache নির্বাচন করুন। Clear storage বা Clear data নির্বাচন করবেন না, এতে স্থানীয় তথ্য মুছে যেতে পারে.'),
             _AppInfoSection(icon: Icons.lock_outline_rounded, title: 'অ্যাকাউন্ট ও নিরাপত্তা', body: 'নিজের অ্যাকাউন্টের তথ্য নিরাপদে রাখুন এবং পাসওয়ার্ড কারও সঙ্গে শেয়ার করবেন না। অ্যাকাউন্ট বা প্রোফাইলের সেটিংসের জন্য Settings-এর Privacy & account অপশন ব্যবহার করুন।'),
@@ -2290,7 +2290,7 @@ class HomePage extends StatelessWidget {
                     0.333, 0.333, 0.333, 0, 0,
                   ]),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
+                    'assets/branding/orbit_two_logo_artwork.png',
                     width: 94,
                     height: 62,
                     fit: BoxFit.contain,
