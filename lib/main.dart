@@ -693,10 +693,21 @@ class SpaceStore {
   }) async {
     if (data == null) return;
 
+    // Older app versions stored the complete shared state under a nested
+    // "data" map in syncData/appState. Newer versions store each state key
+    // at the document root. Read both formats so reconnecting restores history.
+    final remoteData = <String, dynamic>{};
+    final legacyPayload = data['data'];
+    if (legacyPayload is Map) {
+      remoteData.addAll(Map<String, dynamic>.from(legacyPayload));
+    }
+    remoteData.addAll(data);
+    remoteData.remove('data');
+
     await init();
     final changedKeys = <String>[];
     final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    for (final entry in data.entries) {
+    for (final entry in remoteData.entries) {
       final key = entry.key;
       if (key == 'updatedBy' || key == 'updatedAt' ||
           key == 'partnerOne' || key == 'partnerTwo') {
@@ -720,7 +731,7 @@ class SpaceStore {
     _applyingRemoteData = true;
 
     try {
-      for (final entry in data.entries) {
+      for (final entry in remoteData.entries) {
         final value = entry.value;
 
         if (entry.key == 'partnerOne' ||
