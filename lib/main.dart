@@ -438,7 +438,7 @@ class StartupErrorScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
-                  'assets/branding/orbit_two_logo_artwork.png',
+                  'assets/branding/orbit_two_logo.jpg',
                   width: 100,
                   height: 100,
                   fit: BoxFit.contain,
@@ -994,7 +994,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     0.333, 0.333, 0.333, 0, 0,
                   ]),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo_artwork.png',
+                    'assets/branding/orbit_two_logo.jpg',
                     width: 220,
                     height: 147,
                     fit: BoxFit.contain,
@@ -2073,7 +2073,7 @@ class AppInformationPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: const [
-            Image(image: AssetImage('assets/branding/orbit_two_logo_artwork.png'), width: 104, height: 82, fit: BoxFit.contain),
+            Image.asset('assets/branding/orbit_two_logo.jpg', width: 104, height: 82, fit: BoxFit.contain),
             SizedBox(height: 10),
             Center(child: Text('Orbit Two', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
             SizedBox(height: 8),
@@ -2290,7 +2290,7 @@ class HomePage extends StatelessWidget {
                     0.333, 0.333, 0.333, 0, 0,
                   ]),
                   child: Image.asset(
-                    'assets/branding/orbit_two_logo_artwork.png',
+                    'assets/branding/orbit_two_logo.jpg',
                     width: 94,
                     height: 62,
                     fit: BoxFit.contain,
