@@ -437,17 +437,7 @@ class StartupErrorScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image.asset(
-                  'assets/branding/orbit_two_logo.jpg',
-                  width: 100,
-                  height: 100,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.favorite_rounded,
-                    color: pinkColor,
-                    size: 64,
-                  ),
-                ),
+                const OrbitLogoAnimation(width: 100, height: 100),
                 const SizedBox(height: 20),
                 const Text(
                   'Orbit Two চালু করা যায়নি',
@@ -1028,6 +1018,56 @@ class _SplashScreenState extends State<SplashScreen> {
       ),
     );
   }
+}
+
+class OrbitLogoAnimation extends StatefulWidget {
+  final double width;
+  final double height;
+
+  const OrbitLogoAnimation({super.key, required this.width, required this.height});
+
+  @override
+  State<OrbitLogoAnimation> createState() => _OrbitLogoAnimationState();
+}
+
+class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _rotation = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 90),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _rotation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RotationTransition(
+    turns: _rotation,
+    child: ColorFiltered(
+      // JPG has a black matte; make dark pixels transparent.
+      colorFilter: const ColorFilter.matrix(<double>[
+        1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0.333, 0.333, 0.333, 0, 0,
+      ]),
+      child: Image.asset(
+        'assets/branding/orbit_two_logo.jpg',
+        width: widget.width,
+        height: widget.height,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) => const Icon(
+          Icons.favorite_rounded,
+          color: pinkColor,
+          size: 38,
+        ),
+      ),
+    ),
+  );
 }
 
 class AnimatedOrbitTitle extends StatefulWidget {
@@ -2073,7 +2113,7 @@ class AppInformationPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: const [
-            Image(image: AssetImage('assets/branding/orbit_two_logo.jpg'), width: 104, height: 82, fit: BoxFit.contain),
+            OrbitLogoAnimation(width: 104, height: 82),
             SizedBox(height: 10),
             Center(child: Text('Orbit Two', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
             SizedBox(height: 8),
