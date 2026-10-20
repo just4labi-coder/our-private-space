@@ -8792,7 +8792,21 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
               Text(widget.formatDuration(value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
             ]),
           ),
-          VideoProgressIndicator(video, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
+          ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: video,
+            builder: (context, value, child) {
+              final durationMs = value.duration.inMilliseconds;
+              final positionMs = value.position.inMilliseconds.clamp(0, durationMs > 0 ? durationMs : 0);
+              return Slider(
+                min: 0,
+                max: durationMs > 0 ? durationMs.toDouble() : 1,
+                value: durationMs > 0 ? positionMs.toDouble() : 0,
+                onChanged: durationMs <= 0 ? null : (ms) {
+                  video.seekTo(Duration(milliseconds: ms.round()));
+                },
+              );
+            },
+          ),
           Row(children: [
             IconButton(
               tooltip: '১০ সেকেন্ড পেছনে',
