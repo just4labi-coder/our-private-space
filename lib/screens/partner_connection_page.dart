@@ -260,7 +260,9 @@ class _PartnerConnectionPageState
         'সফলভাবে Partner Space-এ যুক্ত হয়েছ! 💕',
         isError: false,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('Orbit Two Join Space failed: $e');
+      debugPrintStack(stackTrace: stackTrace);
       _showMessage(
         _friendlyError(e, creating: false),
         isError: true,
@@ -332,7 +334,19 @@ class _PartnerConnectionPageState
 
     if (raw.contains('permission-denied') ||
         raw.contains('permission denied')) {
-      return 'অনুরোধটি সম্পন্ন করা যায়নি। অনুগ্রহ করে পরে আবার চেষ্টা করুন।';
+      return 'Firebase permission-denied: Firestore Rules-এর অনুমতি নেই। Firebase Console-এ সর্বশেষ firestore.rules প্রকাশ করতে হবে।';
+    }
+
+    if (raw.contains('failed-precondition')) {
+      return 'Firebase failed-precondition: সংযোগের জন্য প্রয়োজনীয় Firebase শর্ত পূরণ হয়নি।';
+    }
+
+    if (raw.contains('unauthenticated')) {
+      return 'Firebase sign-in হয়নি। অ্যাপ বন্ধ করে আবার খুলে চেষ্টা করো।';
+    }
+
+    if (raw.contains('not-found')) {
+      return 'Invite Code পাওয়া যায়নি। নতুন কোড তৈরি করে আবার চেষ্টা করো।';
     }
 
     if (raw.contains('invite code') ||
