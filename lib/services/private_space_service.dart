@@ -397,17 +397,26 @@ class PrivateSpaceService {
             (oldStatus == 'disconnected' || wasReconnectedByFreshInvite)) {
           final originalInviteCode = code;
 
-          // Reactivate the canonical original document instead of copying
-          // selected fields. Its existing subcollections (messages, notes,
-          // gallery records, trash, presence/member data) remain intact.
-          await candidate.reference.update({
-            'connectionStatus': 'connected',
-            'inviteCode': code,
-            'disconnectionApprovals': <String, bool>{},
-            'reconnectionApprovals': <String, bool>{},
-            'reconnectedAt': FieldValue.serverTimestamp(),
-            'reconnectedByFreshInvite': true,
-          });
+          // Restore the original Space only once. If a previous attempt
+          // restored it but failed before redirecting the temporary Space,
+          // safely retry the redirect without repeating the restore update.
+          if (oldStatus == 'disconnected') {
+            await candidate.reference.update({
+              'connectionStatus': 'connected',
+              'inviteCode': code,
+              'disconnectionApprovals': <String, bool>{},
+              'reconnectionApprovals': <String, bool>{},
+              'reconnectedAt': FieldValue.serverTimestamp(),
+              'reconnectedByFreshInvite': true,
+            });
+          } else {
+            // A retry is valid only for the same fresh invite that restored
+            // this exact pair. Never redirect a different invite into it.
+            if (!wasReconnectedByFreshInvite ||
+                oldData['inviteCode'] != code) {
+              continue;
+            }
+          }
 
           await _spaces.doc(spaceId).update({
             'connectionStatus': 'disconnected',
