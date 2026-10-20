@@ -259,7 +259,7 @@ class SpaceSyncService {
   static Future<String> _getIdToken() async {
     final token = await (await _requireUser()).getIdToken();
     if (token == null || token.isEmpty) {
-      throw Exception('Firebase পরিচয় যাচাই করা যায়নি।');
+      throw Exception('অ্যাকাউন্ট যাচাই করা যায়নি। আবার প্রবেশ করে চেষ্টা করুন।');
     }
     return token;
   }
@@ -402,7 +402,7 @@ class SpaceSyncService {
     final id = result['personalFolderId']?.toString();
 
     if (id == null || id.isEmpty) {
-      throw Exception('ব্যক্তিগত Drive ফোল্ডার পাওয়া যায়নি।');
+      throw Exception('ব্যক্তিগত মিডিয়া ফোল্ডার পাওয়া যায়নি। আবার চেষ্টা করুন।');
     }
     return id;
   }
@@ -551,7 +551,7 @@ class SpaceSyncService {
             response.statusCode == 201) {
           final decoded = jsonDecode(response.body);
           if (decoded is! Map) {
-            throw Exception('Google Drive-এর চূড়ান্ত উত্তর সঠিক নয়।');
+            throw Exception('আপলোড সম্পন্ন হয়েছে কি না যাচাই করা যায়নি। আবার চেষ্টা করুন।');
           }
 
           uploaded = Map<String, dynamic>.from(decoded);
@@ -569,7 +569,7 @@ class SpaceSyncService {
 
           final confirmed = int.parse(match.group(1)!) + 1;
           if (confirmed < 0 || confirmed > length) {
-            throw Exception('Google Drive-এর আপলোড অবস্থান সঠিক নয়।');
+            throw Exception('আপলোডের সংযোগ যাচাই করা যায়নি। আবার চেষ্টা করুন।');
           }
 
           return confirmed;
@@ -581,7 +581,7 @@ class SpaceSyncService {
         }
 
         throw Exception(
-          'Google Drive-এর সেশন যাচাই ব্যর্থ হয়েছে '
+          'আপলোডের সংযোগ যাচাই ব্যর্থ হয়েছে '
           '(${response.statusCode})।',
         );
       }
@@ -720,7 +720,7 @@ class SpaceSyncService {
               retryCount++;
 
               if (retryCount > 3) {
-                throw Exception('Google Drive আপলোড এগোচ্ছে না। আবার চেষ্টা করো।');
+                throw Exception('আপলোড এগোচ্ছে না। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।');
               }
             } else {
               adjustChunkSize(
@@ -784,7 +784,7 @@ class SpaceSyncService {
           }
 
           throw Exception(
-            'Google Drive আপলোড ব্যর্থ হয়েছে '
+            'ফাইল আপলোড ব্যর্থ হয়েছে '
             '(${response.statusCode})।',
           );
         }
@@ -796,7 +796,7 @@ class SpaceSyncService {
         final confirmed = await queryServerOffset(Uri.parse(sessionUrl));
 
         if (confirmed == -1) {
-          throw Exception('Google Drive upload session শেষ হয়ে গেছে।');
+          throw Exception('আপলোডের সময়সীমা শেষ হয়েছে। আবার চেষ্টা করুন।');
         }
 
         if (confirmed != length) {
@@ -1554,7 +1554,7 @@ class SpaceSyncService {
 
   static Future<void> shareMediaFolder(String email) async {
     throw UnsupportedError(
-      'ইমেইল দিয়ে Drive ফোল্ডার শেয়ার বন্ধ। '
+      'ইমেইলের মাধ্যমে ফোল্ডার শেয়ার করা বন্ধ আছে। '
       'Orbit Two-এর shared folder ব্যবহার করো।',
     );
   }
