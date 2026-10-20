@@ -358,11 +358,31 @@ class PrivateSpaceService {
     if (joinedSnapshot.exists &&
         joinedMembers.length == 2 &&
         joinedMembers.contains(user.uid)) {
-      final candidates = await _spaces
+      final candidateSnapshot = await _spaces
           .where('memberUids', arrayContains: user.uid)
           .get();
 
-      for (final candidate in candidates.docs) {
+      // Only original Spaces can be restored. Skip temporary invite Spaces
+      // that already redirect elsewhere, otherwise an empty temporary Space
+      // could be selected instead of the complete historical Space.
+      final candidates = candidateSnapshot.docs.where((candidate) {
+        final oldData = candidate.data();
+        return !oldData.containsKey('redirectSpaceId') &&
+            oldData['redirectSpaceId'] == null;
+      }).toList()
+        ..sort((a, b) {
+          final aTime = a.data()['createdAt'];
+          final bTime = b.data()['createdAt'];
+          final aMillis = aTime is Timestamp
+              ? aTime.millisecondsSinceEpoch
+              : 0;
+          final bMillis = bTime is Timestamp
+              ? bTime.millisecondsSinceEpoch
+              : 0;
+          return aMillis.compareTo(bMillis);
+        });
+
+      for (final candidate in candidates) {
         if (candidate.id == spaceId) continue;
         final oldData = candidate.data();
         final oldMembers = List<String>.from(oldData['memberUids'] ?? []);
@@ -377,6 +397,9 @@ class PrivateSpaceService {
             (oldStatus == 'disconnected' || wasReconnectedByFreshInvite)) {
           final originalInviteCode = '${oldData['inviteCode'] ?? ''}';
 
+          // Reactivate the canonical original document instead of copying
+          // selected fields. Its existing subcollections (messages, notes,
+          // gallery records, trash, presence/member data) remain intact.
           await candidate.reference.update({
             'connectionStatus': 'connected',
             'disconnectionApprovals': <String, bool>{},
