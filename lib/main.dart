@@ -1817,6 +1817,18 @@ class _MainScreenState extends State<MainScreen>
           .listen(
         (snapshot) async {
           if (!mounted) return;
+          // A fresh invite for the same couple may redirect this temporary
+          // Space to the original one. Never let this stale listener clear
+          // the restored Space's local cache.
+          final latestPrefs = await SharedPreferences.getInstance();
+          final activeSpaceId = latestPrefs.getString('eternal_space_id');
+          if (activeSpaceId != spaceId) {
+            await _connectionSubscription?.cancel();
+            _connectionSubscription = null;
+            _watchedSpaceId = null;
+            if (mounted) await _startConnectionWatcher();
+            return;
+          }
           final data = snapshot.data();
           final members = data?['memberUids'];
           final status = data?['connectionStatus'] ?? 'connected';
