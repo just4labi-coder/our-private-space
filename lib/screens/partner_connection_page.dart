@@ -294,7 +294,7 @@ class _PartnerConnectionPageState
     }
 
     if (raw.contains('unauthenticated')) {
-      return 'Firebase sign-in হয়নি। অ্যাপ বন্ধ করে আবার খুলে চেষ্টা করো।';
+      return 'অ্যাকাউন্ট যাচাই করা যায়নি। অ্যাপটি আবার খুলে চেষ্টা করুন।';
     }
 
     if (raw.contains('not-found')) {
@@ -543,7 +543,7 @@ class _PartnerConnectionPageState
           ],
           const SizedBox(height: 8),
           const Text(
-            'এতে Firestore ডেটা ডিলিট করা হয় না।',
+            'এতে সংরক্ষিত তথ্য মুছে ফেলা হবে না।',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white54,
@@ -726,7 +726,7 @@ class _PartnerConnectionPageState
               if (snapshot.hasError) ...[
                 const SizedBox(height: 10),
                 const Text(
-                  'Firestore Rules ও ইন্টারনেট পরীক্ষা করো।',
+                  'সংযোগ যাচাই করা যাচ্ছে না। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Color(0xFFFFA7B4),
@@ -859,7 +859,7 @@ class _PartnerConnectionPageState
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Firebase-এর সঙ্গে সংযোগ করা হচ্ছে...',
+                    'নিরাপদ সংযোগ স্থাপন করা হচ্ছে...',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.white60),
                   ),
