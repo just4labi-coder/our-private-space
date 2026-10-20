@@ -112,7 +112,7 @@ class SharedSpaceDataService {
     final user = _auth.currentUser;
 
     if (user == null) {
-      throw StateError('আগে Firebase-এ সাইন ইন করতে হবে।');
+      throw StateError('আগে নিজের অ্যাকাউন্টে প্রবেশ করুন।');
     }
 
     final ref = await collection(collectionName);
