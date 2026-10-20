@@ -2303,24 +2303,7 @@ class HomePage extends StatelessWidget {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(11),
-                child: ColorFiltered(
-                  colorFilter: const ColorFilter.matrix(<double>[
-                    1, 0, 0, 0, 0,
-                    0, 1, 0, 0, 0,
-                    0, 0, 1, 0, 0,
-                    0.333, 0.333, 0.333, 0, 0,
-                  ]),
-                  child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
-                    width: 94,
-                    height: 62,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.high,
-                    errorBuilder: (context, error, stackTrace) => const Center(
-                      child: Icon(Icons.favorite_rounded, color: pinkColor, size: 38),
-                    ),
-                  ),
-                ),
+                child: const OrbitLogoAnimation(width: 94, height: 62),
               ),
             ),
           ],
