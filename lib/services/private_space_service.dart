@@ -52,6 +52,31 @@ class PrivateSpaceService {
       try {
         final savedSpace = await _spaces.doc(savedId).get();
         final data = savedSpace.data();
+
+        // A fresh invite used by the same two accounts can redirect to their
+        // original Space, preserving the original cloud history.
+        final redirectId = data?['redirectSpaceId'];
+        if (savedSpace.exists &&
+            redirectId is String &&
+            redirectId.isNotEmpty) {
+          final original = await _spaces.doc(redirectId).get();
+          final originalData = original.data();
+          final originalMembers = List<String>.from(
+            originalData?['memberUids'] ?? const [],
+          );
+          if (original.exists &&
+              originalMembers.length == 2 &&
+              originalMembers.contains(user.uid) &&
+              (originalData?['connectionStatus'] ?? 'connected') ==
+                  'connected') {
+            await _saveConnection(
+              redirectId,
+              '${originalData?['inviteCode'] ?? ''}',
+            );
+            return redirectId;
+          }
+        }
+
         final members = List<String>.from(data?['memberUids'] ?? const []);
 
         if (savedSpace.exists && members.contains(user.uid)) {
@@ -338,7 +363,56 @@ class PrivateSpaceService {
       },
     );
 
-    await _saveConnection(spaceId, code);
+    // If a fresh invite connects the same two Firebase accounts that
+    // previously shared a disconnected Space, restore that original Space.
+    final joinedSnapshot = await _spaces.doc(spaceId).get();
+    final joinedData = joinedSnapshot.data();
+    final joinedMembers = List<String>.from(
+      joinedData?['memberUids'] ?? const [],
+    );
+    String? originalSpaceId;
+    String? originalInviteCode;
+
+    if (joinedMembers.length == 2 && joinedMembers.contains(user.uid)) {
+      final candidates = await _spaces
+          .where('memberUids', arrayContains: user.uid)
+          .get();
+
+      for (final candidate in candidates.docs) {
+        if (candidate.id == spaceId) continue;
+        final oldData = candidate.data();
+        final oldMembers = List<String>.from(oldData['memberUids'] ?? []);
+        final oldStatus = oldData['connectionStatus'] ?? 'connected';
+        final samePair = oldMembers.length == 2 &&
+            oldMembers.toSet().containsAll(joinedMembers) &&
+            joinedMembers.toSet().containsAll(oldMembers);
+
+        if (samePair && oldStatus == 'disconnected') {
+          originalSpaceId = candidate.id;
+          originalInviteCode = '${oldData['inviteCode'] ?? ''}';
+          await candidate.reference.update({
+            'connectionStatus': 'connected',
+            'disconnectionApprovals': <String, bool>{},
+            'reconnectionApprovals': <String, bool>{},
+            'reconnectedAt': FieldValue.serverTimestamp(),
+            'reconnectedByFreshInvite': true,
+          });
+          await _spaces.doc(spaceId).update({
+            'connectionStatus': 'disconnected',
+            'redirectSpaceId': candidate.id,
+            'redirectInviteCode': originalInviteCode,
+            'redirectedAt': FieldValue.serverTimestamp(),
+          });
+          break;
+        }
+      }
+    }
+
+    if (originalSpaceId != null) {
+      await _saveConnection(originalSpaceId, originalInviteCode ?? '');
+    } else {
+      await _saveConnection(spaceId, code);
+    }
   }
 
   /// Space-এর তথ্যের পরিবর্তন শোনে
