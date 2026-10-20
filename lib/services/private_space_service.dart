@@ -215,14 +215,14 @@ class PrivateSpaceService {
   }
 
   /// নতুন Private Space তৈরি করে Invite Code ফেরত দেয়
-  static Future<String> createSpace() async {
+  static Future<String> createSpace({bool forceNew = false}) async {
     final user = await ensureSignedIn();
     final ownName = await _getOwnName();
 
     // আগে থেকেই Space যুক্ত থাকলে নতুন Space তৈরি করবে না।
-    final savedSpaceId = await getSavedSpaceId();
+    final savedSpaceId = forceNew ? null : await getSavedSpaceId();
 
-    if (savedSpaceId != null && savedSpaceId.isNotEmpty) {
+    if (!forceNew && savedSpaceId != null && savedSpaceId.isNotEmpty) {
       final savedCode = await getSavedInviteCode();
 
       if (savedCode != null && savedCode.isNotEmpty) {
