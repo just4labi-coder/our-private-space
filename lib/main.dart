@@ -6401,11 +6401,14 @@ class _GalleryPageState extends State<GalleryPage> {
         {'id': 'all', 'name': 'All Memories'},
         {'id': 'favorites', 'name': 'Favorites'},
         {'id': 'videos', 'name': 'Videos'},
+        {'id': 'photos', 'name': 'Photos'},
       ];
       unawaited(SpaceStore.saveList('galleryFolders', folders));
-    } else if (!folders.any((folder) => '${folder['id']}' == 'videos')) {
-      folders.add({'id': 'videos', 'name': 'Videos'});
-      unawaited(SpaceStore.saveList('galleryFolders', folders));
+    } else {
+      var changedFolders = false;
+      if (!folders.any((folder) => '${folder['id']}' == 'videos')) { folders.add({'id': 'videos', 'name': 'Videos'}); changedFolders = true; }
+      if (!folders.any((folder) => '${folder['id']}' == 'photos')) { folders.add({'id': 'photos', 'name': 'Photos'}); changedFolders = true; }
+      if (changedFolders) unawaited(SpaceStore.saveList('galleryFolders', folders));
     }
     unawaited(_autoDownloadMissingMedia());
   }
@@ -6573,7 +6576,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
   Future<void> _showFolderMenu(Map<String, dynamic> folder) async {
     final id = '${folder['id']}';
-    final isDefault = id == 'all' || id == 'favorites' || id == 'videos';
+    final isDefault = id == 'all' || id == 'favorites' || id == 'videos' || id == 'photos';
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -6644,7 +6647,7 @@ class _GalleryPageState extends State<GalleryPage> {
   Future<void> _renameFolder(Map<String, dynamic> folder) async {
     final id = '${folder['id']}';
 
-    if (id == 'all' || id == 'favorites' || id == 'videos') return;
+    if (id == 'all' || id == 'favorites' || id == 'videos' || id == 'photos') return;
 
     final controller = TextEditingController(
       text: '${folder['name'] ?? ''}',
@@ -7127,12 +7130,11 @@ class _GalleryPageState extends State<GalleryPage> {
     }
 
     if (id == 'videos') {
-      // Videos from every folder appear here; images are excluded.
-      return media
-          .where((item) => '${item['type']}'.toLowerCase() == 'video')
-          .toList();
+      return media.where((item) => '${item['type']}'.toLowerCase() == 'video').toList();
     }
-
+    if (id == 'photos') {
+      return media.where((item) => '${item['type']}'.toLowerCase() != 'video' && item['folderId'] != 'favorites').toList();
+    }
     return media.where((item) => item['folderId'] == id).toList();
   }
 
@@ -8157,14 +8159,16 @@ class _GalleryMediaViewerPageState
               if (!isVideo) {
                 return Stack(fit: StackFit.expand, children: [
                   InteractiveViewer(
-                    minScale: 0.65,
-                    maxScale: 7,
-                    boundaryMargin: const EdgeInsets.all(120),
-                    clipBehavior: Clip.none,
+                    minScale: 1,
+                    maxScale: 4,
+                    boundaryMargin: EdgeInsets.zero,
+                    constrained: true,
+                    clipBehavior: Clip.hardEdge,
                     child: Center(child: Transform.rotate(
                       angle: _imageRotation,
                       child: Image.file(File(path), fit: BoxFit.contain,
-                        filterQuality: FilterQuality.medium,
+                        filterQuality: FilterQuality.low,
+                        cacheWidth: 2048,
                         errorBuilder: (_, __, ___) => const Text('ছবিটি খোলা যাচ্ছে না।'),
                       ),
                     )),
@@ -8753,10 +8757,7 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
   void initState() {
     super.initState();
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
-    unawaited(SystemChrome.setPreferredOrientations(const [
-      DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight,
-    ]));
+    unawaited(SystemChrome.setPreferredOrientations(const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]));
   }
   Future<void> _togglePlayback() async {
     if (video.value.isCompleted) { await video.seekTo(Duration.zero); await video.play(); }
