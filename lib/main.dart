@@ -975,26 +975,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     BoxShadow(color: purpleColor.withValues(alpha: 0.18), blurRadius: 34, spreadRadius: 2),
                   ],
                 ),
-                child: ColorFiltered(
-                  // The source JPG has a black matte; make dark pixels transparent.
-                  colorFilter: const ColorFilter.matrix(<double>[
-                    1, 0, 0, 0, 0,
-                    0, 1, 0, 0, 0,
-                    0, 0, 1, 0, 0,
-                    0.333, 0.333, 0.333, 0, 0,
-                  ]),
-                  child: Image.asset(
-                    'assets/branding/orbit_two_logo.jpg',
-                    width: 220,
-                    height: 147,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
-                      Icons.favorite_rounded,
-                      size: 72,
-                      color: pinkColor,
-                    ),
-                  ),
-                ),
+                child: const OrbitLogoAnimation(width: 220, height: 147),
               ),
               SizedBox(height: 18),
               const AnimatedOrbitTitle(
