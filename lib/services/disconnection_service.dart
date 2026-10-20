@@ -51,33 +51,6 @@ class DisconnectionService {
     );
   }
 
-  static Future<void> requestReconnection(
-    String spaceId,
-  ) async {
-    await _saveApproval(
-      spaceId: spaceId,
-      approvalField: 'reconnectionApprovals',
-      requestedAtField: 'reconnectionRequestedAt',
-      requiredStatus: 'disconnected',
-      completedStatus: 'connected',
-      completedAtField: 'reconnectedAt',
-    );
-  }
-
-  static Future<void> approveReconnection(
-    String spaceId,
-  ) async {
-    await _saveApproval(
-      spaceId: spaceId,
-      approvalField: 'reconnectionApprovals',
-      requestedAtField: 'reconnectionRequestedAt',
-      requiredStatus: 'disconnected',
-      completedStatus: 'connected',
-      completedAtField: 'reconnectedAt',
-      requireOtherApproval: true,
-    );
-  }
-
   static Future<void> _saveApproval({
     required String spaceId,
     required String approvalField,
