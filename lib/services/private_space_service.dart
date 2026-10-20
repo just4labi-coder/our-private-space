@@ -53,6 +53,31 @@ class PrivateSpaceService {
         final savedSpace = await _spaces.doc(savedId).get();
         final data = savedSpace.data();
 
+        // A temporary Space can redirect to the original Space only after
+        // the same two Firebase accounts explicitly rejoin with a fresh invite.
+        // This preserves their old cloud history without auto-reconnecting on app launch.
+        final redirectId = data?['redirectSpaceId'];
+        if (savedSpace.exists &&
+            redirectId is String &&
+            redirectId.isNotEmpty) {
+          final original = await _spaces.doc(redirectId).get();
+          final originalData = original.data();
+          final originalMembers = List<String>.from(
+            originalData?['memberUids'] ?? const [],
+          );
+          if (original.exists &&
+              originalMembers.length == 2 &&
+              originalMembers.contains(user.uid) &&
+              (originalData?['connectionStatus'] ?? 'connected') ==
+                  'connected') {
+            await _saveConnection(
+              redirectId,
+              '${originalData?['inviteCode'] ?? ''}',
+            );
+            return redirectId;
+          }
+        }
+
         final members = List<String>.from(data?['memberUids'] ?? const []);
         final status = data?['connectionStatus'] ?? 'connected';
 
@@ -313,8 +338,59 @@ class PrivateSpaceService {
       },
     );
 
-    // A new invite always means a new Space, even when the same two
-    // accounts used to be partners. Never redirect to old Space history.
+    // A fresh invite is the explicit reconnection action. If these exact
+    // two Firebase UIDs previously shared a disconnected Space, reactivate
+    // that original Space so its chat/gallery cloud history is restored.
+    // Other partners have a different UID pair and remain fully isolated.
+    final joinedSnapshot = await _spaces.doc(spaceId).get();
+    final joinedData = joinedSnapshot.data();
+    final joinedMembers = List<String>.from(
+      joinedData?['memberUids'] ?? const [],
+    );
+
+    if (joinedSnapshot.exists &&
+        joinedMembers.length == 2 &&
+        joinedMembers.contains(user.uid)) {
+      final candidates = await _spaces
+          .where('memberUids', arrayContains: user.uid)
+          .get();
+
+      for (final candidate in candidates.docs) {
+        if (candidate.id == spaceId) continue;
+        final oldData = candidate.data();
+        final oldMembers = List<String>.from(oldData['memberUids'] ?? []);
+        final oldStatus = oldData['connectionStatus'] ?? 'connected';
+        final samePair = oldMembers.length == 2 &&
+            oldMembers.toSet().containsAll(joinedMembers) &&
+            joinedMembers.toSet().containsAll(oldMembers);
+        final wasReconnectedByFreshInvite =
+            oldData['reconnectedByFreshInvite'] == true;
+
+        if (samePair &&
+            (oldStatus == 'disconnected' || wasReconnectedByFreshInvite)) {
+          final originalInviteCode = '${oldData['inviteCode'] ?? ''}';
+
+          await candidate.reference.update({
+            'connectionStatus': 'connected',
+            'disconnectionApprovals': <String, bool>{},
+            'reconnectionApprovals': <String, bool>{},
+            'reconnectedAt': FieldValue.serverTimestamp(),
+            'reconnectedByFreshInvite': true,
+          });
+
+          await _spaces.doc(spaceId).update({
+            'connectionStatus': 'disconnected',
+            'redirectSpaceId': candidate.id,
+            'redirectInviteCode': originalInviteCode,
+            'redirectedAt': FieldValue.serverTimestamp(),
+          });
+
+          await _saveConnection(candidate.id, originalInviteCode);
+          return;
+        }
+      }
+    }
+
     await _saveConnection(spaceId, code);
   }
 
