@@ -21,7 +21,7 @@ class GoogleDriveGalleryService {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      throw Exception('Google Drive ব্যবহারের জন্য লগইন করতে হবে।');
+      throw Exception('গ্যালারি ব্যবহার করতে আগে অ্যাকাউন্টে প্রবেশ করুন।');
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -34,7 +34,7 @@ class GoogleDriveGalleryService {
     final token = await user.getIdToken();
 
     if (token == null || token.isEmpty) {
-      throw Exception('Firebase login token পাওয়া যায়নি।');
+      throw Exception('অ্যাকাউন্ট যাচাই করা যায়নি। আবার প্রবেশ করে চেষ্টা করুন।');
     }
 
     final payload = <String, dynamic>{
