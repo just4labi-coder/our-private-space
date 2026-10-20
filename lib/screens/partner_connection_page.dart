@@ -59,13 +59,28 @@ class _PartnerConnectionPageState
           _cacheClearedForDisconnectedSpace = null;
           return;
         }
+        // The old invite Space may now point to the original Space after
+        // both accounts use a fresh invite. Resolve the active ID first so
+        // this stale listener cannot erase restored data.
+        final activeSpaceId = await PrivateSpaceService.getSavedSpaceId();
+        if (activeSpaceId != spaceId) {
+          if (mounted) {
+            final activeCode = await PrivateSpaceService.getSavedInviteCode();
+            setState(() {
+              _spaceId = activeSpaceId;
+              _savedCode = activeCode;
+            });
+            _watchSpaceStatus(activeSpaceId);
+          }
+          return;
+        }
         if (mounted && _spaceId == spaceId && _savedCode != null) {
           setState(() => _savedCode = null);
         }
         if (_cacheClearedForDisconnectedSpace == spaceId) return;
         _cacheClearedForDisconnectedSpace = spaceId;
-        // Both phones clear their local copy when Firestore confirms the
-        // shared disconnection, even if this phone did not press the button.
+        // Both phones clear their local copy when the active Space is truly
+        // disconnected, even if this phone did not press the button.
         await PrivateSpaceService.clearCachedSpaceData();
       },
       onError: (Object error) {
