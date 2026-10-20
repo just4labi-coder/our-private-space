@@ -2073,7 +2073,7 @@ class AppInformationPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: const [
-            Image.asset('assets/branding/orbit_two_logo.jpg', width: 104, height: 82, fit: BoxFit.contain),
+            Image(image: AssetImage('assets/branding/orbit_two_logo.jpg'), width: 104, height: 82, fit: BoxFit.contain),
             SizedBox(height: 10),
             Center(child: Text('Orbit Two', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
             SizedBox(height: 8),
