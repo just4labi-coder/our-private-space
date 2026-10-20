@@ -1594,7 +1594,6 @@ class _MainScreenState extends State<MainScreen>
   String? _watchedSpaceId;
   bool _connectionSyncBusy = false;
   bool _connectionSyncReady = false;
-  bool _connectionSyncQueued = false;
 
   @override
   void initState() {
