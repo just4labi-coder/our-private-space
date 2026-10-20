@@ -165,6 +165,64 @@ class _PartnerConnectionPageState
     }
   }
 
+  Future<void> _createFreshSpace() async {
+    if (_working) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surface,
+        title: const Text(
+          'নতুন Partner Space তৈরি করবে?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'এই ফোনের পুরোনো সংযোগ সরিয়ে নতুন Invite Code তৈরি হবে। পুরোনো Space-এর ক্লাউড ডেটা মুছে যাবে না। একই সঙ্গী পরে নতুন কোড দিয়ে যুক্ত হলে পুরোনো Space ফিরিয়ে আনার চেষ্টা হবে।',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('এখন নয়'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('নতুন Space তৈরি'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _working = true;
+      _message = null;
+    });
+
+    try {
+      await PrivateSpaceService.clearSavedConnection();
+      await PrivateSpaceService.clearCachedSpaceData();
+      await _spaceStatusSubscription?.cancel();
+
+      if (!mounted) return;
+      setState(() {
+        _spaceId = null;
+        _savedCode = null;
+        _working = false;
+      });
+
+      await _createSpace();
+    } catch (e) {
+      _showMessage(
+        'নতুন Space তৈরি করা যায়নি। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করো।',
+        isError: true,
+      );
+    } finally {
+      if (mounted && _working) setState(() => _working = false);
+    }
+  }
+
   Future<void> _joinSpace() async {
     if (_working) return;
 
@@ -833,6 +891,22 @@ class _PartnerConnectionPageState
                   members is List &&
                   !snapshot.hasError)
                 _disconnectionPanel(id, data, memberList),
+              if (data?['connectionStatus'] == 'disconnected') ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _working ? null : _createFreshSpace,
+                    icon: const Icon(Icons.add_link_rounded),
+                    label: const Text('পুরোনো সংযোগ আটকে আছে? নতুন কোড তৈরি করো'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _pink,
+                      side: const BorderSide(color: _pink),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
