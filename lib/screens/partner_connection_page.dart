@@ -334,7 +334,7 @@ class _PartnerConnectionPageState
 
     if (raw.contains('permission-denied') ||
         raw.contains('permission denied')) {
-      return 'Firebase permission-denied: Firestore Rules-এর অনুমতি নেই। Firebase Console-এ সর্বশেষ firestore.rules প্রকাশ করতে হবে।';
+      return 'এই মুহূর্তে সংযোগ সম্পন্ন করা যাচ্ছে না। অনুগ্রহ করে ইন্টারনেট সংযোগ যাচাই করে আবার চেষ্টা করুন। সমস্যা চলতে থাকলে কিছুক্ষণ পর পুনরায় চেষ্টা করুন।';
     }
 
     if (raw.contains('failed-precondition')) {
