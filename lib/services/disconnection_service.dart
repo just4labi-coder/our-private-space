@@ -118,7 +118,7 @@ class DisconnectionService {
         updates[completedAtField] = FieldValue.serverTimestamp();
 
         if (completedStatus == 'disconnected') {
-          updates['relationshipStartAt'] = FieldValue.delete();
+          // Keep historical relationship data for same-account reconnection.
           updates['reconnectionApprovals'] = <String, bool>{};
         } else {
           updates['disconnectionApprovals'] = <String, bool>{};
