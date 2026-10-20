@@ -419,9 +419,8 @@ class _PartnerConnectionPageState
         );
       }
 
-      // Keep this Space ID and its original code so the same two accounts
-      // can reconnect later. The status listener clears local shared data on
-      // both phones as soon as Firestore confirms the disconnection.
+      // Once both members approve, the status listener detaches this device
+      // and clears Space-scoped local cache. A new Space must be created/joined.
       final latestSpace = await PrivateSpaceService.watchSpace(spaceId).first;
       if (latestSpace?['connectionStatus'] == 'disconnected') {
         await PrivateSpaceService.clearCachedSpaceData();
@@ -429,69 +428,6 @@ class _PartnerConnectionPageState
     } catch (e) {
       _showMessage(
         'অনুরোধটি সম্পন্ন করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।',
-        isError: true,
-      );
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
-  Future<void> _runReconnectionAction({
-    required String spaceId,
-    required bool approve,
-  }) async {
-    if (_working) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: _surface,
-        title: Text(
-          approve ? 'পুনঃসংযোগে সম্মতি দেবে?' : 'পুনঃসংযোগের অনুরোধ পাঠাবে?',
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: const Text(
-          'দুজন সম্মতি দিলে Private Space আবার যুক্ত হবে।',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('এখন নয়'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('আমি নিশ্চিত'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    setState(() {
-      _working = true;
-      _message = null;
-    });
-
-    try {
-      if (approve) {
-        await DisconnectionService.approveReconnection(spaceId);
-        _showMessage(
-          'পুনঃসংযোগের সম্মতি পাঠানো হয়েছে।',
-          isError: false,
-        );
-      } else {
-        await DisconnectionService.requestReconnection(spaceId);
-        _showMessage(
-          'পুনঃসংযোগের সম্মতি সংরক্ষিত হয়েছে। '
-          'এখন অন্য সদস্যের সম্মতির অপেক্ষা করো।',
-          isError: false,
-        );
-      }
-    } catch (e) {
-      _showMessage(
-        'পুনঃসংযোগ সম্পন্ন করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।',
         isError: true,
       );
     } finally {
