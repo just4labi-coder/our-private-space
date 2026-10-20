@@ -8767,6 +8767,12 @@ class _GalleryFullscreenVideoPageState extends State<_GalleryFullscreenVideoPage
   }
   @override
   void dispose() {
+    unawaited(SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]));
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     super.dispose();
   }
