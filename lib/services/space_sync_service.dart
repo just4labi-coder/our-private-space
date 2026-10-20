@@ -711,7 +711,7 @@ class SpaceSyncService {
               confirmed = int.parse(match.group(1)!) + 1;
 
               if (confirmed < 0 || confirmed > length) {
-                throw Exception('Google Drive-এর আপলোড অবস্থান সঠিক নয়।');
+                throw Exception('আপলোডের সংযোগ যাচাই করা যায়নি। আবার চেষ্টা করুন।');
               }
             }
 
@@ -749,7 +749,7 @@ class SpaceSyncService {
             final decoded = jsonDecode(response.body);
 
             if (decoded is! Map) {
-              throw Exception('Google Drive-এর চূড়ান্ত উত্তর সঠিক নয়।');
+              throw Exception('আপলোড সম্পন্ন হয়েছে কি না যাচাই করা যায়নি। আবার চেষ্টা করুন।');
             }
 
             uploaded = Map<String, dynamic>.from(decoded);
