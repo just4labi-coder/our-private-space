@@ -59,6 +59,9 @@ class _PartnerConnectionPageState
           _cacheClearedForDisconnectedSpace = null;
           return;
         }
+        if (mounted && _spaceId == spaceId && _savedCode != null) {
+          setState(() => _savedCode = null);
+        }
         if (_cacheClearedForDisconnectedSpace == spaceId) return;
         _cacheClearedForDisconnectedSpace = spaceId;
         // Both phones clear their local copy when Firestore confirms the
@@ -74,13 +77,19 @@ class _PartnerConnectionPageState
   Future<void> _loadConnection() async {
     try {
       final id = await PrivateSpaceService.getSavedSpaceId();
-      final code = await PrivateSpaceService.getSavedInviteCode();
+      final savedCode = await PrivateSpaceService.getSavedInviteCode();
+      final initialSpace = id == null
+          ? null
+          : await PrivateSpaceService.watchSpace(id).first;
+      final isDisconnected =
+          initialSpace?['connectionStatus'] == 'disconnected';
 
       if (!mounted) return;
 
       setState(() {
         _spaceId = id;
-        _savedCode = code;
+        // Never show the previous partner's invite code after disconnecting.
+        _savedCode = isDisconnected ? null : savedCode;
         _loading = false;
       });
       _watchSpaceStatus(id);
@@ -728,7 +737,8 @@ class _PartnerConnectionPageState
                   height: 1.5,
                 ),
               ),
-              if (_savedCode != null) ...[
+              if (_savedCode != null &&
+                  data?['connectionStatus'] != 'disconnected') ...[
                 const SizedBox(height: 14),
                 const Text(
                   'তোমার Invite Code',
