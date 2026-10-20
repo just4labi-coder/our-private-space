@@ -408,7 +408,14 @@ class PrivateSpaceService {
             oldMembers.toSet().containsAll(joinedMembers) &&
             joinedMembers.toSet().containsAll(oldMembers);
 
-        if (samePair && oldStatus == 'disconnected') {
+        // Retry safely if the original Space was already reconnected by a
+        // previous attempt but writing the temporary invite redirect failed.
+        // The marker is only set by this recovery path, so ordinary connected
+        // Spaces are never silently replaced.
+        final wasReconnectedByFreshInvite =
+            oldData['reconnectedByFreshInvite'] == true;
+        if (samePair &&
+            (oldStatus == 'disconnected' || wasReconnectedByFreshInvite)) {
           originalSpaceId = candidate.id;
           originalInviteCode = '${oldData['inviteCode'] ?? ''}';
           await candidate.reference.update({
