@@ -290,7 +290,7 @@ class _PartnerConnectionPageState
     }
 
     if (raw.contains('failed-precondition')) {
-      return 'Firebase failed-precondition: সংযোগের জন্য প্রয়োজনীয় Firebase শর্ত পূরণ হয়নি।';
+      return 'সংযোগ সম্পন্ন করা যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।';
     }
 
     if (raw.contains('unauthenticated')) {
