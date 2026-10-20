@@ -201,6 +201,78 @@ service cloud.firestore {
         );
     }
 
+    function validFreshInviteRestore(spaceId) {
+      let members = resource.data.memberUids;
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let code = request.resource.data.inviteCode;
+      let invitePath = /databases/$(database)/documents/spaceInvites/$(code);
+      let temporaryPath = /databases/$(database)/documents/privateSpaces/$(get(invitePath).data.spaceId);
+      let temporary = get(temporaryPath).data;
+      let temporaryMembers = temporary.memberUids;
+
+      return signedIn()
+        && members is list
+        && members.size() == 2
+        && request.auth.uid in members
+        && resource.data.get('connectionStatus', 'connected') == 'disconnected'
+        && request.resource.data.memberUids == members
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.connectionStatus == 'connected'
+        && code is string
+        && exists(invitePath)
+        && temporaryPath != /databases/$(database)/documents/privateSpaces/$(spaceId)
+        && temporaryMembers is list
+        && temporaryMembers.size() == 2
+        && temporaryMembers.hasAll(members)
+        && members.hasAll(temporaryMembers)
+        && temporary.inviteCode == code
+        && changed.hasOnly([
+          'connectionStatus',
+          'inviteCode',
+          'disconnectionApprovals',
+          'reconnectionApprovals',
+          'reconnectedAt',
+          'reconnectedByFreshInvite'
+        ])
+        && request.resource.data.get('reconnectedByFreshInvite', false) == true;
+    }
+
+    function validFreshInviteRedirect(spaceId) {
+      let members = resource.data.memberUids;
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let targetId = request.resource.data.redirectSpaceId;
+      let targetPath = /databases/$(database)/documents/privateSpaces/$(targetId);
+      let target = get(targetPath).data;
+      let code = request.resource.data.redirectInviteCode;
+
+      return signedIn()
+        && members is list
+        && members.size() == 2
+        && request.auth.uid in members
+        && resource.data.get('connectionStatus', 'connected') == 'connected'
+        && request.resource.data.connectionStatus == 'disconnected'
+        && request.resource.data.memberUids == members
+        && targetId is string
+        && targetId != spaceId
+        && exists(targetPath)
+        && target.memberUids is list
+        && target.memberUids.size() == 2
+        && target.memberUids.hasAll(members)
+        && members.hasAll(target.memberUids)
+        && target.connectionStatus == 'connected'
+        && target.inviteCode == code
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && changed.hasOnly([
+          'connectionStatus',
+          'redirectSpaceId',
+          'redirectInviteCode',
+          'redirectedAt'
+        ]);
+    }
+
     match /privateSpaces/{spaceId} {
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid
@@ -219,7 +291,9 @@ service cloud.firestore {
 
       allow update: if validJoin(spaceId)
         || validDisconnectionUpdate()
-        || validProfileAndRelationshipUpdate();
+        || validProfileAndRelationshipUpdate()
+        || validFreshInviteRestore(spaceId)
+        || validFreshInviteRedirect(spaceId);
 
       allow delete: if false;
 
