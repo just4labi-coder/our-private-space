@@ -53,30 +53,6 @@ class PrivateSpaceService {
         final savedSpace = await _spaces.doc(savedId).get();
         final data = savedSpace.data();
 
-        // A fresh invite used by the same two accounts can redirect to their
-        // original Space, preserving the original cloud history.
-        final redirectId = data?['redirectSpaceId'];
-        if (savedSpace.exists &&
-            redirectId is String &&
-            redirectId.isNotEmpty) {
-          final original = await _spaces.doc(redirectId).get();
-          final originalData = original.data();
-          final originalMembers = List<String>.from(
-            originalData?['memberUids'] ?? const [],
-          );
-          if (original.exists &&
-              originalMembers.length == 2 &&
-              originalMembers.contains(user.uid) &&
-              (originalData?['connectionStatus'] ?? 'connected') ==
-                  'connected') {
-            await _saveConnection(
-              redirectId,
-              '${originalData?['inviteCode'] ?? ''}',
-            );
-            return redirectId;
-          }
-        }
-
         final members = List<String>.from(data?['memberUids'] ?? const []);
         final status = data?['connectionStatus'] ?? 'connected';
 
