@@ -78,10 +78,22 @@ class PrivateSpaceService {
         }
 
         final members = List<String>.from(data?['memberUids'] ?? const []);
+        final status = data?['connectionStatus'] ?? 'connected';
 
-        if (savedSpace.exists && members.contains(user.uid)) {
-          // Keep disconnected Spaces for the same members so their original
-          // cloud data can be restored if those same accounts reconnect.
+        if (savedSpace.exists &&
+            members.contains(user.uid) &&
+            status == 'disconnected') {
+          // Disconnection is final: detach this device from the old Space.
+          // Keep its cloud history intact, but never auto-restore it.
+          await _clearSpaceScopedLocalData(prefs);
+          await prefs.remove(_spaceIdKey);
+          await prefs.remove(_inviteCodeKey);
+          return null;
+        }
+
+        if (savedSpace.exists &&
+            members.contains(user.uid) &&
+            status == 'connected') {
           return savedId;
         }
 
@@ -97,48 +109,10 @@ class PrivateSpaceService {
       }
     }
 
-    // If the local ID is missing, recover only a Space that explicitly lists
-    // the currently signed-in UID as a member.
-    try {
-      final result = await _spaces
-          .where('memberUids', arrayContains: user.uid)
-          .get();
+    // Do not auto-attach to any previous Space when the local connection
+    // is missing. After both users approve disconnection, they must create
+    // or join a new Space explicitly. Historical cloud data remains untouched.
 
-      QueryDocumentSnapshot<Map<String, dynamic>>? disconnectedSpace;
-
-      for (final document in result.docs) {
-        final data = document.data();
-        final members = List<String>.from(data['memberUids'] ?? []);
-
-        if (!members.contains(user.uid) || members.length != 2) {
-          continue;
-        }
-
-        final status = data['connectionStatus'] ?? 'connected';
-        if (status == 'connected') {
-          final inviteCode = '${data['inviteCode'] ?? ''}';
-          await _saveConnection(document.id, inviteCode);
-          return document.id;
-        }
-
-        if (status == 'disconnected' && disconnectedSpace == null) {
-          disconnectedSpace = document;
-        }
-      }
-
-      // Same two accounts can reconnect to their old Space and recover its
-      // cloud data. A different account cannot pass the membership check above.
-      if (disconnectedSpace != null) {
-        final data = disconnectedSpace.data();
-        await _saveConnection(
-          disconnectedSpace.id,
-          '${data['inviteCode'] ?? ''}',
-        );
-        return disconnectedSpace.id;
-      }
-    } catch (error) {
-      debugPrint('Saved Space recovery error: $error');
-    }
 
     return null;
   }
@@ -363,84 +337,9 @@ class PrivateSpaceService {
       },
     );
 
-    // Reusing a temporary invite that already redirects to an original
-    // Space must keep using the original Space and its original invite code.
-    final joinedSnapshot = await _spaces.doc(spaceId).get();
-    final joinedData = joinedSnapshot.data();
-    final redirectId = joinedData?['redirectSpaceId'];
-    if (redirectId is String && redirectId.isNotEmpty) {
-      final original = await _spaces.doc(redirectId).get();
-      final originalData = original.data();
-      final originalMembers = List<String>.from(
-        originalData?['memberUids'] ?? const [],
-      );
-      if (original.exists &&
-          originalMembers.length == 2 &&
-          originalMembers.contains(user.uid) &&
-          (originalData?['connectionStatus'] ?? 'connected') == 'connected') {
-        await _saveConnection(
-          redirectId,
-          '${originalData?['inviteCode'] ?? ''}',
-        );
-        return;
-      }
-    }
-
-    // If a fresh invite connects the same two Firebase accounts that
-    // previously shared a disconnected Space, restore that original Space.
-    final joinedMembers = List<String>.from(
-      joinedData?['memberUids'] ?? const [],
-    );
-    String? originalSpaceId;
-    String? originalInviteCode;
-
-    if (joinedMembers.length == 2 && joinedMembers.contains(user.uid)) {
-      final candidates = await _spaces
-          .where('memberUids', arrayContains: user.uid)
-          .get();
-
-      for (final candidate in candidates.docs) {
-        if (candidate.id == spaceId) continue;
-        final oldData = candidate.data();
-        final oldMembers = List<String>.from(oldData['memberUids'] ?? []);
-        final oldStatus = oldData['connectionStatus'] ?? 'connected';
-        final samePair = oldMembers.length == 2 &&
-            oldMembers.toSet().containsAll(joinedMembers) &&
-            joinedMembers.toSet().containsAll(oldMembers);
-
-        // Retry safely if the original Space was already reconnected by a
-        // previous attempt but writing the temporary invite redirect failed.
-        // The marker is only set by this recovery path, so ordinary connected
-        // Spaces are never silently replaced.
-        final wasReconnectedByFreshInvite =
-            oldData['reconnectedByFreshInvite'] == true;
-        if (samePair &&
-            (oldStatus == 'disconnected' || wasReconnectedByFreshInvite)) {
-          originalSpaceId = candidate.id;
-          originalInviteCode = '${oldData['inviteCode'] ?? ''}';
-          await candidate.reference.update({
-            'connectionStatus': 'connected',
-            'disconnectionApprovals': <String, bool>{},
-            'reconnectionApprovals': <String, bool>{},
-            'reconnectedAt': FieldValue.serverTimestamp(),
-            'reconnectedByFreshInvite': true,
-          });
-          await _spaces.doc(spaceId).update({
-            'connectionStatus': 'disconnected',
-            'redirectSpaceId': candidate.id,
-            'redirectInviteCode': originalInviteCode,
-            'redirectedAt': FieldValue.serverTimestamp(),
-          });
-          break;
-        }
-      }
-    }
-
-    if (originalSpaceId != null) {
-      await _saveConnection(originalSpaceId, originalInviteCode ?? '');
-    } else {
-      await _saveConnection(spaceId, code);
-    }
+    // A new invite always means a new Space, even when the same two
+    // accounts used to be partners. Never redirect to old Space history.
+    await _saveConnection(spaceId, code);
   }
 
   /// Space-এর তথ্যের পরিবর্তন শোনে
