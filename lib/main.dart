@@ -36,6 +36,7 @@ import 'services/push_notification_service.dart';
 final ValueNotifier<String?> orbitSharedText = ValueNotifier<String?>(null);
 final ValueNotifier<Map<String, dynamic>?> orbitPendingComplaintReply = ValueNotifier<Map<String, dynamic>?>(null);
 VoidCallback? orbitNavigateToChat;
+void Function(String complaintId)? orbitOpenComplaint;
 const MethodChannel orbitShareChannel = MethodChannel('com.privatespace.ourspace/share_intent');
 
 const Color backgroundColor = Color(0xFF070513);
@@ -4549,7 +4550,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final senderName = '${message['replyToSenderName'] ?? 'সঙ্গী'}';
     final preview = '${message['replyToText'] ?? ''}';
     return InkWell(
-      onTap: () => _jumpToMessage(replyId),
+      onTap: () {
+        if (replyId.startsWith('complaint_')) {
+          orbitOpenComplaint?.call(replyId.substring('complaint_'.length));
+        } else {
+          _jumpToMessage(replyId);
+        }
+      },
       borderRadius: BorderRadius.circular(7),
       child: Container(
         // Let the reply preview size to its content instead of forcing the
