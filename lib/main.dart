@@ -5682,10 +5682,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _isEmojiOnlyText(messageText) &&
         _emojiDisplayCount(messageText) <= 3;
 
-    final row = Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Row(
-      mainAxisSize: MainAxisSize.min,
+    final row = Row(
+      mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         if (!mine) ...[
@@ -5697,12 +5695,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
           const SizedBox(width: 7),
         ],
-        ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.72 +
-                (mine ? 0 : 39),
-          ),
+        Flexible(
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
               Stack(
@@ -5719,7 +5714,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     )
                   else
                     Container(
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+                      ),
                       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
                       decoration: BoxDecoration(
                         color: mine ? const Color(0xFF453078) : const Color(0xFF19182B),
@@ -5846,7 +5843,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         ],
       ],
-      ),
     );
 
     return RepaintBoundary(
