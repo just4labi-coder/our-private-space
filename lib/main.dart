@@ -1103,27 +1103,52 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
   Widget build(BuildContext context) => SizedBox(
         width: widget.width,
         height: widget.height,
-        child: AnimatedBuilder(
-          animation: _rotation,
-          builder: (context, _) => Stack(
-            alignment: Alignment.center,
-            children: [
-              Transform.rotate(
-                angle: _rotation.value * 2 * pi,
-                child: _logoImage(),
-              ),
-              ClipRect(
-                child: Align(
-                  alignment: Alignment.center,
-                  widthFactor: 0.42,
-                  heightFactor: 0.64,
-                  child: _logoImage(),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final center = Rect.fromCenter(
+              center: Offset(constraints.maxWidth / 2, constraints.maxHeight / 2),
+              width: constraints.maxWidth * 0.42,
+              height: constraints.maxHeight * 0.64,
+            );
+            return Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.hardEdge,
+              children: [
+                AnimatedBuilder(
+                  animation: _rotation,
+                  builder: (context, _) => ClipPath(
+                    clipper: _OrbitLogoCenterHoleClipper(center),
+                    child: Transform.rotate(
+                      angle: _rotation.value * 2 * pi,
+                      child: _logoImage(),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
+                ClipRect(
+                  child: Align(
+                    alignment: Alignment.center,
+                    widthFactor: 0.42,
+                    heightFactor: 0.64,
+                    child: _logoImage(),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       );
+}
+
+class _OrbitLogoCenterHoleClipper extends CustomClipper<Path> {
+  const _OrbitLogoCenterHoleClipper(this.center);
+  final Rect center;
+  @override
+  Path getClip(Size size) => Path()
+    ..fillType = PathFillType.evenOdd
+    ..addRect(Offset.zero & size)
+    ..addRect(center);
+  @override
+  bool shouldReclip(covariant _OrbitLogoCenterHoleClipper oldClipper) => center != oldClipper.center;
 }
 
 class AnimatedOrbitTitle extends StatefulWidget {
@@ -2111,6 +2136,7 @@ class _MainScreenState extends State<MainScreen>
         });
       },
       child: Scaffold(
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
           Positioned.fill(
@@ -3107,6 +3133,7 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final TextEditingController controller = TextEditingController();
+  final FocusNode _composerFocusNode = FocusNode();
   final ScrollController scrollController = ScrollController();
 
   List<Map<String, dynamic>> messages = [];
@@ -3164,6 +3191,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _memberProfiles = [];
   StreamSubscription<List<Map<String, dynamic>>>? _profilesSubscription;
 
+  void _handleComposerFocusChanged() {
+    if (!_composerFocusNode.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !scrollController.hasClients) return;
+      scrollController.jumpTo(scrollController.position.maxScrollExtent);
+    });
+  }
+
   void _handlePendingComplaintReply() {
     final pending = orbitPendingComplaintReply.value;
     if (pending == null || !mounted) return;
@@ -3203,6 +3238,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // MainScreen owns visibility; IndexedStack creates ChatPage even when hidden.
     unawaited(NotificationPrivacySettings.clearMessageNotifications());
     WidgetsBinding.instance.addObserver(this);
+    _composerFocusNode.addListener(_handleComposerFocusChanged);
     scrollController.addListener(_updateChatScrollPosition);
     _appIsResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     orbitPendingComplaintReply.addListener(_handlePendingComplaintReply);
@@ -3530,6 +3566,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void dispose() {
     orbitChatVisible = false;
     orbitPendingComplaintReply.removeListener(_handlePendingComplaintReply);
+    _composerFocusNode.removeListener(_handleComposerFocusChanged);
+    _composerFocusNode.dispose();
     orbitSharedText.removeListener(_handleSharedTextDraft);
     WidgetsBinding.instance.removeObserver(this);
     scrollController.removeListener(_updateChatScrollPosition);
@@ -6373,17 +6411,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               children: [
                 if (_replyToMessage != null)
                   Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+                    padding: const EdgeInsets.only(left: 8, right: 8, bottom: 6),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Icon(Icons.reply_rounded, color: pinkColor, size: 18),
                         const SizedBox(width: 6),
                         Expanded(
-                          child: Text(
-                            'Reply: ${_replyToMessage!['type'] == 'text' ? (_replyToMessage!['text'] ?? '') : (_replyToMessage!['type'] == 'video' ? 'ভিডিও' : 'ছবি')}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          child: Container(
+                            constraints: const BoxConstraints(maxHeight: 76),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: surfaceColor,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border(left: BorderSide(color: pinkColor, width: 3)),
+                            ),
+                            child: SingleChildScrollView(
+                              child: Text(
+                                '${_replyToMessage!['senderName'] ?? 'Reply'}: ${_replyToMessage!['text'] ?? (_replyToMessage!['type'] == 'video' ? 'ভিডিও' : 'ছবি')}',
+                                softWrap: true,
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            ),
                           ),
                         ),
                         IconButton(
@@ -6468,6 +6517,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 Expanded(
                   child: TextField(
                     controller: controller,
+                    focusNode: _composerFocusNode,
                     minLines: 1,
                     maxLines: 4,
                     textCapitalization: TextCapitalization.sentences,
