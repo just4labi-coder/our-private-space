@@ -1077,9 +1077,7 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
   }
 
   @override
-  Widget build(BuildContext context) => RotationTransition(
-    turns: _rotation,
-    child: ColorFiltered(
+  Widget build(BuildContext context) => ColorFiltered(
       // JPG has a black matte; make dark pixels transparent.
       colorFilter: const ColorFilter.matrix(<double>[
         1, 0, 0, 0, 0,
@@ -6186,7 +6184,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     } else if (!orbitChatVisible && _wasChatVisible) {
       _wasChatVisible = false;
     }
-    return Column(
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
       children: [
         _buildChatHeader(),
         const Divider(height: 1, color: Colors.white10),
@@ -6463,6 +6465,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         ),
       ],
+    ),
     );
   }
 }
@@ -10295,6 +10298,8 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   Future<void> _deleteComplaint(SpaceComplaint complaint) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty || uid != complaint.authorUid) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty || uid != complaint.authorUid) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -10320,6 +10325,8 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   }
 
   Future<void> _editComplaint({SpaceComplaint? existing}) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (existing != null && (uid.isEmpty || uid != existing.authorUid)) return;
     final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (existing != null && (currentUid.isEmpty || existing.authorUid != currentUid)) {
       ScaffoldMessenger.of(context).showSnackBar(
