@@ -1102,8 +1102,8 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Rotate only the dedicated outer-icon layer. Screen blending
-            // suppresses its JPEG black background against the app backdrop.
+            // Screen blending removes the black pixels from the rotating
+            // JPEG layer so the app's animated background remains visible.
             AnimatedBuilder(
               animation: _rotation,
               builder: (context, _) => Transform.rotate(
@@ -1112,7 +1112,7 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
                   shaderCallback: (bounds) => const LinearGradient(
                     colors: [Colors.white, Colors.white],
                   ).createShader(bounds),
-                  blendMode: BlendMode.multiply,
+                  blendMode: BlendMode.screen,
                   child: Image.asset(
                     'assets/branding/orbit_two_logo_layer.jpg',
                     width: widget.width,
@@ -3179,18 +3179,27 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _memberProfiles = [];
   StreamSubscription<List<Map<String, dynamic>>>? _profilesSubscription;
 
-  void _handleComposerFocusChanged() {
-    if (!_composerFocusNode.hasFocus) return;
-    // The root screen animates its body above the keyboard. Wait for that
-    // resize to settle, then keep the latest messages visible.
+  void didChangeMetrics() {
+    // Android reports keyboard appearance as a metrics change. Re-scroll
+    // after the Scaffold/ListView has received the new available height.
+    if (_composerFocusNode.hasFocus) _scrollLatestMessageAfterResize();
+  }
+
+  void _scrollLatestMessageAfterResize() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !scrollController.hasClients) return;
+        if (!mounted || !_composerFocusNode.hasFocus ||
+            !scrollController.hasClients) return;
         final position = scrollController.position;
+        if (!position.hasContentDimensions) return;
         scrollController.jumpTo(position.maxScrollExtent);
       });
     });
+  }
+
+  void _handleComposerFocusChanged() {
+    if (_composerFocusNode.hasFocus) _scrollLatestMessageAfterResize();
   }
 
   void _handlePendingComplaintReply() {
