@@ -1110,17 +1110,6 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
         ),
       );
 }
-class _OrbitLogoCenterHoleClipper extends CustomClipper<Path> {
-  const _OrbitLogoCenterHoleClipper(this.center);
-  final Rect center;
-  @override
-  Path getClip(Size size) => Path()
-    ..fillType = PathFillType.evenOdd
-    ..addRect(Offset.zero & size)
-    ..addRect(center);
-  @override
-  bool shouldReclip(covariant _OrbitLogoCenterHoleClipper oldClipper) => center != oldClipper.center;
-}
 
 class AnimatedOrbitTitle extends StatefulWidget {
   final double fontSize;
