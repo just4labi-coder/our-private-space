@@ -4449,7 +4449,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       onTap: () => _jumpToMessage(replyId),
       borderRadius: BorderRadius.circular(7),
       child: Container(
-        width: double.infinity,
+        // Let the reply preview size to its content instead of forcing the
+        // entire message bubble to the maximum width.
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.62,
+        ),
         margin: const EdgeInsets.only(bottom: 5),
         padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
         decoration: BoxDecoration(
@@ -5715,9 +5719,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   else
                     Container(
                       constraints: BoxConstraints(
-                        maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+                        maxWidth: MediaQuery.sizeOf(context).width * 0.70,
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                       decoration: BoxDecoration(
                         color: mine ? const Color(0xFF453078) : const Color(0xFF19182B),
                         border: Border.all(
@@ -8751,13 +8755,15 @@ PlayerState>? _stateSubscription;
       } else {
         // Starting a fresh native source is more reliable than resume() after
         // a stopped/completed source on some Android devices.
+        // Configure playback before starting. Applying the playback rate
+        // after play() can race with very short 2–4 second recordings on
+        // some Android media players and make them stop almost immediately.
         await player.stop();
+        await player.setPlaybackRate(_playbackRate);
         await player.play(
           DeviceFileSource(widget.path),
           mode: PlayerMode.mediaPlayer,
-          position: Duration.zero,
         );
-        await player.setPlaybackRate(_playbackRate);
         if (mounted) setState(() => _position = Duration.zero);
       }
     } catch (error) {
