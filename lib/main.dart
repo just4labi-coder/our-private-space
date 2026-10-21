@@ -6205,32 +6205,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ],
                   ),
                 )
-              : NotificationListener<ScrollMetricsNotification>(
-                  onNotification: (notification) {
-                    // Media thumbnails and voice metadata can change row heights
-                    // after the first layout. Follow the new bottom only when
-                    // the user has not deliberately scrolled into chat history.
-                    if (orbitChatVisible &&
-                        !_userHasScrolledAwayFromBottom &&
-                        !_userIsScrolling &&
-                        scrollController.hasClients) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!mounted ||
-                            !orbitChatVisible ||
-                            _userHasScrolledAwayFromBottom ||
-                            _userIsScrolling ||
-                            !scrollController.hasClients) {
-                          return;
-                        }
-                        final position = scrollController.position;
-                        if (position.hasContentDimensions &&
-                            position.pixels < position.maxScrollExtent) {
-                          scrollController.jumpTo(position.maxScrollExtent);
-                        }
-                      });
-                    }
-                    return false;
-                  },
                   child: NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
                     if (notification is ScrollStartNotification &&
@@ -6333,7 +6307,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           ),
                         ),
                     ],
-                  ),
                   ),
                 ),
         ),
@@ -7971,6 +7944,7 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                                         if (thumbnailPath != null)
                                           Image.file(
                                             File(thumbnailPath),
+                                            cacheWidth: (MediaQuery.sizeOf(context).width / 3 * MediaQuery.devicePixelRatioOf(context)).round(),
                                             fit: BoxFit.cover,
                                             errorBuilder: (_, __, ___) {
                                               return const ColoredBox(
@@ -8018,6 +7992,7 @@ class _GalleryFolderPageState extends State<GalleryFolderPage> {
                             else
                               Image.file(
                                 File(path),
+                                cacheWidth: (MediaQuery.sizeOf(context).width / 3 * MediaQuery.devicePixelRatioOf(context)).round(),
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) {
                                   return const ColoredBox(
@@ -8834,8 +8809,11 @@ PlayerState>? _stateSubscription;
     final total = _duration == null ? '--:--' : _formatDuration(_duration!);
     final elapsed = _formatDuration(_position);
     return Container(
-      width: 270,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      // Fill only the width offered by the message bubble; a fixed 270px
+      // width was forcing voice messages to stretch/overflow on narrow screens.
+      width: double.infinity,
+      constraints: const BoxConstraints(maxWidth: 270),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
