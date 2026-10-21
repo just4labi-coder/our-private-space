@@ -3571,7 +3571,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         'replyToId': '${replyTo['id'] ?? ''}',
         'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
             ? '${replyTo['text'] ?? ''}'
-            : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+            : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : ('${replyTo['type'] ?? ''}' == 'voice' ? 'ভয়েস মেসেজ' : 'ছবি')),
         'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
         'replyToSenderName': _profileNameForUid(
           '${replyTo['senderUid'] ?? ''}',
@@ -3708,7 +3708,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             'replyToId': '${replyTo['id'] ?? ''}',
             'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
                 ? '${replyTo['text'] ?? ''}'
-                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : ('${replyTo['type'] ?? ''}' == 'voice' ? 'ভয়েস মেসেজ' : 'ছবি')),
             'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
             'replyToSenderName': _profileNameForUid(
               '${replyTo['senderUid'] ?? ''}',
@@ -3742,7 +3742,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           'replyToId': '${replyTo['id'] ?? ''}',
           'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
               ? '${replyTo['text'] ?? ''}'
-              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : ('${replyTo['type'] ?? ''}' == 'voice' ? 'ভয়েস মেসেজ' : 'ছবি')),
           'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
           'replyToSenderName': _profileNameForUid(
             '${replyTo['senderUid'] ?? ''}',
@@ -4163,7 +4163,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             'replyToId': '${replyTo['id'] ?? ''}',
             'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
                 ? '${replyTo['text'] ?? ''}'
-                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+                : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : ('${replyTo['type'] ?? ''}' == 'voice' ? 'ভয়েস মেসেজ' : 'ছবি')),
             'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
             'replyToSenderName': _profileNameForUid(
               '${replyTo['senderUid'] ?? ''}',
@@ -4190,7 +4190,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           'replyToId': '${replyTo['id'] ?? ''}',
           'replyToText': '${replyTo['type'] ?? 'text'}' == 'text'
               ? '${replyTo['text'] ?? ''}'
-              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : 'ছবি'),
+              : ('${replyTo['type'] ?? 'media'}' == 'video' ? 'ভিডিও' : ('${replyTo['type'] ?? ''}' == 'voice' ? 'ভয়েস মেসেজ' : 'ছবি')),
           'replyToSenderUid': '${replyTo['senderUid'] ?? ''}',
           'replyToSenderName': _profileNameForUid(
             '${replyTo['senderUid'] ?? ''}',
@@ -5132,7 +5132,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 // Keep the voice bubble close to its final height while downloading,
                 // so resolving a voice file does not move neighbouring chat rows.
                 return SizedBox(
-                  width: 270,
+                  width: 250,
                   height: 52,
                   child: ValueListenableBuilder<List<DownloadProgress>>(
                     valueListenable: SpaceSyncService.downloadProgress,
@@ -5241,10 +5241,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     child: Image.file(
                       File(resolvedPath),
                       width: 230,
-                      height: 230,
                       cacheWidth: (230 * MediaQuery.devicePixelRatioOf(context)).round(),
-                      cacheHeight: (230 * MediaQuery.devicePixelRatioOf(context)).round(),
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const SizedBox(
                         width: 210,
                         height: 100,
@@ -5714,7 +5712,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     )
                   else
                     Container(
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
+                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.68),
                       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
                       decoration: BoxDecoration(
                         color: mine ? const Color(0xFF453078) : surfaceColor,
@@ -8741,7 +8739,7 @@ PlayerState>? _stateSubscription;
           if (mounted) setState(() => _position = Duration.zero);
         }
         await player.setPlaybackRate(_playbackRate);
-        await player.resume();
+        await player.play(DeviceFileSource(widget.path));
       }
     } catch (error) {
       if (mounted) {
@@ -9100,7 +9098,7 @@ class ImageViewerPage extends StatelessWidget {
                 File(path),
                 width: constraints.maxWidth,
                 height: constraints.maxHeight,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 filterQuality: FilterQuality.high,
                 errorBuilder: (_, __, ___) {
                   return const Center(
