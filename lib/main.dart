@@ -1078,16 +1078,20 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
     super.dispose();
   }
 
-  Widget _asset() => Image.asset(
-        'assets/branding/orbit_two_logo.jpg',
-        width: widget.width,
-        height: widget.height,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (context, error, stackTrace) => const Icon(
-          Icons.favorite_rounded,
-          color: pinkColor,
-          size: 38,
+  Widget _staticCenter() => ClipOval(
+        child: ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [Colors.white, Colors.white],
+          ).createShader(bounds),
+          blendMode: BlendMode.screen,
+          child: Image.asset(
+            'assets/branding/orbit_two_logo.jpg',
+            width: widget.width * 0.34,
+            height: widget.height * 0.46,
+            fit: BoxFit.cover,
+            alignment: Alignment(0, 0.02),
+            filterQuality: FilterQuality.high,
+          ),
         ),
       );
 
@@ -1095,18 +1099,39 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
   Widget build(BuildContext context) => SizedBox(
         width: widget.width,
         height: widget.height,
-        child: AnimatedBuilder(
-          animation: _rotation,
-          builder: (context, _) => ClipRect(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // The supplied artwork is one flattened image. Keep the full
-                // image still; do not rotate the whole sheet and duplicate it.
-                _asset(),
-              ],
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Rotate only the dedicated outer-icon layer. Screen blending
+            // suppresses its JPEG black background against the app backdrop.
+            AnimatedBuilder(
+              animation: _rotation,
+              builder: (context, _) => Transform.rotate(
+                angle: _rotation.value * 2 * pi,
+                child: ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [Colors.white, Colors.white],
+                  ).createShader(bounds),
+                  blendMode: BlendMode.screen,
+                  child: Image.asset(
+                    'assets/branding/orbit_two_logo_layer.jpg',
+                    width: widget.width,
+                    height: widget.height,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox.shrink(),
+                  ),
+                ),
+              ),
             ),
-          ),
+            // Keep the central emblem stationary while the outer icons orbit.
+            SizedBox(
+              width: widget.width * 0.30,
+              height: widget.height * 0.40,
+              child: _staticCenter(),
+            ),
+          ],
         ),
       );
 }
