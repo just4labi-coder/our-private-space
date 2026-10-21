@@ -10372,6 +10372,29 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   void _loadComplaints() {
     final data = SpaceStore.readList('spaceComplaints');
     complaints = data.map(SpaceComplaint.fromMap).toList();
+    final targetId = widget.initialComplaintId;
+    if (targetId != null && targetId.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final index = complaints.indexWhere((item) => item.id == targetId);
+        if (index < 0) return;
+        final complaint = complaints[index];
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final own = complaint.authorUid.isNotEmpty
+            ? complaint.authorUid == uid
+            : complaint.author == 'You';
+        showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            backgroundColor: surfaceColor,
+            title: Text(complaint.title),
+            content: SingleChildScrollView(child: Text('By: ${own ? 'You' : 'Partner'}\\n\\n${complaint.details}')),
+            actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+          ),
+        );
+        _markComplaintRead(complaint);
+      });
+    }
   }
 
   void _handleSyncVersionChanged() {
