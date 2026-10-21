@@ -1648,6 +1648,7 @@ class _MainScreenState extends State<MainScreen>
   @override
   void initState() {
     super.initState();
+    orbitOpenComplaint = (id) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ComplaintsPage(initialComplaintId: id)));
     orbitNavigateToChat = () {
       if (!mounted) return;
       setState(() {
