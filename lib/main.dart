@@ -6209,7 +6209,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ],
                   ),
                 )
-                  child: NotificationListener<ScrollNotification>(
+              : NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
                     if (notification is ScrollStartNotification &&
                         notification.dragDetails != null) {
