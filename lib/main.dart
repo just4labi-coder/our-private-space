@@ -1097,8 +1097,7 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
           size: 38,
         ),
       ),
-    ),
-  );
+    );
 }
 
 class AnimatedOrbitTitle extends StatefulWidget {
@@ -10296,8 +10295,6 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   }
 
   Future<void> _deleteComplaint(SpaceComplaint complaint) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty || uid != complaint.authorUid) return;
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty || uid != complaint.authorUid) return;
     final confirm = await showDialog<bool>(
