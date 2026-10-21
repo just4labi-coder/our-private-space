@@ -10352,7 +10352,8 @@ class SpaceComplaint {
 // ============================================================
 
 class ComplaintsPage extends StatefulWidget {
-  const ComplaintsPage({super.key});
+  final String? initialComplaintId;
+  const ComplaintsPage({super.key, this.initialComplaintId});
 
   @override
   State<ComplaintsPage> createState() => _ComplaintsPageState();
