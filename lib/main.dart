@@ -34,6 +34,8 @@ import 'services/private_space_service.dart';
 import 'services/push_notification_service.dart';
 
 final ValueNotifier<String?> orbitSharedText = ValueNotifier<String?>(null);
+final ValueNotifier<Map<String, dynamic>?> orbitPendingComplaintReply = ValueNotifier<Map<String, dynamic>?>(null);
+VoidCallback? orbitNavigateToChat;
 const MethodChannel orbitShareChannel = MethodChannel('com.privatespace.ourspace/share_intent');
 
 const Color backgroundColor = Color(0xFF070513);
@@ -1076,28 +1078,52 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
     super.dispose();
   }
 
+  Widget _logoImage() => ColorFiltered(
+        colorFilter: const ColorFilter.matrix(<double>[
+          1, 0, 0, 0, 0,
+          0, 1, 0, 0, 0,
+          0, 0, 1, 0, 0,
+          0.333, 0.333, 0.333, 0, 0,
+        ]),
+        child: Image.asset(
+          'assets/branding/orbit_two_logo.jpg',
+          width: widget.width,
+          height: widget.height,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          errorBuilder: (context, error, stackTrace) => const Icon(
+            Icons.favorite_rounded,
+            color: pinkColor,
+            size: 38,
+          ),
+        ),
+      );
+
   @override
-  Widget build(BuildContext context) => ColorFiltered(
-      // JPG has a black matte; make dark pixels transparent.
-      colorFilter: const ColorFilter.matrix(<double>[
-        1, 0, 0, 0, 0,
-        0, 1, 0, 0, 0,
-        0, 0, 1, 0, 0,
-        0.333, 0.333, 0.333, 0, 0,
-      ]),
-      child: Image.asset(
-        'assets/branding/orbit_two_logo.jpg',
+  Widget build(BuildContext context) => SizedBox(
         width: widget.width,
         height: widget.height,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (context, error, stackTrace) => const Icon(
-          Icons.favorite_rounded,
-          color: pinkColor,
-          size: 38,
+        child: AnimatedBuilder(
+          animation: _rotation,
+          builder: (context, _) => Stack(
+            alignment: Alignment.center,
+            children: [
+              Transform.rotate(
+                angle: _rotation.value * 2 * pi,
+                child: _logoImage(),
+              ),
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.center,
+                  widthFactor: 0.42,
+                  heightFactor: 0.64,
+                  child: _logoImage(),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
 }
 
 class AnimatedOrbitTitle extends StatefulWidget {
@@ -1602,6 +1628,14 @@ class _MainScreenState extends State<MainScreen>
   @override
   void initState() {
     super.initState();
+    orbitNavigateToChat = () {
+      if (!mounted) return;
+      setState(() {
+        selectedIndex = 1;
+        orbitChatVisible = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+        hasUnreadChat = false;
+      });
+    };
     WidgetsBinding.instance.addObserver(this);
     orbitShareChannel.setMethodCallHandler((call) async {
       if (call.method == 'sharedText') {
@@ -2004,6 +2038,7 @@ class _MainScreenState extends State<MainScreen>
     _unreadSubscription?.cancel();
     _connectionSubscription?.cancel();
     _updatePresence(false);
+    orbitNavigateToChat = null;
     super.dispose();
   }
 
@@ -3129,6 +3164,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _memberProfiles = [];
   StreamSubscription<List<Map<String, dynamic>>>? _profilesSubscription;
 
+  void _handlePendingComplaintReply() {
+    final pending = orbitPendingComplaintReply.value;
+    if (pending == null || !mounted) return;
+    setState(() => _replyToMessage = Map<String, dynamic>.from(pending));
+    orbitPendingComplaintReply.value = null;
+  }
+
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -3163,6 +3205,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     scrollController.addListener(_updateChatScrollPosition);
     _appIsResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    orbitPendingComplaintReply.addListener(_handlePendingComplaintReply);
     unawaited(_restoreDraft());
     SpaceSyncService.uploadProgress.addListener(
       _handleUploadProgressChanged,
@@ -3486,6 +3529,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     orbitChatVisible = false;
+    orbitPendingComplaintReply.removeListener(_handlePendingComplaintReply);
     orbitSharedText.removeListener(_handleSharedTextDraft);
     WidgetsBinding.instance.removeObserver(this);
     scrollController.removeListener(_updateChatScrollPosition);
@@ -6183,11 +6227,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     } else if (!orbitChatVisible && _wasChatVisible) {
       _wasChatVisible = false;
     }
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: Column(
+    return Column(
       children: [
         _buildChatHeader(),
         const Divider(height: 1, color: Colors.white10),
@@ -6464,7 +6504,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         ),
       ],
-    ),
     );
   }
 }
@@ -10542,17 +10581,33 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                     ),
                     trailing: PopupMenuButton<String>(
                       onSelected: (value) {
-                        if (value == 'edit') {
+                        if (value == 'edit' && isOwnComplaint) {
                           _editComplaint(existing: complaint);
-                        } else if (value == 'delete') {
+                        } else if (value == 'delete' && isOwnComplaint) {
                           _deleteComplaint(complaint);
+                        } else if (value == 'reply') {
+                          orbitPendingComplaintReply.value = <String, dynamic>{
+                            'id': 'complaint_${complaint.id}',
+                            'type': 'text',
+                            'text': '${complaint.title}\n${complaint.details}',
+                            'senderUid': complaint.authorUid,
+                            'senderName': displayAuthor,
+                          };
+                          Navigator.of(context).pop();
+                          orbitNavigateToChat?.call();
                         }
                       },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                      itemBuilder: (_) => [
+                        if (isOwnComplaint)
+                          const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        if (isOwnComplaint)
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                          ),
+                        const PopupMenuItem(
+                          value: 'reply',
+                          child: Text('চ্যাটে রিপ্লাই'),
                         ),
                       ],
                     ),
@@ -10574,13 +10629,14 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
                               onPressed: () => Navigator.pop(context),
                               child: const Text('Close'),
                             ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _editComplaint(existing: complaint);
-                              },
-                              child: const Text('Edit'),
-                            ),
+                            if (isOwnComplaint)
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _editComplaint(existing: complaint);
+                                },
+                                child: const Text('Edit'),
+                              ),
                           ],
                         ),
                       );
