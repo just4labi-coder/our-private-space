@@ -10293,6 +10293,8 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   }
 
   Future<void> _deleteComplaint(SpaceComplaint complaint) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty || uid != complaint.authorUid) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
