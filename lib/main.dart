@@ -3088,6 +3088,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String? _highlightedMessageId;
   Timer? _messageHighlightTimer;
   bool _hasLoadedInitialMessages = false;
+  bool _wasChatVisible = false;
   bool _isNearChatBottom = true;
   bool _showJumpToBottom = false;
   bool _userHasScrolledAwayFromBottom = false;
@@ -4449,8 +4450,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       borderRadius: BorderRadius.circular(7),
       child: Container(
         width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
+        margin: const EdgeInsets.only(bottom: 5),
+        padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.18),
           border: const Border(left: BorderSide(color: pinkColor, width: 3)),
@@ -4461,7 +4462,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           children: [
             Text(senderName, style: const TextStyle(color: pinkColor, fontSize: 11, fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
-            Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text(preview.isEmpty ? 'মিডিয়া মেসেজ' : preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.2)),
           ],
         ),
       ),
@@ -5712,12 +5713,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     )
                   else
                     Container(
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.68),
+                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.72),
                       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
                       decoration: BoxDecoration(
-                        color: mine ? const Color(0xFF453078) : surfaceColor,
+                        color: mine ? const Color(0xFF453078) : const Color(0xFF19182B),
                         border: Border.all(
-                          color: mine ? pinkColor.withValues(alpha: 0.25) : Colors.white10,
+                          color: mine ? pinkColor.withValues(alpha: 0.38) : Colors.white24,
                         ),
                         borderRadius: BorderRadius.only(
                           topLeft: Radius.circular(index > 0 &&
@@ -6167,6 +6168,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (orbitChatVisible && !_wasChatVisible) {
+      _wasChatVisible = true;
+      _userHasScrolledAwayFromBottom = false;
+      _userIsScrolling = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !orbitChatVisible || messages.isEmpty) return;
+        _scrollToBottom(animate: false, settle: true);
+      });
+    } else if (!orbitChatVisible && _wasChatVisible) {
+      _wasChatVisible = false;
+    }
     return Column(
       children: [
         _buildChatHeader(),
@@ -8739,7 +8751,7 @@ PlayerState>? _stateSubscription;
           if (mounted) setState(() => _position = Duration.zero);
         }
         await player.setPlaybackRate(_playbackRate);
-        await player.play(DeviceFileSource(widget.path));
+        await player.resume();
       }
     } catch (error) {
       if (mounted) {
