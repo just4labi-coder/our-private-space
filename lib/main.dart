@@ -1108,8 +1108,8 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
   Widget _staticCenter() => ClipOval(
         child: _blackKeyedImage(
           asset: 'assets/branding/orbit_two_logo_milkyway.jpg',
-          width: widget.width * 0.34,
-          height: widget.height * 0.46,
+          width: widget.width * 0.44,
+          height: widget.height * 0.58,
           fit: BoxFit.cover,
         ),
       );
