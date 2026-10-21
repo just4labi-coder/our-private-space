@@ -6205,7 +6205,33 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ],
                   ),
                 )
-              : NotificationListener<ScrollNotification>(
+              : NotificationListener<ScrollMetricsNotification>(
+                  onNotification: (notification) {
+                    // Media thumbnails and voice metadata can change row heights
+                    // after the first layout. Follow the new bottom only when
+                    // the user has not deliberately scrolled into chat history.
+                    if (orbitChatVisible &&
+                        !_userHasScrolledAwayFromBottom &&
+                        !_userIsScrolling &&
+                        scrollController.hasClients) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted ||
+                            !orbitChatVisible ||
+                            _userHasScrolledAwayFromBottom ||
+                            _userIsScrolling ||
+                            !scrollController.hasClients) {
+                          return;
+                        }
+                        final position = scrollController.position;
+                        if (position.hasContentDimensions &&
+                            position.pixels < position.maxScrollExtent) {
+                          scrollController.jumpTo(position.maxScrollExtent);
+                        }
+                      });
+                    }
+                    return false;
+                  },
+                  child: NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
                     if (notification is ScrollStartNotification &&
                         notification.dragDetails != null) {
@@ -6307,6 +6333,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           ),
                         ),
                     ],
+                  ),
                   ),
                 ),
         ),
@@ -8747,14 +8774,16 @@ PlayerState>? _stateSubscription;
       } else if (player.state == PlayerState.paused) {
         await player.resume();
       } else {
-        // Load metadata first so the full duration appears before playback starts.
-        await _loadSource(player);
-        if (player.state == PlayerState.completed) {
-          await player.seek(Duration.zero);
-          if (mounted) setState(() => _position = Duration.zero);
-        }
+        // Starting a fresh native source is more reliable than resume() after
+        // a stopped/completed source on some Android devices.
+        await player.stop();
+        await player.play(
+          DeviceFileSource(widget.path),
+          mode: PlayerMode.mediaPlayer,
+          position: Duration.zero,
+        );
         await player.setPlaybackRate(_playbackRate);
-        await player.resume();
+        if (mounted) setState(() => _position = Duration.zero);
       }
     } catch (error) {
       if (mounted) {
