@@ -43,9 +43,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/branding/orbit_two_logo.jpg
     - assets/branding/orbit_two_logo_layer.jpg
-    - assets/branding/orbit_two_logo_artwork.png
+    - assets/branding/orbit_two_logo_milkyway.jpg
     - assets/sounds/orbit_typing.wav
     - assets/sounds/orbit_seen.wav
     - assets/sounds/orbit_sent.wav
