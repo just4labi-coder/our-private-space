@@ -1083,7 +1083,7 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
           shaderCallback: (bounds) => const LinearGradient(
             colors: [Colors.white, Colors.white],
           ).createShader(bounds),
-          blendMode: BlendMode.screen,
+          blendMode: BlendMode.multiply,
           child: Image.asset(
             'assets/branding/orbit_two_logo.jpg',
             width: widget.width * 0.34,
@@ -1112,7 +1112,7 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
                   shaderCallback: (bounds) => const LinearGradient(
                     colors: [Colors.white, Colors.white],
                   ).createShader(bounds),
-                  blendMode: BlendMode.screen,
+                  blendMode: BlendMode.multiply,
                   child: Image.asset(
                     'assets/branding/orbit_two_logo_layer.jpg',
                     width: widget.width,
