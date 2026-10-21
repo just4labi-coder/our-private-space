@@ -1067,9 +1067,11 @@ class OrbitLogoAnimation extends StatefulWidget {
 
 class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
     with SingleTickerProviderStateMixin {
+  // A long, linear loop keeps the orbital layer moving continuously
+  // without sudden jumps or speed changes at the loop boundary.
   late final AnimationController _rotation = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 90),
+    duration: const Duration(seconds: 120),
   )..repeat();
 
   @override
@@ -1083,9 +1085,10 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
           shaderCallback: (bounds) => const LinearGradient(
             colors: [Colors.white, Colors.white],
           ).createShader(bounds),
-          blendMode: BlendMode.multiply,
+          // Screen blending visually removes the JPEG's black background.
+          blendMode: BlendMode.screen,
           child: Image.asset(
-            'assets/branding/orbit_two_logo.jpg',
+            'assets/branding/orbit_two_logo_milkyway.jpg',
             width: widget.width * 0.34,
             height: widget.height * 0.46,
             fit: BoxFit.cover,
