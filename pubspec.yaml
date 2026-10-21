@@ -44,6 +44,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/orbit_two_logo.jpg
+    - assets/branding/orbit_two_logo_layer.jpg
     - assets/branding/orbit_two_logo_artwork.png
     - assets/sounds/orbit_typing.wav
     - assets/sounds/orbit_seen.wav
