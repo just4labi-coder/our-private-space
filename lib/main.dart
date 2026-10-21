@@ -10318,6 +10318,13 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
   }
 
   Future<void> _editComplaint({SpaceComplaint? existing}) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (existing != null && (currentUid.isEmpty || existing.authorUid != currentUid)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Only the author can edit this complaint.')),
+      );
+      return;
+    }
     final titleController = TextEditingController(text: existing?.title ?? '');
     final detailsController =
         TextEditingController(text: existing?.details ?? '');
