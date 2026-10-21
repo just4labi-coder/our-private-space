@@ -1078,24 +1078,16 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
     super.dispose();
   }
 
-  Widget _logoImage() => ColorFiltered(
-        colorFilter: const ColorFilter.matrix(<double>[
-          1, 0, 0, 0, 0,
-          0, 1, 0, 0, 0,
-          0, 0, 1, 0, 0,
-          0.333, 0.333, 0.333, 0, 0,
-        ]),
-        child: Image.asset(
-          'assets/branding/orbit_two_logo.jpg',
-          width: widget.width,
-          height: widget.height,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          errorBuilder: (context, error, stackTrace) => const Icon(
-            Icons.favorite_rounded,
-            color: pinkColor,
-            size: 38,
-          ),
+  Widget _asset() => Image.asset(
+        'assets/branding/orbit_two_logo.jpg',
+        width: widget.width,
+        height: widget.height,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) => const Icon(
+          Icons.favorite_rounded,
+          color: pinkColor,
+          size: 38,
         ),
       );
 
@@ -1103,42 +1095,21 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
   Widget build(BuildContext context) => SizedBox(
         width: widget.width,
         height: widget.height,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final center = Rect.fromCenter(
-              center: Offset(constraints.maxWidth / 2, constraints.maxHeight / 2),
-              width: constraints.maxWidth * 0.42,
-              height: constraints.maxHeight * 0.64,
-            );
-            return Stack(
-              alignment: Alignment.center,
-              clipBehavior: Clip.hardEdge,
+        child: AnimatedBuilder(
+          animation: _rotation,
+          builder: (context, _) => ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                AnimatedBuilder(
-                  animation: _rotation,
-                  builder: (context, _) => ClipPath(
-                    clipper: _OrbitLogoCenterHoleClipper(center),
-                    child: Transform.rotate(
-                      angle: _rotation.value * 2 * pi,
-                      child: _logoImage(),
-                    ),
-                  ),
-                ),
-                ClipRect(
-                  child: Align(
-                    alignment: Alignment.center,
-                    widthFactor: 0.42,
-                    heightFactor: 0.64,
-                    child: _logoImage(),
-                  ),
-                ),
+                // The supplied artwork is one flattened image. Keep the full
+                // image still; do not rotate the whole sheet and duplicate it.
+                _asset(),
               ],
-            );
-          },
+            ),
+          ),
         ),
       );
 }
-
 class _OrbitLogoCenterHoleClipper extends CustomClipper<Path> {
   const _OrbitLogoCenterHoleClipper(this.center);
   final Rect center;
@@ -2140,10 +2111,17 @@ class _MainScreenState extends State<MainScreen>
       body: Stack(
         children: [
           Positioned.fill(
-            child: GlowBackground(
-              child: IndexedStack(
-                index: selectedIndex,
-                children: pages,
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: GlowBackground(
+                child: IndexedStack(
+                  index: selectedIndex,
+                  children: pages,
+                ),
               ),
             ),
           ),
@@ -3193,9 +3171,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _handleComposerFocusChanged() {
     if (!_composerFocusNode.hasFocus) return;
+    // The root screen animates its body above the keyboard. Wait for that
+    // resize to settle, then keep the latest messages visible.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !scrollController.hasClients) return;
-      scrollController.jumpTo(scrollController.position.maxScrollExtent);
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !scrollController.hasClients) return;
+        final position = scrollController.position;
+        scrollController.jumpTo(position.maxScrollExtent);
+      });
     });
   }
 
