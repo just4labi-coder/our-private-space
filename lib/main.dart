@@ -2100,17 +2100,13 @@ class _MainScreenState extends State<MainScreen>
       body: Stack(
         children: [
           Positioned.fill(
-            child: AnimatedPadding(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: GlowBackground(
-                child: IndexedStack(
-                  index: selectedIndex,
-                  children: pages,
-                ),
+            // Scaffold already resizes its body for the keyboard. Do not apply
+            // viewInsets a second time here: double-insetting moves the composer
+            // without correctly keeping the message list in the remaining area.
+            child: GlowBackground(
+              child: IndexedStack(
+                index: selectedIndex,
+                children: pages,
               ),
             ),
           ),
