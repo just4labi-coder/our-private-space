@@ -1080,21 +1080,37 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
     super.dispose();
   }
 
+  // Convert dark pixels to transparency without painting the logo white.
+  Widget _blackKeyedImage({
+    required String asset,
+    required double width,
+    required double height,
+    BoxFit fit = BoxFit.contain,
+  }) {
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix(<double>[
+        1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0.299, 0.587, 0.114, 0, 0,
+      ]),
+      child: Image.asset(
+        asset,
+        width: width,
+        height: height,
+        fit: fit,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+      ),
+    );
+  }
+
   Widget _staticCenter() => ClipOval(
-        child: ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [Colors.white, Colors.white],
-          ).createShader(bounds),
-          // Screen blending visually removes the JPEG's black background.
-          blendMode: BlendMode.screen,
-          child: Image.asset(
-            'assets/branding/orbit_two_logo_milkyway.jpg',
-            width: widget.width * 0.34,
-            height: widget.height * 0.46,
-            fit: BoxFit.cover,
-            alignment: Alignment(0, 0.02),
-            filterQuality: FilterQuality.high,
-          ),
+        child: _blackKeyedImage(
+          asset: 'assets/branding/orbit_two_logo_milkyway.jpg',
+          width: widget.width * 0.34,
+          height: widget.height * 0.46,
+          fit: BoxFit.cover,
         ),
       );
 
@@ -1111,20 +1127,10 @@ class _OrbitLogoAnimationState extends State<OrbitLogoAnimation>
               animation: _rotation,
               builder: (context, _) => Transform.rotate(
                 angle: _rotation.value * 2 * pi,
-                child: ShaderMask(
-                  shaderCallback: (bounds) => const LinearGradient(
-                    colors: [Colors.white, Colors.white],
-                  ).createShader(bounds),
-                  blendMode: BlendMode.screen,
-                  child: Image.asset(
-                    'assets/branding/orbit_two_logo_layer.jpg',
-                    width: widget.width,
-                    height: widget.height,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.high,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const SizedBox.shrink(),
-                  ),
+                child: _blackKeyedImage(
+                  asset: 'assets/branding/orbit_two_logo_layer.jpg',
+                  width: widget.width,
+                  height: widget.height,
                 ),
               ),
             ),
