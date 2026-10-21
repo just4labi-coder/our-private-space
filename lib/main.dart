@@ -3153,6 +3153,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String? _lastOwnMessageId;
 
   bool _isTypingSent = false;
+  bool _isSendingText = false;
   Timer? _typingHeartbeatTimer;
   Timer? _typingSoundTimer;
   Timer? _typingIdleTimer;
@@ -3638,6 +3639,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendText() async {
+    if (_isSendingText) return;
     final text = controller.text.trim();
     if (text.isEmpty) return;
 
@@ -3679,26 +3681,36 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _scheduleDraftSave('');
     unawaited(_persistDraft(''));
 
+    // Consume the reply preview before awaiting the network so it can only
+    // be attached to one send. The user must swipe a message again to reply.
+    setState(() {
+      _isSendingText = true;
+      if (replyTo != null && _replyToMessage?['id'] == replyTo['id']) {
+        _replyToMessage = null;
+      }
+    });
+
     try {
       await ChatSyncService.sendMessage(message);
       unawaited(InteractionFeedbackSettings.playSentSound());
-      if (mounted) {
-        setState(() {
-          if (_replyToMessage?['id'] == replyTo?['id']) {
-            _replyToMessage = null;
-          }
-        });
-      }
+      // Reply preview was already consumed before sending.
       // The Firestore message listener scrolls when the new tail message arrives.
       // Do not start a second scroll animation here: competing animations make
       // long text and emoji messages visibly jump/shake.
     } catch (error) {
       if (!mounted) return;
+      setState(() {
+        if (replyTo != null && _replyToMessage == null) {
+          _replyToMessage = Map<String, dynamic>.from(replyTo);
+        }
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('মেসেজ পাঠানো যায়নি। আবার চেষ্টা করুন।'),
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isSendingText = false);
     }
   }
 
