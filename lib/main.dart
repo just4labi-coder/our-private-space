@@ -240,8 +240,9 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   bool _hasLoadedInitialPage = false;
   int _progress = 0;
   String? _lastTikTokDeepLink;
-  String _loginStatus = 'লগইন যাচাই হয়নি';
+  String _loginStatus = 'লগইন নিশ্চিত নয়';
   Timer? _loadTimeoutTimer;
+  bool _handlingBack = false;
 
   static final Uri _feedUri = Uri.parse('https://www.tiktok.com/foryou');
   static final Uri _loginUri = Uri.parse('https://www.tiktok.com/login');
@@ -259,7 +260,8 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           final uri = Uri.tryParse(request.url);
           if (uri == null) return NavigationDecision.prevent;
           if (uri.scheme == 'http' || uri.scheme == 'https') {
-            return NavigationDecision.navigate;
+            if (uri.host == 'tiktok.com' || uri.host == 'www.tiktok.com' || uri.host.endsWith('.tiktok.com')) return NavigationDecision.navigate;
+            return NavigationDecision.prevent;
           }
 
           // TikTok may emit snssdk1233:// links for its native app. Do not
@@ -312,18 +314,27 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
         onPageFinished: (_) async {
           _loadTimeoutTimer?.cancel();
           await _hideTikTokNavigation();
+          await _installSeenVideoGuard();
           if (!mounted) return;
           try {
             final status = await _controller.runJavaScriptReturningResult(r"""
               (() => {
                 const text = (document.body?.innerText || '').toLowerCase();
-                const loggedIn = !!document.cookie.match(/sessionid/i) ||
-                  text.includes('log out') || text.includes('manage account');
-                return loggedIn ? 'signed-in' : 'unknown';
+                const url = location.href.toLowerCase();
+                const cookies = document.cookie || '';
+                const hasSession = /(^|;\s*)(sessionid|sid_tt|sessionid_ss)=/.test(cookies);
+                const signedInText = /log out|manage account|edit profile|view profile/.test(text);
+                const profileControl = !!document.querySelector('[data-e2e="profile-icon"], [data-e2e="profile-avatar"], a[href*="/@"] img');
+                const loginPage = url.includes('/login') || /log in to tiktok|sign up for tiktok/.test(text);
+                if (hasSession || signedInText || profileControl) return 'signed-in';
+                if (loginPage) return 'signed-out';
+                return 'unknown';
               })();
             """);
-            if (mounted) setState(() => _loginStatus =
-              status.toString().contains('signed-in') ? 'লগইন থাকতে পারে' : 'লগইন যাচাই হয়নি');
+            final value = status.toString().replaceAll('"', '').trim();
+            if (mounted) setState(() => _loginStatus = value == 'signed-in'
+                ? 'লগইন হয়েছে'
+                : value == 'signed-out' ? 'লগইন করা নেই' : 'লগইন নিশ্চিত নয়');
           } catch (_) {
             if (mounted) setState(() => _loginStatus = 'লগইন যাচাই হয়নি');
           }
@@ -403,6 +414,54 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
     } catch (_) {}
   }
 
+  Future<void> _installSeenVideoGuard() async {
+    try {
+      await _controller.runJavaScript(r"""
+        (() => {
+          if (window.__orbitSeenVideoGuardInstalled) return;
+          window.__orbitSeenVideoGuardInstalled = true;
+          const key = 'orbit_two_seen_tiktok_videos';
+          const readSeen = () => { try { return new Set(JSON.parse(sessionStorage.getItem(key) || '[]')); } catch (_) { return new Set(); } };
+          const saveSeen = (seen) => { try { sessionStorage.setItem(key, JSON.stringify(Array.from(seen).slice(-300))); } catch (_) {} };
+          const videoIdFor = (video) => {
+            let node = video;
+            for (let i = 0; i < 7 && node; i++, node = node.parentElement) {
+              const link = node.querySelector && node.querySelector('a[href*="/video/"]');
+              if (link) { const match = link.href.match(/\/video\/(\d+)/); if (match) return match[1]; }
+            }
+            const match = location.href.match(/\/video\/(\d+)/);
+            return match ? match[1] : '';
+          };
+          const seen = readSeen(), tracked = new WeakSet();
+          const attach = () => document.querySelectorAll('video').forEach((video) => {
+            if (tracked.has(video)) return;
+            tracked.add(video);
+            let marked = false;
+            video.addEventListener('timeupdate', () => {
+              if (marked || video.currentTime < 3) return;
+              const id = videoIdFor(video);
+              if (id) { seen.add(id); saveSeen(seen); marked = true; }
+            }, {passive:true});
+            video.addEventListener('ended', () => { const id = videoIdFor(video); if (id) { seen.add(id); saveSeen(seen); } }, {passive:true});
+            video.addEventListener('play', () => {
+              const id = videoIdFor(video);
+              if (!id || !seen.has(id)) return;
+              const card = video.closest('[data-e2e*="recommend-list-item"], [data-e2e*="video-item"]') || video.closest('div[class*="DivItemContainer"]') || video.parentElement;
+              if (!card || card.dataset.orbitSkipScheduled === '1') return;
+              card.dataset.orbitSkipScheduled = '1';
+              setTimeout(() => { try { if (card.nextElementSibling) card.nextElementSibling.scrollIntoView({behavior:'smooth', block:'center'}); } catch (_) {} }, 350);
+            }, {passive:true});
+          });
+          attach();
+          if (!window.__orbitSeenVideoObserver) {
+            window.__orbitSeenVideoObserver = new MutationObserver(attach);
+            window.__orbitSeenVideoObserver.observe(document.documentElement, {childList:true, subtree:true});
+          }
+        })();
+      """);
+    } catch (error) { debugPrint('TikTok repeat-video guard unavailable: $error'); }
+  }
+
   void _openPendingTikTokReel() {
     final uri = orbitPendingTikTokReel.value;
     if (uri == null || !widget.isActive) return;
@@ -437,17 +496,24 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             "[data-e2e*='bottom-tab-bar' i]", "[data-e2e*='bottom-tab' i]",
             "[class*='BottomTabBar' i]", "[class*='bottom-tab-bar' i]",
             "[class*='DivBottomTabBar' i]", "[class*='bottomTabBar' i]",
-            ".TUXBottomTabBar", "footer"
+            ".TUXBottomTabBar"
           ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; max-height:0 !important; overflow:hidden !important; pointer-events:none !important; }";
           // Hide only the persistent top-level Open app promotion.
           // Do not hide arbitrary toast/notification nodes or creator content.
           const hideOpenAppPrompt = () => {
             document.querySelectorAll('a,button,[role="button"],[role="banner"]').forEach((el) => {
-              const text = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
+              const label = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
               const rect = el.getBoundingClientRect();
-              if (['open app', 'open in app', 'get app', 'open tiktok'].includes(text) &&
-                  rect.top >= 0 && rect.top < 180 && rect.height < 100) {
-                el.style.setProperty('display', 'none', 'important');
+              if (/^(open( tiktok| app| in app)?|get app|watch in app|use app)$/.test(label) &&
+                  rect.top >= 0 && rect.top < 220 && rect.height < 130) {
+                let target = el;
+                for (let i = 0; i < 3 && target.parentElement; i++) {
+                  const parent = target.parentElement;
+                  const pr = parent.getBoundingClientRect();
+                  if (pr.top >= 0 && pr.top < 220 && pr.height < 150 && pr.width > rect.width) target = parent;
+                  else break;
+                }
+                target.style.setProperty('display', 'none', 'important');
               }
             });
           };
@@ -465,11 +531,9 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
 
   Future<void> _login() async {
     try {
+      setState(() => _loginStatus = 'লগইন করা হচ্ছে…');
       await _controller.loadRequest(_loginUri);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('TikTok লগইন পেজ খোলা হচ্ছে। লগইন সম্পন্ন হলে Reels-এ ফিরুন।')),
-      );
     } catch (error) {
       debugPrint('TikTok login page could not open: $error');
       if (!mounted) return;
@@ -484,11 +548,9 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
       await _cookieManager.clearCookies();
       await _controller.clearCache();
       await _controller.clearLocalStorage();
-      await _controller.loadRequest(_loginUri);
+      if (mounted) setState(() => _loginStatus = 'লগআউট হয়েছে');
+      await _controller.loadRequest(_feedUri);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('এই অ্যাপের TikTok সেশন থেকে লগআউট করা হয়েছে।')),
-      );
     } catch (error) {
       debugPrint('TikTok logout failed: $error');
       if (!mounted) return;
@@ -513,12 +575,14 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
       if (url.startsWith('"') && url.endsWith('"')) {
         try { url = jsonDecode(url) as String; } catch (_) {}
       }
+      final pageUrl = (current ?? '').trim();
       if (url.isEmpty || !url.contains('/video/')) {
-        final pageUrl = (current ?? '').trim();
         if (pageUrl.contains('/video/')) url = pageUrl;
+        else if (pageUrl.contains('tiktok.com') && !pageUrl.contains('/foryou') && !pageUrl.contains('/login')) url = pageUrl;
       }
       final uri = Uri.tryParse(url);
-      if (uri == null || !uri.path.contains('/video/') || (uri.host != 'www.tiktok.com' && uri.host != 'tiktok.com' && !uri.host.endsWith('.tiktok.com'))) {
+      if (uri == null || !(uri.host == 'www.tiktok.com' || uri.host == 'tiktok.com' || uri.host.endsWith('.tiktok.com')) ||
+          uri.path.isEmpty || uri.path == '/' || uri.path.contains('/login') || uri.path.contains('/foryou')) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('এই মুহূর্তে শেয়ার করার মতো TikTok ভিডিও লিংক পাওয়া যায়নি। ভিডিওটি খুলে আবার চেষ্টা করুন।')),
@@ -544,9 +608,31 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
     await _controller.loadRequest(_feedUri);
   }
 
+  Future<void> _handleSystemBack() async {
+    if (_handlingBack || !mounted) return;
+    _handlingBack = true;
+    try {
+      if (await _controller.canGoBack()) {
+        await _controller.goBack();
+        await _hideTikTokNavigation();
+      } else {
+        widget.onBack();
+      }
+    } catch (_) {
+      widget.onBack();
+    } finally {
+      _handlingBack = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) unawaited(_handleSystemBack());
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFF070513),
       body: Stack(
         fit: StackFit.expand,
@@ -592,18 +678,9 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
                       icon: const Icon(Icons.share_rounded, color: Colors.white),
                       style: IconButton.styleFrom(backgroundColor: Colors.black54),
                     ),
-                    IconButton(
-                      tooltip: 'TikTok Login',
-                      onPressed: _login,
-                      icon: const Icon(Icons.login_rounded, color: Colors.white),
-                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
-                    ),
-                    IconButton(
-                      tooltip: 'TikTok Logout',
-                      onPressed: _logout,
-                      icon: const Icon(Icons.logout_rounded, color: Colors.white),
-                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
-                    ),
+                    _ReelsActionBox(label: 'লগইন', onPressed: _login),
+                    const SizedBox(width: 4),
+                    _ReelsActionBox(label: 'লগআউট', onPressed: _logout),
                     IconButton(
                       tooltip: 'রিফ্রেশ',
                       onPressed: _reloadFeed,
@@ -651,8 +728,26 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             const Center(child: CircularProgressIndicator(color: pinkColor)),
         ],
       ),
+      ),
     );
   }
+}
+
+class _ReelsActionBox extends StatelessWidget {
+  const _ReelsActionBox({required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: onPressed,
+    style: TextButton.styleFrom(
+      foregroundColor: Colors.white, backgroundColor: Colors.black54,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
+      minimumSize: const Size(0, 40), tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: const BorderSide(color: Colors.white24)),
+    ),
+    child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+  );
 }
 
 bool orbitChatVisible = false;
