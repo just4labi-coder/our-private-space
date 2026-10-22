@@ -358,13 +358,12 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             style.id = styleId;
             document.head.appendChild(style);
           }
+          // Hide only TikTok's own bottom tab bar. Broad navigation selectors
+          // can hide creator profile content and leave a black page.
           style.textContent = [
-            "[data-e2e*='bottom-tab' i]", "[data-e2e*='bottom-tab-bar' i]",
-            "[data-e2e*='navigation' i]", "[data-e2e*='tab-bar' i]",
-            "[class*='BottomTabBar' i]", "[class*='bottom-tab' i]",
-            "[class*='BottomNav' i]", "[class*='bottom-nav' i]",
-            ".TUXBottomTabBar", "nav[aria-label*='navigation' i]",
-            "nav[aria-label*='main' i]"
+            "[data-e2e='bottom-tab-bar']", "[data-e2e='bottom-tab']",
+            "[class*='BottomTabBar' i]", "[class*='bottom-tab-bar' i]",
+            ".TUXBottomTabBar"
           ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
           // Hide transient TikTok share/message banners in this embedded Reels view.
           const hideTransientBanners = () => {
