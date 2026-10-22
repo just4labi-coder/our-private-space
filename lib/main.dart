@@ -418,51 +418,27 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   }
 
   Future<void> _installSeenVideoGuard() async {
+    // Do not auto-scroll past previously watched videos. TikTok recycles video
+    // elements while swiping; an automatic scroll here caused repeated reloads
+    // and unexpected jumps to the next reel. Leave feed navigation to the user.
     try {
       await _controller.runJavaScript(r"""
         (() => {
-          if (window.__orbitSeenVideoGuardInstalled) return;
-          window.__orbitSeenVideoGuardInstalled = true;
-          const key = 'orbit_two_seen_tiktok_videos';
-          const readSeen = () => { try { return new Set(JSON.parse(sessionStorage.getItem(key) || '[]')); } catch (_) { return new Set(); } };
-          const saveSeen = (seen) => { try { sessionStorage.setItem(key, JSON.stringify(Array.from(seen).slice(-300))); } catch (_) {} };
-          const videoIdFor = (video) => {
-            let node = video;
-            for (let i = 0; i < 7 && node; i++, node = node.parentElement) {
-              const link = node.querySelector && node.querySelector('a[href*="/video/"]');
-              if (link) { const match = link.href.match(/\/video\/(\d+)/); if (match) return match[1]; }
+          try {
+            if (window.__orbitSeenVideoObserver) {
+              window.__orbitSeenVideoObserver.disconnect();
+              window.__orbitSeenVideoObserver = null;
             }
-            const match = location.href.match(/\/video\/(\d+)/);
-            return match ? match[1] : '';
-          };
-          const seen = readSeen(), tracked = new WeakSet();
-          const attach = () => document.querySelectorAll('video').forEach((video) => {
-            if (tracked.has(video)) return;
-            tracked.add(video);
-            let marked = false;
-            video.addEventListener('timeupdate', () => {
-              if (marked || video.currentTime < 3) return;
-              const id = videoIdFor(video);
-              if (id) { seen.add(id); saveSeen(seen); marked = true; }
-            }, {passive:true});
-            video.addEventListener('ended', () => { const id = videoIdFor(video); if (id) { seen.add(id); saveSeen(seen); } }, {passive:true});
-            video.addEventListener('play', () => {
-              const id = videoIdFor(video);
-              if (!id || !seen.has(id)) return;
-              const card = video.closest('[data-e2e*="recommend-list-item"], [data-e2e*="video-item"]') || video.closest('div[class*="DivItemContainer"]') || video.parentElement;
-              if (!card || card.dataset.orbitSkipScheduled === '1') return;
-              card.dataset.orbitSkipScheduled = '1';
-              setTimeout(() => { try { if (card.nextElementSibling) card.nextElementSibling.scrollIntoView({behavior:'smooth', block:'center'}); } catch (_) {} }, 350);
-            }, {passive:true});
-          });
-          attach();
-          if (!window.__orbitSeenVideoObserver) {
-            window.__orbitSeenVideoObserver = new MutationObserver(attach);
-            window.__orbitSeenVideoObserver.observe(document.documentElement, {childList:true, subtree:true});
-          }
+            window.__orbitSeenVideoGuardInstalled = false;
+            document.querySelectorAll('[data-orbit-skip-scheduled]').forEach(
+              (node) => { delete node.dataset.orbitSkipScheduled; }
+            );
+          } catch (_) {}
         })();
       """);
-    } catch (error) { debugPrint('TikTok repeat-video guard unavailable: $error'); }
+    } catch (error) {
+      debugPrint('TikTok video navigation guard cleanup unavailable: $error');
+    }
   }
 
   void _openPendingTikTokReel() {
@@ -536,16 +512,21 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           };
           hideOpenAppPrompt();
           hideBottomTabs();
-          if (!window.__orbitBottomTabsObserver) {
-            window.__orbitBottomTabsObserver = new MutationObserver(() => {
+          // TikTok frequently mutates the feed while swiping. Throttle DOM
+          // scans so the observer cannot compete with video playback.
+          let orbitHideQueued = false;
+          const scheduleHide = () => {
+            if (orbitHideQueued) return;
+            orbitHideQueued = true;
+            setTimeout(() => {
+              orbitHideQueued = false;
               hideOpenAppPrompt();
               hideBottomTabs();
-            });
+            }, 250);
+          };
+          if (!window.__orbitBottomTabsObserver) {
+            window.__orbitBottomTabsObserver = new MutationObserver(scheduleHide);
             window.__orbitBottomTabsObserver.observe(document.documentElement, {childList:true, subtree:true});
-          }
-          if (!window.__orbitOpenAppObserver) {
-            window.__orbitOpenAppObserver = new MutationObserver(hideOpenAppPrompt);
-            window.__orbitOpenAppObserver.observe(document.documentElement, {childList:true, subtree:true});
           }
         })();
       """);
