@@ -213,6 +213,229 @@ class _InAppLinkViewerPageState extends State<InAppLinkViewerPage> {
   );
 }
 
+
+/// In-app TikTok Reels viewer. TikTok owns the feed and its interactions.
+class TikTokReelsPage extends StatefulWidget {
+  const TikTokReelsPage({super.key, required this.onBack});
+  final VoidCallback onBack;
+
+  @override
+  State<TikTokReelsPage> createState() => _TikTokReelsPageState();
+}
+
+class _TikTokReelsPageState extends State<TikTokReelsPage> {
+  late final WebViewController _controller;
+  final WebViewCookieManager _cookieManager = WebViewCookieManager();
+  bool _loading = true;
+  bool _failed = false;
+  int _progress = 0;
+
+  static final Uri _feedUri = Uri.parse('https://www.tiktok.com/foryou');
+  static final Uri _loginUri = Uri.parse('https://www.tiktok.com/login');
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF070513))
+      ..setNavigationDelegate(NavigationDelegate(
+        onProgress: (value) {
+          if (mounted) setState(() => _progress = value);
+        },
+        onPageStarted: (_) {
+          if (mounted) setState(() {
+            _loading = true;
+            _failed = false;
+            _progress = 0;
+          });
+        },
+        onPageFinished: (_) async {
+          await _hideTikTokNavigation();
+          if (mounted) setState(() {
+            _loading = false;
+            _progress = 100;
+          });
+        },
+        onWebResourceError: (error) {
+          if (error.isForMainFrame == true && mounted) {
+            setState(() {
+              _failed = true;
+              _loading = false;
+            });
+          }
+        },
+      ))
+      ..loadRequest(_feedUri);
+  }
+
+  Future<void> _hideTikTokNavigation() async {
+    try {
+      await _controller.runJavaScript(r"""
+        (() => {
+          const styleId = 'orbit-two-tiktok-reels-style';
+          let style = document.getElementById(styleId);
+          if (!style) {
+            style = document.createElement('style');
+            style.id = styleId;
+            document.head.appendChild(style);
+          }
+          style.textContent = "[data-e2e='bottom-tab-bar'], [data-e2e='bottom-tab-bar-container'], .TUXBottomTabBar, nav[aria-label*='navigation' i], nav[aria-label*='main' i] { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
+          const labels = ['for you', 'following', 'friends', 'inbox', 'profile', 'home', 'shop'];
+          document.querySelectorAll('a,button,[role=\"tab\"]').forEach((node) => {
+            const label = ((node.innerText || '') + ' ' +
+              (node.getAttribute('aria-label') || '') + ' ' +
+              (node.getAttribute('data-e2e') || '')).trim().toLowerCase();
+            if (labels.some((item) => label === item || label.startsWith(item + ' '))) {
+              const parent = node.closest('[data-e2e=\"bottom-tab-bar\"], nav[aria-label], .TUXBottomTabBar');
+              if (parent) parent.style.setProperty('display', 'none', 'important');
+            }
+          });
+        })();
+      """);
+    } catch (error) {
+      debugPrint('TikTok navigation styling unavailable: $error');
+    }
+  }
+
+  Future<void> _login() async {
+    try {
+      await _controller.loadRequest(_loginUri);
+    } catch (error) {
+      debugPrint('TikTok login page could not open: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('TikTok লগইন খোলা যায়নি। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।')),
+      );
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _cookieManager.clearCookies();
+      await _controller.clearCache();
+      await _controller.clearLocalStorage();
+      await _controller.loadRequest(_loginUri);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('এই অ্যাপের TikTok সেশন থেকে লগআউট করা হয়েছে।')),
+      );
+    } catch (error) {
+      debugPrint('TikTok logout failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('লগআউট সম্পন্ন হয়নি। আবার চেষ্টা করুন।')),
+      );
+    }
+  }
+
+  Future<void> _reloadFeed() async {
+    setState(() {
+      _failed = false;
+      _loading = true;
+      _progress = 0;
+    });
+    await _controller.loadRequest(_feedUri);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF070513),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          WebViewWidget(controller: _controller),
+          if (_progress < 100 && !_failed)
+            Align(
+              alignment: Alignment.topCenter,
+              child: LinearProgressIndicator(
+                value: _progress == 0 ? null : _progress / 100,
+                minHeight: 2,
+                backgroundColor: Colors.transparent,
+                color: pinkColor,
+              ),
+            ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Orbit Two-তে ফিরে যান',
+                      onPressed: widget.onBack,
+                      icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                    ),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text('Reels', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17)),
+                    ),
+                    IconButton(
+                      tooltip: 'TikTok Login',
+                      onPressed: _login,
+                      icon: const Icon(Icons.login_rounded, color: Colors.white),
+                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                    ),
+                    IconButton(
+                      tooltip: 'TikTok Logout',
+                      onPressed: _logout,
+                      icon: const Icon(Icons.logout_rounded, color: Colors.white),
+                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                    ),
+                    IconButton(
+                      tooltip: 'রিফ্রেশ',
+                      onPressed: _reloadFeed,
+                      icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_failed)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111026).withValues(alpha: 0.96),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.wifi_off_rounded, color: pinkColor, size: 42),
+                    const SizedBox(height: 12),
+                    const Text('TikTok খোলা যাচ্ছে না', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'সংযোগ পরীক্ষা করে আবার চেষ্টা করুন। TikTok কিছু ডিভাইসের ইন-অ্যাপ ব্রাউজারে লগইন বা ভিডিও সীমিত করতে পারে।',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(onPressed: _reloadFeed, icon: const Icon(Icons.refresh_rounded), label: const Text('আবার চেষ্টা করুন')),
+                    TextButton(
+                      onPressed: () => launchUrl(_feedUri, mode: LaunchMode.externalApplication),
+                      child: const Text('ব্রাউজারে খুলুন'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (_loading && !_failed)
+            const Center(child: CircularProgressIndicator(color: pinkColor)),
+        ],
+      ),
+    );
+  }
+}
+
 bool orbitChatVisible = false;
 
 // Retain local reminders for Special Dates without restoring message push notifications.
@@ -2060,6 +2283,7 @@ class _MainScreenState extends State<MainScreen>
     _connectionSubscription?.cancel();
     _updatePresence(false);
     orbitNavigateToChat = null;
+    orbitOpenComplaint = null;
     super.dispose();
   }
 
@@ -2119,6 +2343,12 @@ class _MainScreenState extends State<MainScreen>
           });
         },
       ),
+      TikTokReelsPage(
+        onBack: () {
+          if (!mounted) return;
+          setState(() => selectedIndex = 0);
+        },
+      ),
     ];
 
     return PopScope(
@@ -2154,7 +2384,7 @@ class _MainScreenState extends State<MainScreen>
             ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: selectedIndex == 4 ? null : NavigationBar(
         backgroundColor: surfaceColor,
         indicatorColor: blueColor.withValues(alpha: 0.25),
         selectedIndex: selectedIndex,
@@ -2195,6 +2425,11 @@ class _MainScreenState extends State<MainScreen>
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings_rounded),
             label: 'Settings',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.play_circle_outline_rounded),
+            selectedIcon: Icon(Icons.play_circle_fill_rounded),
+            label: 'Reels',
           ),
         ],
       ),
