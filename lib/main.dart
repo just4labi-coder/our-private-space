@@ -273,6 +273,8 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
               _failed = true;
               _loading = false;
             });
+            // TikTok may reject embedded Android WebViews; open its official site externally.
+            unawaited(launchUrl(_feedUri, mode: LaunchMode.externalApplication));
           }
         },
       ))
