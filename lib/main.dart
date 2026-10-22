@@ -268,14 +268,29 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           });
         },
         onWebResourceError: (error) {
+          // Capture the actual WebView failure so the cause can be diagnosed
+          // instead of silently sending the user to an external browser.
+          debugPrint(
+            'TikTok WebView error: '
+            'mainFrame=${error.isForMainFrame}, '
+            'code=${error.errorCode}, '
+            'type=${error.errorType}, '
+            'description=${error.description}, '
+            'url=${error.url}',
+          );
           if (error.isForMainFrame == true && mounted) {
             setState(() {
               _failed = true;
               _loading = false;
             });
-            // TikTok may reject embedded Android WebViews; open its official site externally.
-            unawaited(launchUrl(_feedUri, mode: LaunchMode.externalApplication));
           }
+        },
+        onHttpError: (error) {
+          debugPrint(
+            'TikTok HTTP error: '
+            'status=${error.response.statusCode}, '
+            'url=${error.request.uri}',
+          );
         },
       ))
       ..loadRequest(_feedUri);
