@@ -233,6 +233,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   bool _failed = false;
   int _progress = 0;
   String? _lastTikTokDeepLink;
+  String _loginStatus = 'লগইন যাচাই হয়নি';
 
   static final Uri _feedUri = Uri.parse('https://www.tiktok.com/foryou');
   static final Uri _loginUri = Uri.parse('https://www.tiktok.com/login');
@@ -294,10 +295,22 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
         },
         onPageFinished: (_) async {
           await _hideTikTokNavigation();
-          for (final delay in [250, 800, 1800, 3000]) {
-            await Future<void>.delayed(Duration(milliseconds: delay));
-            if (!mounted) return;
-            await _hideTikTokNavigation();
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          if (!mounted) return;
+          await _hideTikTokNavigation();
+          try {
+            final status = await _controller.runJavaScriptReturningResult(r"""
+              (() => {
+                const text = (document.body?.innerText || '').toLowerCase();
+                const loggedIn = !!document.cookie.match(/sessionid/i) ||
+                  text.includes('log out') || text.includes('manage account');
+                return loggedIn ? 'signed-in' : 'unknown';
+              })();
+            """);
+            if (mounted) setState(() => _loginStatus =
+              status.toString().contains('signed-in') ? 'লগইন থাকতে পারে' : 'লগইন যাচাই হয়নি');
+          } catch (_) {
+            if (mounted) setState(() => _loginStatus = 'লগইন যাচাই হয়নি');
           }
           if (mounted) setState(() {
             _loading = false;
@@ -365,28 +378,23 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             "[class*='BottomTabBar' i]", "[class*='bottom-tab-bar' i]",
             ".TUXBottomTabBar"
           ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
-          // Hide transient TikTok share/message banners in this embedded Reels view.
-          const hideTransientBanners = () => {
-            document.querySelectorAll('[data-e2e*="toast" i], [data-e2e*="notification" i], [class*="toast" i], [class*="notification-toast" i]').forEach((el) => {
-              const r = el.getBoundingClientRect();
-              if (r.top >= 0 && r.top < 260 && r.height < 180) el.style.setProperty('display', 'none', 'important');
+          // Hide only the persistent top-level Open app promotion.
+          // Do not hide arbitrary toast/notification nodes or creator content.
+          const hideOpenAppPrompt = () => {
+            document.querySelectorAll('a,button,[role="button"],[role="banner"]').forEach((el) => {
+              const text = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
+              const rect = el.getBoundingClientRect();
+              if (['open app', 'open in app', 'get app', 'open tiktok'].includes(text) &&
+                  rect.top >= 0 && rect.top < 180 && rect.height < 100) {
+                el.style.setProperty('display', 'none', 'important');
+              }
             });
           };
-          hideTransientBanners();
-          if (!window.__orbitBannerObserver) {
-            window.__orbitBannerObserver = new MutationObserver(hideTransientBanners);
-            window.__orbitBannerObserver.observe(document.documentElement, {childList:true, subtree:true});
+          hideOpenAppPrompt();
+          if (!window.__orbitOpenAppObserver) {
+            window.__orbitOpenAppObserver = new MutationObserver(hideOpenAppPrompt);
+            window.__orbitOpenAppObserver.observe(document.documentElement, {childList:true, subtree:true});
           }
-          const labels = ['for you', 'following', 'friends', 'inbox', 'profile', 'home', 'shop'];
-          document.querySelectorAll('a,button,[role=\"tab\"]').forEach((node) => {
-            const label = ((node.innerText || '') + ' ' +
-              (node.getAttribute('aria-label') || '') + ' ' +
-              (node.getAttribute('data-e2e') || '')).trim().toLowerCase();
-            if (labels.some((item) => label === item || label.startsWith(item + ' '))) {
-              const parent = node.closest('[data-e2e=\"bottom-tab-bar\"], nav[aria-label], .TUXBottomTabBar');
-              if (parent) parent.style.setProperty('display', 'none', 'important');
-            }
-          });
         })();
       """);
     } catch (error) {
@@ -507,8 +515,15 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
                       style: IconButton.styleFrom(backgroundColor: Colors.black54),
                     ),
                     const SizedBox(width: 6),
-                    const Expanded(
-                      child: Text('Reels', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Reels', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17)),
+                          Text(_loginStatus, style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                        ],
+                      ),
                     ),
                     IconButton(
                       tooltip: 'চ্যাটে ভিডিও শেয়ার করুন',
