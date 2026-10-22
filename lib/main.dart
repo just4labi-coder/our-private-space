@@ -36,6 +36,8 @@ import 'services/push_notification_service.dart';
 final ValueNotifier<String?> orbitSharedText = ValueNotifier<String?>(null);
 final ValueNotifier<Map<String, dynamic>?> orbitPendingComplaintReply = ValueNotifier<Map<String, dynamic>?>(null);
 VoidCallback? orbitNavigateToChat;
+VoidCallback? orbitNavigateToReels;
+final ValueNotifier<Uri?> orbitPendingTikTokReel = ValueNotifier<Uri?>(null);
 void Function(String complaintId)? orbitOpenComplaint;
 const MethodChannel orbitShareChannel = MethodChannel('com.privatespace.ourspace/share_intent');
 
@@ -237,6 +239,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   @override
   void initState() {
     super.initState();
+    orbitPendingTikTokReel.addListener(_openPendingTikTokReel);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF070513))
@@ -268,6 +271,20 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
         },
       ))
       ..loadRequest(_feedUri);
+    _openPendingTikTokReel();
+  }
+
+  void _openPendingTikTokReel() {
+    final uri = orbitPendingTikTokReel.value;
+    if (uri == null) return;
+    orbitPendingTikTokReel.value = null;
+    unawaited(_controller.loadRequest(uri));
+  }
+
+  @override
+  void dispose() {
+    orbitPendingTikTokReel.removeListener(_openPendingTikTokReel);
+    super.dispose();
   }
 
   Future<void> _hideTikTokNavigation() async {
@@ -1916,6 +1933,13 @@ class _MainScreenState extends State<MainScreen>
   void initState() {
     super.initState();
     orbitOpenComplaint = (id) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ComplaintsPage(initialComplaintId: id)));
+    orbitNavigateToReels = () {
+      if (!mounted) return;
+      setState(() {
+        selectedIndex = 4;
+        orbitChatVisible = false;
+      });
+    };
     orbitNavigateToChat = () {
       if (!mounted) return;
       setState(() {
@@ -2327,6 +2351,7 @@ class _MainScreenState extends State<MainScreen>
     _connectionSubscription?.cancel();
     _updatePresence(false);
     orbitNavigateToChat = null;
+    orbitNavigateToReels = null;
     orbitOpenComplaint = null;
     super.dispose();
   }
@@ -5699,6 +5724,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           text: rawUrl,
           style: const TextStyle(color: Color(0xFF80CFFF), decoration: TextDecoration.underline),
           recognizer: TapGestureRecognizer()..onTap = () {
+            final host = url.host.toLowerCase();
+            final isTikTokVideo =
+                (host == 'tiktok.com' || host.endsWith('.tiktok.com')) &&
+                url.path.contains('/video/');
+            if (isTikTokVideo && orbitNavigateToReels != null) {
+              orbitPendingTikTokReel.value = url;
+              orbitNavigateToReels!.call();
+              return;
+            }
             Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => InAppLinkViewerPage(url: url),
             ));
