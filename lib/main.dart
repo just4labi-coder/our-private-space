@@ -234,7 +234,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   int _progress = 0;
   String? _lastTikTokDeepLink;
 
-  static final Uri _feedUri = Uri.parse('https://www.tiktok.com/');
+  static final Uri _feedUri = Uri.parse('https://www.tiktok.com/foryou');
   static final Uri _loginUri = Uri.parse('https://www.tiktok.com/login');
 
   @override
@@ -364,7 +364,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             "[class*='BottomTabBar' i]", "[class*='bottom-tab' i]",
             "[class*='BottomNav' i]", "[class*='bottom-nav' i]",
             ".TUXBottomTabBar", "nav[aria-label*='navigation' i]",
-            "nav[aria-label*='main' i]", "footer"
+            "nav[aria-label*='main' i]"
           ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
           // Hide transient TikTok share/message banners in this embedded Reels view.
           const hideTransientBanners = () => {
@@ -398,6 +398,10 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   Future<void> _login() async {
     try {
       await _controller.loadRequest(_loginUri);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('TikTok লগইন পেজ খোলা হচ্ছে। লগইন সম্পন্ন হলে Reels-এ ফিরুন।')),
+      );
     } catch (error) {
       debugPrint('TikTok login page could not open: $error');
       if (!mounted) return;
