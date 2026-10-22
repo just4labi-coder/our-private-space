@@ -245,6 +245,38 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
       ..setUserAgent('Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36')
       ..setBackgroundColor(const Color(0xFF070513))
       ..setNavigationDelegate(NavigationDelegate(
+        onNavigationRequest: (request) {
+          final uri = Uri.tryParse(request.url);
+          if (uri == null) return NavigationDecision.prevent;
+          if (uri.scheme == 'http' || uri.scheme == 'https') {
+            return NavigationDecision.navigate;
+          }
+
+          // TikTok sometimes redirects its website to the Android app scheme
+          // (snssdk1233://aweme/detail/...). WebView cannot open that scheme.
+          // Prefer TikTok's own encoded web URL so the video stays in-app.
+          final embeddedWebUrl = uri.queryParameters['params_url'];
+          final candidate = embeddedWebUrl == null
+              ? null
+              : Uri.tryParse(embeddedWebUrl);
+          if (candidate != null &&
+              (candidate.scheme == 'https' || candidate.scheme == 'http') &&
+              (candidate.host == 'www.tiktok.com' ||
+                  candidate.host == 'tiktok.com' ||
+                  candidate.host.endsWith('.tiktok.com'))) {
+            unawaited(_controller.loadRequest(candidate));
+          } else {
+            final match = RegExp(r'/detail/(\\d+)').firstMatch(uri.path);
+            if (match != null) {
+              unawaited(_controller.loadRequest(
+                Uri.parse('https://www.tiktok.com/@tiktok/video/${match.group(1)}'),
+              ));
+            } else {
+              debugPrint('Blocked unsupported TikTok URL scheme: ${uri.scheme}');
+            }
+          }
+          return NavigationDecision.prevent;
+        },
         onProgress: (value) {
           if (mounted) setState(() => _progress = value);
         },
