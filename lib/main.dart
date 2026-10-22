@@ -233,7 +233,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   bool _failed = false;
   int _progress = 0;
 
-  static final Uri _feedUri = Uri.parse('https://www.tiktok.com/foryou');
+  static final Uri _feedUri = Uri.parse('https://www.tiktok.com/');
   static final Uri _loginUri = Uri.parse('https://www.tiktok.com/login');
 
   @override
