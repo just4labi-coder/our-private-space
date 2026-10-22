@@ -232,6 +232,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   bool _loading = true;
   bool _failed = false;
   int _progress = 0;
+  String? _lastTikTokDeepLink;
 
   static final Uri _feedUri = Uri.parse('https://www.tiktok.com/');
   static final Uri _loginUri = Uri.parse('https://www.tiktok.com/login');
@@ -252,9 +253,13 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             return NavigationDecision.navigate;
           }
 
-          // TikTok sometimes redirects its website to the Android app scheme
-          // (snssdk1233://aweme/detail/...). WebView cannot open that scheme.
-          // Prefer TikTok's own encoded web URL so the video stays in-app.
+          // TikTok may emit snssdk1233:// links for its native app. Do not
+          // reload the feed URL from params_url: that creates a reload loop.
+          // Only follow an embedded URL when it is a specific TikTok video.
+          if (_lastTikTokDeepLink == request.url) {
+            return NavigationDecision.prevent;
+          }
+          _lastTikTokDeepLink = request.url;
           final embeddedWebUrl = uri.queryParameters['params_url'];
           final candidate = embeddedWebUrl == null
               ? null
@@ -263,14 +268,14 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
               (candidate.scheme == 'https' || candidate.scheme == 'http') &&
               (candidate.host == 'www.tiktok.com' ||
                   candidate.host == 'tiktok.com' ||
-                  candidate.host.endsWith('.tiktok.com'))) {
+                  candidate.host.endsWith('.tiktok.com')) &&
+              (candidate.path.contains('/video/') ||
+                  candidate.path.startsWith('/t/'))) {
             unawaited(_controller.loadRequest(candidate));
           } else {
             final match = RegExp(r'/detail/(\\d+)').firstMatch(uri.path);
             if (match != null) {
-              unawaited(_controller.loadRequest(
-                Uri.parse('https://www.tiktok.com/@tiktok/video/${match.group(1)}'),
-              ));
+              debugPrint('TikTok native video link blocked; no reliable web URL available.');
             } else {
               debugPrint('Blocked unsupported TikTok URL scheme: ${uri.scheme}');
             }
@@ -353,7 +358,14 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             style.id = styleId;
             document.head.appendChild(style);
           }
-          style.textContent = "[data-e2e*='bottom-tab' i], [data-e2e*='navigation' i], [class*='BottomTabBar' i], [class*='bottom-tab' i], .TUXBottomTabBar, nav[aria-label*='navigation' i], nav[aria-label*='main' i] { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
+          style.textContent = [
+            "[data-e2e*='bottom-tab' i]", "[data-e2e*='bottom-tab-bar' i]",
+            "[data-e2e*='navigation' i]", "[data-e2e*='tab-bar' i]",
+            "[class*='BottomTabBar' i]", "[class*='bottom-tab' i]",
+            "[class*='BottomNav' i]", "[class*='bottom-nav' i]",
+            ".TUXBottomTabBar", "nav[aria-label*='navigation' i]",
+            "nav[aria-label*='main' i]", "footer"
+          ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
           // Hide transient TikTok share/message banners in this embedded Reels view.
           const hideTransientBanners = () => {
             document.querySelectorAll('[data-e2e*="toast" i], [data-e2e*="notification" i], [class*="toast" i], [class*="notification-toast" i]').forEach((el) => {
