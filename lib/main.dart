@@ -218,9 +218,15 @@ class _InAppLinkViewerPageState extends State<InAppLinkViewerPage> {
 
 /// In-app TikTok Reels viewer. TikTok owns the feed and its interactions.
 class TikTokReelsPage extends StatefulWidget {
-  const TikTokReelsPage({super.key, required this.onBack, required this.onShare});
+  const TikTokReelsPage({
+    super.key,
+    required this.onBack,
+    required this.onShare,
+    required this.isActive,
+  });
   final VoidCallback onBack;
   final ValueChanged<String> onShare;
+  final bool isActive;
 
   @override
   State<TikTokReelsPage> createState() => _TikTokReelsPageState();
@@ -229,11 +235,13 @@ class TikTokReelsPage extends StatefulWidget {
 class _TikTokReelsPageState extends State<TikTokReelsPage> {
   late final WebViewController _controller;
   final WebViewCookieManager _cookieManager = WebViewCookieManager();
-  bool _loading = true;
+  bool _loading = false;
   bool _failed = false;
+  bool _hasLoadedInitialPage = false;
   int _progress = 0;
   String? _lastTikTokDeepLink;
   String _loginStatus = 'লগইন যাচাই হয়নি';
+  Timer? _loadTimeoutTimer;
 
   static final Uri _feedUri = Uri.parse('https://www.tiktok.com/foryou');
   static final Uri _loginUri = Uri.parse('https://www.tiktok.com/login');
@@ -287,6 +295,14 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           if (mounted) setState(() => _progress = value);
         },
         onPageStarted: (_) {
+          _loadTimeoutTimer?.cancel();
+          _loadTimeoutTimer = Timer(const Duration(seconds: 25), () {
+            if (!mounted || !_loading) return;
+            setState(() {
+              _failed = true;
+              _loading = false;
+            });
+          });
           if (mounted) setState(() {
             _loading = true;
             _failed = false;
@@ -294,10 +310,9 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           });
         },
         onPageFinished: (_) async {
+          _loadTimeoutTimer?.cancel();
           await _hideTikTokNavigation();
-          await Future<void>.delayed(const Duration(milliseconds: 500));
           if (!mounted) return;
-          await _hideTikTokNavigation();
           try {
             final status = await _controller.runJavaScriptReturningResult(r"""
               (() => {
@@ -316,6 +331,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             _loading = false;
             _progress = 100;
           });
+          if (!widget.isActive) unawaited(_pauseTikTokMedia());
         },
         onWebResourceError: (error) {
           // Capture the actual WebView failure so the cause can be diagnosed
@@ -329,6 +345,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             'url=${error.url}',
           );
           if (error.isForMainFrame == true && mounted) {
+            _loadTimeoutTimer?.cancel();
             setState(() {
               _failed = true;
               _loading = false;
@@ -342,21 +359,63 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             'url=${error.request?.uri}',
           );
         },
-      ))
-      ..loadRequest(_feedUri);
+      ));
+    // Keep the hidden WebView out of startup; load TikTok only when Reels opens.
+    if (widget.isActive) _loadInitialPage();
     _openPendingTikTokReel();
+  }
+
+  @override
+  void didUpdateWidget(covariant TikTokReelsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      unawaited(_pauseTikTokMedia());
+    } else if (!oldWidget.isActive && widget.isActive) {
+      if (!_hasLoadedInitialPage) {
+        _loadInitialPage();
+      } else {
+        unawaited(_hideTikTokNavigation());
+      }
+      _openPendingTikTokReel();
+    }
+  }
+
+  void _loadInitialPage() {
+    if (_hasLoadedInitialPage || !widget.isActive) return;
+    _hasLoadedInitialPage = true;
+    if (mounted) setState(() {
+      _loading = true;
+      _failed = false;
+      _progress = 0;
+    });
+    unawaited(_controller.loadRequest(_feedUri));
+  }
+
+  Future<void> _pauseTikTokMedia() async {
+    try {
+      await _controller.runJavaScript(r"""
+        (() => {
+          document.querySelectorAll('video, audio').forEach((media) => {
+            try { media.pause(); media.muted = true; } catch (_) {}
+          });
+        })();
+      """);
+    } catch (_) {}
   }
 
   void _openPendingTikTokReel() {
     final uri = orbitPendingTikTokReel.value;
-    if (uri == null) return;
+    if (uri == null || !widget.isActive) return;
     orbitPendingTikTokReel.value = null;
+    _hasLoadedInitialPage = true;
     unawaited(_controller.loadRequest(uri));
   }
 
   @override
   void dispose() {
+    _loadTimeoutTimer?.cancel();
     orbitPendingTikTokReel.removeListener(_openPendingTikTokReel);
+    unawaited(_pauseTikTokMedia());
     super.dispose();
   }
 
@@ -375,9 +434,11 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           // can hide creator profile content and leave a black page.
           style.textContent = [
             "[data-e2e='bottom-tab-bar']", "[data-e2e='bottom-tab']",
+            "[data-e2e*='bottom-tab-bar' i]", "[data-e2e*='bottom-tab' i]",
             "[class*='BottomTabBar' i]", "[class*='bottom-tab-bar' i]",
-            ".TUXBottomTabBar"
-          ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
+            "[class*='DivBottomTabBar' i]", "[class*='bottomTabBar' i]",
+            ".TUXBottomTabBar", "footer"
+          ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; max-height:0 !important; overflow:hidden !important; pointer-events:none !important; }";
           // Hide only the persistent top-level Open app promotion.
           // Do not hide arbitrary toast/notification nodes or creator content.
           const hideOpenAppPrompt = () => {
@@ -2510,6 +2571,7 @@ class _MainScreenState extends State<MainScreen>
         },
       ),
       TikTokReelsPage(
+        isActive: selectedIndex == 4,
         onBack: () {
           if (!mounted) return;
           setState(() => selectedIndex = 0);
