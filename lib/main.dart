@@ -216,8 +216,9 @@ class _InAppLinkViewerPageState extends State<InAppLinkViewerPage> {
 
 /// In-app TikTok Reels viewer. TikTok owns the feed and its interactions.
 class TikTokReelsPage extends StatefulWidget {
-  const TikTokReelsPage({super.key, required this.onBack});
+  const TikTokReelsPage({super.key, required this.onBack, required this.onShare});
   final VoidCallback onBack;
+  final ValueChanged<String> onShare;
 
   @override
   State<TikTokReelsPage> createState() => _TikTokReelsPageState();
@@ -329,6 +330,28 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
     }
   }
 
+  Future<void> _shareCurrentVideo() async {
+    try {
+      final current = await _controller.currentUrl();
+      final url = (current ?? '').trim();
+      final uri = Uri.tryParse(url);
+      if (uri == null || uri.host != 'www.tiktok.com' && uri.host != 'tiktok.com' && !uri.host.endsWith('.tiktok.com')) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('এই মুহূর্তে শেয়ার করার মতো TikTok ভিডিও লিংক পাওয়া যায়নি। ভিডিওটি খুলে আবার চেষ্টা করুন।')),
+        );
+        return;
+      }
+      widget.onShare(uri.toString());
+    } catch (error) {
+      debugPrint('TikTok video share failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ভিডিও লিংক নেওয়া যায়নি। আবার চেষ্টা করুন।')),
+      );
+    }
+  }
+
   Future<void> _reloadFeed() async {
     setState(() {
       _failed = false;
@@ -372,6 +395,12 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
                     const SizedBox(width: 6),
                     const Expanded(
                       child: Text('Reels', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17)),
+                    ),
+                    IconButton(
+                      tooltip: 'চ্যাটে ভিডিও শেয়ার করুন',
+                      onPressed: _shareCurrentVideo,
+                      icon: const Icon(Icons.share_rounded, color: Colors.white),
+                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
                     ),
                     IconButton(
                       tooltip: 'TikTok Login',
@@ -2348,6 +2377,7 @@ class _MainScreenState extends State<MainScreen>
           if (!mounted) return;
           setState(() => selectedIndex = 0);
         },
+        onShare: (url) => unawaited(_handleIncomingSharedText(url)),
       ),
     ];
 
