@@ -417,29 +417,6 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
     } catch (_) {}
   }
 
-  Future<void> _installSeenVideoGuard() async {
-    // Do not auto-scroll past previously watched videos. TikTok recycles video
-    // elements while swiping; an automatic scroll here caused repeated reloads
-    // and unexpected jumps to the next reel. Leave feed navigation to the user.
-    try {
-      await _controller.runJavaScript(r"""
-        (() => {
-          try {
-            if (window.__orbitSeenVideoObserver) {
-              window.__orbitSeenVideoObserver.disconnect();
-              window.__orbitSeenVideoObserver = null;
-            }
-            window.__orbitSeenVideoGuardInstalled = false;
-            document.querySelectorAll('[data-orbit-skip-scheduled]').forEach(
-              (node) => { delete node.dataset.orbitSkipScheduled; }
-            );
-          } catch (_) {}
-        })();
-      """);
-    } catch (error) {
-      debugPrint('TikTok video navigation guard cleanup unavailable: $error');
-    }
-  }
 
   void _openPendingTikTokReel() {
     final uri = orbitPendingTikTokReel.value;
