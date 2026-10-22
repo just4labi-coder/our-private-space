@@ -299,6 +299,18 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             document.head.appendChild(style);
           }
           style.textContent = "[data-e2e='bottom-tab-bar'], [data-e2e='bottom-tab-bar-container'], .TUXBottomTabBar, nav[aria-label*='navigation' i], nav[aria-label*='main' i] { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
+          // Hide transient TikTok share/message banners in this embedded Reels view.
+          const hideTransientBanners = () => {
+            document.querySelectorAll('[data-e2e*="toast" i], [data-e2e*="notification" i], [class*="toast" i], [class*="notification-toast" i]').forEach((el) => {
+              const r = el.getBoundingClientRect();
+              if (r.top >= 0 && r.top < 260 && r.height < 180) el.style.setProperty('display', 'none', 'important');
+            });
+          };
+          hideTransientBanners();
+          if (!window.__orbitBannerObserver) {
+            window.__orbitBannerObserver = new MutationObserver(hideTransientBanners);
+            window.__orbitBannerObserver.observe(document.documentElement, {childList:true, subtree:true});
+          }
           const labels = ['for you', 'following', 'friends', 'inbox', 'profile', 'home', 'shop'];
           document.querySelectorAll('a,button,[role=\"tab\"]').forEach((node) => {
             const label = ((node.innerText || '') + ' ' +
