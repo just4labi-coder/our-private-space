@@ -323,9 +323,8 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
                 const cookies = document.cookie || '';
                 const hasSession = /(^|;\s*)(sessionid|sid_tt|sessionid_ss)=/.test(cookies);
                 const signedInText = /log out|manage account|edit profile|view profile/.test(text);
-                const profileControl = !!document.querySelector('[data-e2e="profile-icon"], [data-e2e="profile-avatar"], [data-e2e="nav-profile"]');
                 const loginPage = url.includes('/login') || /log in to tiktok|sign up for tiktok/.test(text);
-                if (hasSession || signedInText || profileControl) return 'signed-in';
+                if (hasSession || signedInText) return 'signed-in';
                 if (loginPage) return 'signed-out';
                 return 'unknown';
               })();
