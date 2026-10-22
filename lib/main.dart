@@ -2678,7 +2678,8 @@ class _MainScreenState extends State<MainScreen>
     return PopScope(
       canPop: selectedIndex == 0,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop || selectedIndex == 0 || !mounted) return;
+        // Reels handles browser-history back internally before leaving the tab.
+        if (didPop || selectedIndex == 0 || selectedIndex == 4 || !mounted) return;
         FocusManager.instance.primaryFocus?.unfocus();
         setState(() {
           selectedIndex = 0;
