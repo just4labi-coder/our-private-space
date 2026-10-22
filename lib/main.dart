@@ -332,8 +332,20 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
 
   Future<void> _shareCurrentVideo() async {
     try {
+      final extracted = await _controller.runJavaScriptReturningResult(r"""
+        (() => {
+          const video = document.querySelector('video');
+          const nearest = video && video.closest('a[href*="/video/"]');
+          const link = nearest || document.querySelector('a[href*="/video/"]');
+          return link ? link.href : (window.location.href || '');
+        })();
+      """);
       final current = await _controller.currentUrl();
-      final url = (current ?? '').trim();
+      var url = extracted.toString().trim();
+      if (url.startsWith('"') && url.endsWith('"')) {
+        try { url = jsonDecode(url) as String; } catch (_) {}
+      }
+      if (url.isEmpty || !url.contains('/video/')) url = (current ?? '').trim();
       final uri = Uri.tryParse(url);
       if (uri == null || uri.host != 'www.tiktok.com' && uri.host != 'tiktok.com' && !uri.host.endsWith('.tiktok.com')) {
         if (!mounted) return;
