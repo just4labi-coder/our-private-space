@@ -242,6 +242,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
     orbitPendingTikTokReel.addListener(_openPendingTikTokReel);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent('Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36')
       ..setBackgroundColor(const Color(0xFF070513))
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (value) {
@@ -256,6 +257,11 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
         },
         onPageFinished: (_) async {
           await _hideTikTokNavigation();
+          for (final delay in [250, 800, 1800, 3000]) {
+            await Future<void>.delayed(Duration(milliseconds: delay));
+            if (!mounted) return;
+            await _hideTikTokNavigation();
+          }
           if (mounted) setState(() {
             _loading = false;
             _progress = 100;
@@ -298,7 +304,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             style.id = styleId;
             document.head.appendChild(style);
           }
-          style.textContent = "[data-e2e='bottom-tab-bar'], [data-e2e='bottom-tab-bar-container'], .TUXBottomTabBar, nav[aria-label*='navigation' i], nav[aria-label*='main' i] { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
+          style.textContent = "[data-e2e*='bottom-tab' i], [data-e2e*='navigation' i], [class*='BottomTabBar' i], [class*='bottom-tab' i], .TUXBottomTabBar, nav[aria-label*='navigation' i], nav[aria-label*='main' i] { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; pointer-events:none !important; }";
           // Hide transient TikTok share/message banners in this embedded Reels view.
           const hideTransientBanners = () => {
             document.querySelectorAll('[data-e2e*="toast" i], [data-e2e*="notification" i], [class*="toast" i], [class*="notification-toast" i]').forEach((el) => {
