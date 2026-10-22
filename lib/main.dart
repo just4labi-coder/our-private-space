@@ -2533,11 +2533,12 @@ class _MainScreenState extends State<MainScreen>
             ),
         ],
       ),
-      bottomNavigationBar: selectedIndex == 4 ? null : NavigationBar(
+      bottomNavigationBar: NavigationBar(
         backgroundColor: surfaceColor,
         indicatorColor: blueColor.withValues(alpha: 0.25),
-        selectedIndex: selectedIndex,
-        onDestinationSelected: (index) {
+        selectedIndex: const [0, 4, 1, 2, 3].indexOf(selectedIndex),
+        onDestinationSelected: (destinationIndex) {
+          final index = const [0, 4, 1, 2, 3][destinationIndex];
           if (index != 1) FocusManager.instance.primaryFocus?.unfocus();
           setState(() {
             selectedIndex = index;
@@ -2556,13 +2557,14 @@ class _MainScreenState extends State<MainScreen>
             selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
+          const NavigationDestination(
+            icon: Icon(Icons.play_circle_outline_rounded),
+            selectedIcon: Icon(Icons.play_circle_fill_rounded),
+            label: 'Reels',
+          ),
           NavigationDestination(
-            icon: _chatIcon(
-              Icons.chat_bubble_outline_rounded,
-            ),
-            selectedIcon: _chatIcon(
-              Icons.chat_bubble_rounded,
-            ),
+            icon: _chatIcon(Icons.chat_bubble_outline_rounded),
+            selectedIcon: _chatIcon(Icons.chat_bubble_rounded),
             label: 'Chat',
           ),
           const NavigationDestination(
@@ -2574,11 +2576,6 @@ class _MainScreenState extends State<MainScreen>
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings_rounded),
             label: 'Settings',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.play_circle_outline_rounded),
-            selectedIcon: Icon(Icons.play_circle_fill_rounded),
-            label: 'Reels',
           ),
         ],
       ),
