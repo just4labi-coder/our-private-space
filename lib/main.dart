@@ -490,7 +490,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
                   children: [
                     const Icon(Icons.wifi_off_rounded, color: pinkColor, size: 42),
                     const SizedBox(height: 12),
-                    const Text('TikTok খোলা যাচ্ছে না', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('TikTok লোড হচ্ছে না', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     const Text(
                       'সংযোগ পরীক্ষা করে আবার চেষ্টা করুন। TikTok কিছু ডিভাইসের ইন-অ্যাপ ব্রাউজারে লগইন বা ভিডিও সীমিত করতে পারে।',
