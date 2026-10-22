@@ -288,8 +288,8 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
         onHttpError: (error) {
           debugPrint(
             'TikTok HTTP error: '
-            'status=${error.response.statusCode}, '
-            'url=${error.request.uri}',
+            'status=${error.response?.statusCode}, '
+            'url=${error.request?.uri}',
           );
         },
       ))
