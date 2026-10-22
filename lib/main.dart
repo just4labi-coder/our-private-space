@@ -345,9 +345,12 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
       if (url.startsWith('"') && url.endsWith('"')) {
         try { url = jsonDecode(url) as String; } catch (_) {}
       }
-      if (url.isEmpty || !url.contains('/video/')) url = (current ?? '').trim();
+      if (url.isEmpty || !url.contains('/video/')) {
+        final pageUrl = (current ?? '').trim();
+        if (pageUrl.contains('/video/')) url = pageUrl;
+      }
       final uri = Uri.tryParse(url);
-      if (uri == null || uri.host != 'www.tiktok.com' && uri.host != 'tiktok.com' && !uri.host.endsWith('.tiktok.com')) {
+      if (uri == null || !uri.path.contains('/video/') || (uri.host != 'www.tiktok.com' && uri.host != 'tiktok.com' && !uri.host.endsWith('.tiktok.com'))) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('এই মুহূর্তে শেয়ার করার মতো TikTok ভিডিও লিংক পাওয়া যায়নি। ভিডিওটি খুলে আবার চেষ্টা করুন।')),
