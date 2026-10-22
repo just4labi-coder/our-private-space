@@ -241,6 +241,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   int _progress = 0;
   String? _lastTikTokDeepLink;
   String _loginStatus = 'লগইন নিশ্চিত নয়';
+  bool _isTikTokLoggedIn = false;
   Timer? _loadTimeoutTimer;
   bool _handlingBack = false;
 
@@ -279,9 +280,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
               (candidate.scheme == 'https' || candidate.scheme == 'http') &&
               (candidate.host == 'www.tiktok.com' ||
                   candidate.host == 'tiktok.com' ||
-                  candidate.host.endsWith('.tiktok.com')) &&
-              (candidate.path.contains('/video/') ||
-                  candidate.path.startsWith('/t/'))) {
+                  candidate.host.endsWith('.tiktok.com'))) {
             unawaited(_controller.loadRequest(candidate));
           } else {
             final match = RegExp(r'/detail/(\\d+)').firstMatch(uri.path);
@@ -324,7 +323,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
                 const cookies = document.cookie || '';
                 const hasSession = /(^|;\s*)(sessionid|sid_tt|sessionid_ss)=/.test(cookies);
                 const signedInText = /log out|manage account|edit profile|view profile/.test(text);
-                const profileControl = !!document.querySelector('[data-e2e="profile-icon"], [data-e2e="profile-avatar"], a[href*="/@"] img');
+                const profileControl = !!document.querySelector('[data-e2e="profile-icon"], [data-e2e="profile-avatar"], [data-e2e="nav-profile"]');
                 const loginPage = url.includes('/login') || /log in to tiktok|sign up for tiktok/.test(text);
                 if (hasSession || signedInText || profileControl) return 'signed-in';
                 if (loginPage) return 'signed-out';
@@ -332,11 +331,17 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
               })();
             """);
             final value = status.toString().replaceAll('"', '').trim();
-            if (mounted) setState(() => _loginStatus = value == 'signed-in'
-                ? 'লগইন হয়েছে'
-                : value == 'signed-out' ? 'লগইন করা নেই' : 'লগইন নিশ্চিত নয়');
+            if (mounted) setState(() {
+              _isTikTokLoggedIn = value == 'signed-in';
+              _loginStatus = value == 'signed-in'
+                  ? 'লগইন হয়েছে'
+                  : value == 'signed-out' ? 'লগইন করা নেই' : 'লগইন নিশ্চিত নয়';
+            });
           } catch (_) {
-            if (mounted) setState(() => _loginStatus = 'লগইন যাচাই হয়নি');
+            if (mounted) setState(() {
+              _isTikTokLoggedIn = false;
+              _loginStatus = 'লগইন যাচাই হয়নি';
+            });
           }
           if (mounted) setState(() {
             _loading = false;
@@ -531,7 +536,10 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
 
   Future<void> _login() async {
     try {
-      setState(() => _loginStatus = 'লগইন করা হচ্ছে…');
+      setState(() {
+        _isTikTokLoggedIn = false;
+        _loginStatus = 'লগইন করা হচ্ছে…';
+      });
       await _controller.loadRequest(_loginUri);
       if (!mounted) return;
     } catch (error) {
@@ -548,7 +556,10 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
       await _cookieManager.clearCookies();
       await _controller.clearCache();
       await _controller.clearLocalStorage();
-      if (mounted) setState(() => _loginStatus = 'লগআউট হয়েছে');
+      if (mounted) setState(() {
+        _isTikTokLoggedIn = false;
+        _loginStatus = 'লগআউট হয়েছে';
+      });
       await _controller.loadRequest(_feedUri);
       if (!mounted) return;
     } catch (error) {
@@ -678,9 +689,10 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
                       icon: const Icon(Icons.share_rounded, color: Colors.white),
                       style: IconButton.styleFrom(backgroundColor: Colors.black54),
                     ),
-                    _ReelsActionBox(label: 'লগইন', onPressed: _login),
-                    const SizedBox(width: 4),
-                    _ReelsActionBox(label: 'লগআউট', onPressed: _logout),
+                    _ReelsActionBox(
+                      label: _isTikTokLoggedIn ? 'লগআউট' : 'লগইন',
+                      onPressed: _isTikTokLoggedIn ? _logout : _login,
+                    ),
                     IconButton(
                       tooltip: 'রিফ্রেশ',
                       onPressed: _reloadFeed,
