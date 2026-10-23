@@ -151,7 +151,8 @@ class _InAppLinkViewerPageState extends State<InAppLinkViewerPage> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent('Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36')
+      // Use Android WebView's real user agent. A spoofed, stale Chrome/Android
+      // signature can make TikTok repeatedly redirect or reload its feed.
       ..setBackgroundColor(const Color(0xFF070513))
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (progress) { if (mounted) setState(() => _progress = progress); },
