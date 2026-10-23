@@ -255,7 +255,6 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
     orbitPendingTikTokReel.addListener(_openPendingTikTokReel);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent('Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36')
       ..setBackgroundColor(const Color(0xFF070513))
       ..setNavigationDelegate(NavigationDelegate(
         onNavigationRequest: (request) {
@@ -493,7 +492,29 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           };
           hideOpenAppPrompt();
           hideBottomTabs();
-          // Avoid repeated feed-wide DOM scans during video playback.
+
+          // TikTok inserts its "Open app" banner after the first page paint and
+          // can recreate it while navigating between login, feed and video pages.
+          // Observe only newly changed UI and inspect only likely banner controls.
+          let promptObserver = window.__orbitTwoPromptObserver;
+          if (!promptObserver) {
+            let promptScanQueued = false;
+            promptObserver = new MutationObserver(() => {
+              if (promptScanQueued) return;
+              promptScanQueued = true;
+              requestAnimationFrame(() => {
+                promptScanQueued = false;
+                hideOpenAppPrompt();
+              });
+            });
+            promptObserver.observe(document.documentElement, {
+              childList: true,
+              subtree: true,
+              characterData: true
+            });
+            window.__orbitTwoPromptObserver = promptObserver;
+          }
+          // Avoid broad repeated scans of the whole feed during video playback.
         })();
       """);
     } catch (error) {
