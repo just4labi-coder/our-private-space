@@ -277,10 +277,13 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           final candidate = embeddedWebUrl == null
               ? null
               : Uri.tryParse(embeddedWebUrl);
-          if (candidate != null &&
+          // Only follow app deep links to a specific video/photo, never the generic feed.
+          // Re-loading /foryou from a deep link can restart the current video feed.
+          final isSpecificVideo = candidate != null &&
+              (candidate.path.contains('/video/') || candidate.path.contains('/photo/'));
+          if (candidate != null && isSpecificVideo &&
               (candidate.scheme == 'https' || candidate.scheme == 'http') &&
-              (candidate.host == 'www.tiktok.com' ||
-                  candidate.host == 'tiktok.com' ||
+              (candidate.host == 'www.tiktok.com' || candidate.host == 'tiktok.com' ||
                   candidate.host.endsWith('.tiktok.com'))) {
             unawaited(_controller.loadRequest(candidate));
           } else {
