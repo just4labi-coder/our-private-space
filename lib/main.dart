@@ -490,22 +490,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           };
           hideOpenAppPrompt();
           hideBottomTabs();
-          // TikTok frequently mutates the feed while swiping. Throttle DOM
-          // scans so the observer cannot compete with video playback.
-          let orbitHideQueued = false;
-          const scheduleHide = () => {
-            if (orbitHideQueued) return;
-            orbitHideQueued = true;
-            setTimeout(() => {
-              orbitHideQueued = false;
-              hideOpenAppPrompt();
-              hideBottomTabs();
-            }, 250);
-          };
-          if (!window.__orbitBottomTabsObserver) {
-            window.__orbitBottomTabsObserver = new MutationObserver(scheduleHide);
-            window.__orbitBottomTabsObserver.observe(document.documentElement, {childList:true, subtree:true});
-          }
+          // Avoid repeated feed-wide DOM scans during video playback.
         })();
       """);
     } catch (error) {
