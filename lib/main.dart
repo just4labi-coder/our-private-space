@@ -261,7 +261,18 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           final uri = Uri.tryParse(request.url);
           if (uri == null) return NavigationDecision.prevent;
           if (uri.scheme == 'http' || uri.scheme == 'https') {
-            if (uri.host == 'tiktok.com' || uri.host == 'www.tiktok.com' || uri.host.endsWith('.tiktok.com')) return NavigationDecision.navigate;
+            final host = uri.host.toLowerCase();
+            final isTikTok = host == 'tiktok.com' || host.endsWith('.tiktok.com');
+            // Permit common identity-provider redirects used by TikTok login.
+            // Providers may still refuse authentication inside embedded WebViews.
+            final isIdentityProvider = host == 'google.com' || host.endsWith('.google.com') ||
+                host == 'googleusercontent.com' || host.endsWith('.googleusercontent.com') ||
+                host == 'gstatic.com' || host.endsWith('.gstatic.com') ||
+                host == 'facebook.com' || host.endsWith('.facebook.com') ||
+                host == 'fbcdn.net' || host.endsWith('.fbcdn.net') ||
+                host == 'apple.com' || host.endsWith('.apple.com') ||
+                host == 'icloud.com' || host.endsWith('.icloud.com');
+            if (isTikTok || isIdentityProvider) return NavigationDecision.navigate;
             return NavigationDecision.prevent;
           }
 
