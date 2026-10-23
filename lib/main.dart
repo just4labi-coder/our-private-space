@@ -485,13 +485,30 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           // Hide only the persistent top-level Open app promotion.
           // Do not hide arbitrary toast/notification nodes or creator content.
           const hideOpenAppPrompt = () => {
-            document.querySelectorAll('[role="dialog"],[aria-modal="true"]').forEach((dialog) => {
-              const promptText = (dialog.innerText || '').toLowerCase();
-              if (promptText.includes('full app experience') || promptText.includes('enjoy more videos')) {
-                dialog.style.display = 'none';
-                if (dialog.parentElement) dialog.parentElement.style.display = 'none';
-              }
+            // TikTok often renders this promotion without dialog/aria-modal roles.
+            // Locate the visible centered card by its own copy, then hide the card and backdrop.
+            let promoCard = null;
+            let promoArea = Infinity;
+            document.querySelectorAll('[role="dialog"],[aria-modal="true"],div[class*="Modal"],div[class*="modal"],div').forEach((el) => {
+              const text = (el.innerText || '').toLowerCase();
+              if (!text.includes('full app experience') && !text.includes('enjoy more videos')) return;
+              const rect = el.getBoundingClientRect();
+              if (rect.width < 240 || rect.height < 160 || rect.width > window.innerWidth * 1.05) return;
+              const area = rect.width * rect.height;
+              if (area < promoArea) { promoArea = area; promoCard = el; }
             });
+            if (promoCard) {
+              promoCard.style.setProperty('display', 'none', 'important');
+              const parent = promoCard.parentElement;
+              if (parent) {
+                const rect = parent.getBoundingClientRect();
+                if (rect.width >= window.innerWidth * 0.7 && rect.height >= window.innerHeight * 0.5) {
+                  parent.style.setProperty('display', 'none', 'important');
+                }
+              }
+              document.documentElement.style.setProperty('overflow', 'auto', 'important');
+              document.body.style.setProperty('overflow', 'auto', 'important');
+            }
             document.querySelectorAll('a,button,[role="button"],[role="banner"]').forEach((el) => {
               const label = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
               const rect = el.getBoundingClientRect();
