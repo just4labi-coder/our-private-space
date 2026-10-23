@@ -485,6 +485,13 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           // Hide only the persistent top-level Open app promotion.
           // Do not hide arbitrary toast/notification nodes or creator content.
           const hideOpenAppPrompt = () => {
+            document.querySelectorAll('[role="dialog"],[aria-modal="true"]').forEach((dialog) => {
+              const promptText = (dialog.innerText || '').toLowerCase();
+              if (promptText.includes('full app experience') || promptText.includes('enjoy more videos')) {
+                dialog.style.display = 'none';
+                if (dialog.parentElement) dialog.parentElement.style.display = 'none';
+              }
+            });
             document.querySelectorAll('a,button,[role="button"],[role="banner"]').forEach((el) => {
               const label = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
               const rect = el.getBoundingClientRect();
