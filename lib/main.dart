@@ -319,36 +319,47 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             _progress = 0;
           });
         },
-        onPageFinished: (_) async {
+        onPageFinished: (finishedUrl) async {
           _loadTimeoutTimer?.cancel();
-          await _hideTikTokNavigation();
           if (!mounted) return;
-          try {
-            final status = await _controller.runJavaScriptReturningResult(r"""
-              (() => {
-                const text = (document.body?.innerText || '').toLowerCase();
-                const url = location.href.toLowerCase();
-                const cookies = document.cookie || '';
-                const hasSession = /(^|;\s*)(sessionid|sid_tt|sessionid_ss)=/.test(cookies);
-                const signedInText = /log out|manage account|edit profile|view profile/.test(text);
-                const loginPage = url.includes('/login') || /log in to tiktok|sign up for tiktok/.test(text);
-                if (hasSession || signedInText) return 'signed-in';
-                if (loginPage) return 'signed-out';
-                return 'unknown';
-              })();
-            """);
-            final value = status.toString().replaceAll('"', '').trim();
-            if (mounted) setState(() {
-              _isTikTokLoggedIn = value == 'signed-in';
-              _loginStatus = value == 'signed-in'
-                  ? 'লগইন হয়েছে'
-                  : value == 'signed-out' ? 'লগইন করা নেই' : 'লগইন নিশ্চিত নয়';
-            });
-          } catch (_) {
-            if (mounted) setState(() {
-              _isTikTokLoggedIn = false;
-              _loginStatus = 'লগইন যাচাই হয়নি';
-            });
+          final finishedUri = Uri.tryParse(finishedUrl);
+          final finishedHost = (finishedUri?.host ?? '').toLowerCase();
+          final isTikTokPage = finishedHost == 'tiktok.com' ||
+              finishedHost.endsWith('.tiktok.com');
+          // Do not inject TikTok CSS/MutationObservers into Google or other
+          // identity-provider pages; this can break OAuth and leave a blank view.
+          if (isTikTokPage) await _hideTikTokNavigation();
+          if (!mounted) return;
+          if (isTikTokPage) {
+            try {
+              final status = await _controller.runJavaScriptReturningResult(r"""
+                (() => {
+                  const text = (document.body?.innerText || '').toLowerCase();
+                  const url = location.href.toLowerCase();
+                  const cookies = document.cookie || '';
+                  const hasSession = /(^|;\\s*)(sessionid|sid_tt|sessionid_ss)=/.test(cookies);
+                  const signedInText = /log out|manage account|edit profile|view profile/.test(text);
+                  const loginPage = url.includes('/login') || /log in to tiktok|sign up for tiktok/.test(text);
+                  if (hasSession || signedInText) return 'signed-in';
+                  if (loginPage) return 'signed-out';
+                  return 'unknown';
+                })();
+              """);
+              final value = status.toString().replaceAll('"', '').trim();
+              if (mounted) setState(() {
+                if (value == 'signed-in') {
+                  _isTikTokLoggedIn = true;
+                  _loginStatus = 'লগইন হয়েছে';
+                } else if (value == 'signed-out') {
+                  _isTikTokLoggedIn = false;
+                  _loginStatus = 'লগইন করা নেই';
+                } else {
+                  _loginStatus = 'লগইন নিশ্চিত নয়';
+                }
+              });
+            } catch (_) {
+              if (mounted) setState(() => _loginStatus = 'লগইন যাচাই হয়নি');
+            }
           }
           if (mounted) setState(() {
             _loading = false;
