@@ -498,16 +498,36 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
               if (area < promoArea) { promoArea = area; promoCard = el; }
             });
             if (promoCard) {
-              promoCard.style.setProperty('display', 'none', 'important');
-              const parent = promoCard.parentElement;
-              if (parent) {
-                const rect = parent.getBoundingClientRect();
-                if (rect.width >= window.innerWidth * 0.7 && rect.height >= window.innerHeight * 0.5) {
-                  parent.style.setProperty('display', 'none', 'important');
+              // Remove the promo card and the fixed full-screen dimming layer
+              // that TikTok places behind it; hiding the card alone leaves Reels dark.
+              let node = promoCard;
+              let overlayHidden = false;
+              for (let depth = 0; depth < 7 && node && node !== document.body; depth++, node = node.parentElement) {
+                const rect = node.getBoundingClientRect();
+                const style = window.getComputedStyle(node);
+                const coversScreen = rect.width >= window.innerWidth * 0.75 &&
+                  rect.height >= window.innerHeight * 0.65 &&
+                  rect.top <= window.innerHeight * 0.2 && rect.left <= window.innerWidth * 0.2;
+                if (depth > 0 && coversScreen && (style.position === 'fixed' || style.position === 'absolute')) {
+                  node.style.setProperty('display', 'none', 'important');
+                  overlayHidden = true;
+                  break;
+                }
+              }
+              if (!overlayHidden) {
+                promoCard.style.setProperty('display', 'none', 'important');
+                const parent = promoCard.parentElement;
+                if (parent) {
+                  const rect = parent.getBoundingClientRect();
+                  if (rect.width >= window.innerWidth * 0.7 && rect.height >= window.innerHeight * 0.5) {
+                    parent.style.setProperty('display', 'none', 'important');
+                  }
                 }
               }
               document.documentElement.style.setProperty('overflow', 'auto', 'important');
               document.body.style.setProperty('overflow', 'auto', 'important');
+              document.documentElement.style.setProperty('filter', 'none', 'important');
+              document.body.style.setProperty('filter', 'none', 'important');
             }
             document.querySelectorAll('a,button,[role="button"],[role="banner"]').forEach((el) => {
               const label = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
