@@ -16,6 +16,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter/gestures.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -381,6 +382,17 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           );
         },
       ));
+    // TikTok sign-in can depend on third-party cookies during identity-provider
+    // redirects. Enable them explicitly on Android before the first page loads.
+    final platformController = _controller.platform;
+    if (platformController is AndroidWebViewController) {
+      unawaited(
+        AndroidWebViewCookieManager().setAcceptThirdPartyCookies(
+          platformController,
+          true,
+        ),
+      );
+    }
     // Keep the hidden WebView out of startup; load TikTok only when Reels opens.
     if (widget.isActive) _loadInitialPage();
     _openPendingTikTokReel();
