@@ -462,19 +462,8 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             ".TUXBottomTabBar", "nav[aria-label*='bottom' i]",
             "[role='navigation'][aria-label*='bottom' i]"
           ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; max-height:0 !important; overflow:hidden !important; pointer-events:none !important; }";
-          const hideBottomTabs = () => {
-            const labels = /^(for you|home|friends|following|inbox|profile|discover|shop)$/i;
-            document.querySelectorAll('body *').forEach((el) => {
-              if (!el || el.children.length > 8) return;
-              const r = el.getBoundingClientRect();
-              if (r.height < 28 || r.height > 115 || r.width < Math.min(220, window.innerWidth * 0.55) ||
-                  r.bottom < window.innerHeight - 105 || r.top > window.innerHeight - 5) return;
-              const text = (el.innerText || '').trim().split(/\n+/).map(s => s.trim()).filter(Boolean);
-              const matches = text.filter(s => labels.test(s));
-              if (matches.length >= 3 && matches.length <= 6) el.style.setProperty('display', 'none', 'important');
-            });
-          };
-          hideBottomTabs();
+          // Avoid text-based bottom-tab hiding: TikTok's feed DOM can match these labels
+          // and the heuristic can accidentally hide video content, leaving a black screen.
           // Hide only the persistent top-level Open app promotion.
           // Do not hide arbitrary toast/notification nodes or creator content.
           const hideOpenAppPrompt = () => {
@@ -539,7 +528,6 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
             });
           };
           hideOpenAppPrompt();
-          hideBottomTabs();
 
           // TikTok inserts its "Open app" banner after the first page paint and
           // can recreate it while navigating between login, feed and video pages.
