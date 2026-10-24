@@ -260,19 +260,12 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
         onNavigationRequest: (request) {
           final uri = Uri.tryParse(request.url);
           if (uri == null) return NavigationDecision.prevent;
-          if (uri.scheme == 'http' || uri.scheme == 'https') {
+          if (uri.scheme == 'https' || uri.scheme == 'http') {
             final host = uri.host.toLowerCase();
-            final isTikTok = host == 'tiktok.com' || host.endsWith('.tiktok.com');
-            // Permit common identity-provider redirects used by TikTok login.
-            // Providers may still refuse authentication inside embedded WebViews.
-            final isIdentityProvider = host == 'google.com' || host.endsWith('.google.com') ||
-                host == 'googleusercontent.com' || host.endsWith('.googleusercontent.com') ||
-                host == 'gstatic.com' || host.endsWith('.gstatic.com') ||
-                host == 'facebook.com' || host.endsWith('.facebook.com') ||
-                host == 'fbcdn.net' || host.endsWith('.fbcdn.net') ||
-                host == 'apple.com' || host.endsWith('.apple.com') ||
-                host == 'icloud.com' || host.endsWith('.icloud.com');
-            if (isTikTok || isIdentityProvider) return NavigationDecision.navigate;
+            // TikTok login can redirect through regional and identity-provider
+            // hosts that are not stable. Allow web redirects during the login
+            // flow; embedded Google sign-in may still be rejected by Google itself.
+            if (host.isNotEmpty) return NavigationDecision.navigate;
             return NavigationDecision.prevent;
           }
 
