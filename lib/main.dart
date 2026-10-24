@@ -245,6 +245,7 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   String _loginStatus = 'লগইন নিশ্চিত নয়';
   bool _isTikTokLoggedIn = false;
   Timer? _loadTimeoutTimer;
+  Future<void> _androidCookieSetup = Future<void>.value();
   bool _handlingBack = false;
 
   static final Uri _feedUri = Uri.parse('https://www.tiktok.com/foryou');
@@ -386,11 +387,10 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
     // redirects. Enable them explicitly on Android before the first page loads.
     final platformController = _controller.platform;
     if (platformController is AndroidWebViewController) {
-      unawaited(
-        AndroidWebViewCookieManager().setAcceptThirdPartyCookies(
-          platformController,
-          true,
-        ),
+      _androidCookieSetup =
+          AndroidWebViewCookieManager().setAcceptThirdPartyCookies(
+        platformController,
+        true,
       );
     }
     // Keep the hidden WebView out of startup; load TikTok only when Reels opens.
@@ -421,7 +421,15 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
       _failed = false;
       _progress = 0;
     });
-    unawaited(_controller.loadRequest(_feedUri));
+    unawaited(() async {
+      try {
+        await _androidCookieSetup;
+      } catch (error) {
+        debugPrint('Android WebView cookie setup failed: $error');
+      }
+      if (!mounted || !widget.isActive) return;
+      await _controller.loadRequest(_feedUri);
+    }());
   }
 
   Future<void> _pauseTikTokMedia() async {
