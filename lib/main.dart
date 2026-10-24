@@ -442,6 +442,10 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   }
 
   Future<void> _hideTikTokNavigation() async {
+    // Keep this deliberately conservative. TikTok changes its DOM frequently,
+    // and removing a modal's parent/backdrop can hide the entire feed.
+    // Only hide the known bottom-tab selectors; never scan or hide arbitrary
+    // divs, overlays, or ancestors based on text.
     try {
       await _controller.runJavaScript(r"""
         (() => {
@@ -450,107 +454,15 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           if (!style) {
             style = document.createElement('style');
             style.id = styleId;
-            document.head.appendChild(style);
+            (document.head || document.documentElement).appendChild(style);
           }
-          // Hide only TikTok's own bottom tab bar. Broad navigation selectors
-          // can hide creator profile content and leave a black page.
           style.textContent = [
-            "[data-e2e='bottom-tab-bar']", "[data-e2e='bottom-tab']",
-            "[data-e2e*='bottom-tab-bar' i]", "[data-e2e*='bottom-tab' i]",
-            "[class*='BottomTabBar' i]", "[class*='bottom-tab-bar' i]",
-            "[class*='DivBottomTabBar' i]", "[class*='bottomTabBar' i]",
-            ".TUXBottomTabBar", "nav[aria-label*='bottom' i]",
-            "[role='navigation'][aria-label*='bottom' i]"
-          ].join(",") + " { display:none !important; visibility:hidden !important; height:0 !important; min-height:0 !important; max-height:0 !important; overflow:hidden !important; pointer-events:none !important; }";
-          // Avoid text-based bottom-tab hiding: TikTok's feed DOM can match these labels
-          // and the heuristic can accidentally hide video content, leaving a black screen.
-          // Hide only the persistent top-level Open app promotion.
-          // Do not hide arbitrary toast/notification nodes or creator content.
-          const hideOpenAppPrompt = () => {
-            // TikTok often renders this promotion without dialog/aria-modal roles.
-            // Locate the visible centered card by its own copy, then hide the card and backdrop.
-            let promoCard = null;
-            let promoArea = Infinity;
-            document.querySelectorAll('[role="dialog"],[aria-modal="true"],div[class*="Modal"],div[class*="modal"],div').forEach((el) => {
-              const text = (el.innerText || '').toLowerCase();
-              if (!text.includes('full app experience') && !text.includes('enjoy more videos')) return;
-              const rect = el.getBoundingClientRect();
-              if (rect.width < 240 || rect.height < 160 || rect.width > window.innerWidth * 1.05) return;
-              const area = rect.width * rect.height;
-              if (area < promoArea) { promoArea = area; promoCard = el; }
-            });
-            if (promoCard) {
-              // Remove the promo card and the fixed full-screen dimming layer
-              // that TikTok places behind it; hiding the card alone leaves Reels dark.
-              let node = promoCard;
-              let overlayHidden = false;
-              for (let depth = 0; depth < 7 && node && node !== document.body; depth++, node = node.parentElement) {
-                const rect = node.getBoundingClientRect();
-                const style = window.getComputedStyle(node);
-                const coversScreen = rect.width >= window.innerWidth * 0.75 &&
-                  rect.height >= window.innerHeight * 0.65 &&
-                  rect.top <= window.innerHeight * 0.2 && rect.left <= window.innerWidth * 0.2;
-                if (depth > 0 && coversScreen && (style.position === 'fixed' || style.position === 'absolute')) {
-                  node.style.setProperty('display', 'none', 'important');
-                  overlayHidden = true;
-                  break;
-                }
-              }
-              if (!overlayHidden) {
-                promoCard.style.setProperty('display', 'none', 'important');
-                const parent = promoCard.parentElement;
-                if (parent) {
-                  const rect = parent.getBoundingClientRect();
-                  if (rect.width >= window.innerWidth * 0.7 && rect.height >= window.innerHeight * 0.5) {
-                    parent.style.setProperty('display', 'none', 'important');
-                  }
-                }
-              }
-              document.documentElement.style.setProperty('overflow', 'auto', 'important');
-              document.body.style.setProperty('overflow', 'auto', 'important');
-              document.documentElement.style.setProperty('filter', 'none', 'important');
-              document.body.style.setProperty('filter', 'none', 'important');
-            }
-            document.querySelectorAll('a,button,[role="button"],[role="banner"]').forEach((el) => {
-              const label = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
-              const rect = el.getBoundingClientRect();
-              if (/^(open( tiktok| app| in app)?|get app|watch in app|use app)$/.test(label) &&
-                  rect.top >= 0 && rect.top < 220 && rect.height < 130) {
-                let target = el;
-                for (let i = 0; i < 3 && target.parentElement; i++) {
-                  const parent = target.parentElement;
-                  const pr = parent.getBoundingClientRect();
-                  if (pr.top >= 0 && pr.top < 220 && pr.height < 150 && pr.width > rect.width) target = parent;
-                  else break;
-                }
-                target.style.setProperty('display', 'none', 'important');
-              }
-            });
-          };
-          hideOpenAppPrompt();
-
-          // TikTok inserts its "Open app" banner after the first page paint and
-          // can recreate it while navigating between login, feed and video pages.
-          // Observe only newly changed UI and inspect only likely banner controls.
-          let promptObserver = window.__orbitTwoPromptObserver;
-          if (!promptObserver) {
-            let promptScanQueued = false;
-            promptObserver = new MutationObserver(() => {
-              if (promptScanQueued) return;
-              promptScanQueued = true;
-              requestAnimationFrame(() => {
-                promptScanQueued = false;
-                hideOpenAppPrompt();
-              });
-            });
-            promptObserver.observe(document.documentElement, {
-              childList: true,
-              subtree: true,
-              characterData: true
-            });
-            window.__orbitTwoPromptObserver = promptObserver;
-          }
-          // Avoid broad repeated scans of the whole feed during video playback.
+            "[data-e2e='bottom-tab-bar']",
+            "[data-e2e='bottom-tab']",
+            "[class*='BottomTabBar' i]",
+            "[class*='bottom-tab-bar' i]",
+            ".TUXBottomTabBar"
+          ].join(",") + " { display:none !important; }";
         })();
       """);
     } catch (error) {
