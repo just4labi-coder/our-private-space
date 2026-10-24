@@ -442,10 +442,8 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
   }
 
   Future<void> _hideTikTokNavigation() async {
-    // Keep this deliberately conservative. TikTok changes its DOM frequently,
-    // and removing a modal's parent/backdrop can hide the entire feed.
-    // Only hide the known bottom-tab selectors; never scan or hide arbitrary
-    // divs, overlays, or ancestors based on text.
+    // Hide only known TikTok chrome/promotions. Never hide a full-screen
+    // ancestor/backdrop: that previously risked covering the whole feed.
     try {
       await _controller.runJavaScript(r"""
         (() => {
@@ -459,10 +457,61 @@ class _TikTokReelsPageState extends State<TikTokReelsPage> {
           style.textContent = [
             "[data-e2e='bottom-tab-bar']",
             "[data-e2e='bottom-tab']",
+            "[data-e2e*='bottom-tab-bar' i]",
             "[class*='BottomTabBar' i]",
             "[class*='bottom-tab-bar' i]",
             ".TUXBottomTabBar"
           ].join(",") + " { display:none !important; }";
+
+          // Remove the small "Open app" promotion only; do not walk up to
+          // page-sized parents or touch generic overlays/backdrops.
+          const hideSmallOpenAppPrompt = () => {
+            document.querySelectorAll('a,button,[role="button"],[role="banner"]').forEach((el) => {
+              const label = (el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
+              const rect = el.getBoundingClientRect();
+              if (!/^(open( tiktok| app| in app)?|get app|watch in app|use app)$/.test(label)) return;
+              if (rect.width <= 0 || rect.height <= 0 || rect.height > 130 || rect.top < -5 || rect.top > 240) return;
+              el.style.setProperty('display', 'none', 'important');
+              const parent = el.parentElement;
+              if (parent) {
+                const p = parent.getBoundingClientRect();
+                if (p.height > 0 && p.height <= 150 && p.width <= window.innerWidth &&
+                    p.top >= -5 && p.top <= 240) {
+                  parent.style.setProperty('display', 'none', 'important');
+                }
+              }
+            });
+
+            // Some TikTok versions use a small card instead of a banner button.
+            let candidate = null;
+            let candidateArea = Infinity;
+            document.querySelectorAll('[role="dialog"],[aria-modal="true"],div[class*="Modal"],div[class*="modal"]').forEach((el) => {
+              const copy = (el.innerText || '').toLowerCase();
+              if (!copy.includes('full app experience') && !copy.includes('enjoy more videos')) return;
+              const rect = el.getBoundingClientRect();
+              if (rect.width < 220 || rect.height < 100 ||
+                  rect.width > window.innerWidth * 0.95 ||
+                  rect.height > window.innerHeight * 0.65) return;
+              const area = rect.width * rect.height;
+              if (area < candidateArea) { candidate = el; candidateArea = area; }
+            });
+            if (candidate) candidate.style.setProperty('display', 'none', 'important');
+          };
+          hideSmallOpenAppPrompt();
+          if (!window.__orbitTwoPromptObserver) {
+            let queued = false;
+            window.__orbitTwoPromptObserver = new MutationObserver(() => {
+              if (queued) return;
+              queued = true;
+              requestAnimationFrame(() => {
+                queued = false;
+                hideSmallOpenAppPrompt();
+              });
+            });
+            window.__orbitTwoPromptObserver.observe(document.documentElement, {
+              childList: true, subtree: true, characterData: true
+            });
+          }
         })();
       """);
     } catch (error) {
